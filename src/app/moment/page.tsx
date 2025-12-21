@@ -17,6 +17,7 @@ type Product = {
   price: number;
   sizes: string[];
   stock: Record<string, number>;
+  image: string;
 };
 
 type CartItem = {
@@ -54,13 +55,34 @@ export default function LedVelvetCercleMockup() {
   // Quindi /public/media/petra_led.mp4 diventa: /media/petra_led.mp4
 
   const products: Product[] = [
-    { sku: "LV-TEE-BLK", name: "LedVelvet Tee – Black", price: 34, sizes: ["S", "M", "L", "XL"], stock: { S: 12, M: 20, L: 14, XL: 8 } },
-    { sku: "LV-HAT", name: "LedVelvet Cap", price: 29, sizes: ["UNI"], stock: { UNI: 30 } },
-    { sku: "LV-HOODIE", name: "LedVelvet Hoodie", price: 69, sizes: ["S", "M", "L", "XL"], stock: { S: 6, M: 10, L: 5, XL: 3 } },
+    {
+      sku: "LV-TEE-BLK",
+      name: "LedVelvet Tee – Black",
+      price: 34,
+      sizes: ["S", "M", "L", "XL"],
+      stock: { S: 12, M: 20, L: 14, XL: 8 },
+      image: "/shop/tee.png",
+    },
+    {
+      sku: "LV-HAT",
+      name: "LedVelvet Cap",
+      price: 29,
+      sizes: ["UNI"],
+      stock: { UNI: 30 },
+      image: "/shop/cap.png",
+    },
+    {
+      sku: "LV-SCARF",
+      name: "LedVelvet Scarf",
+      price: 49,
+      sizes: ["UNI"],
+      stock: { UNI: 15 },
+      image: "/shop/scarf.png",
+    },
   ];
 
   const brand = {
-    logo: "/logo.png",
+    logo: "/logo.svg",
     hero: "/og.jpg",
     heroVideoMp4: "/media/petra_led.mp4",
     heroVideoWebm: "https://upload.wikimedia.org/wikipedia/commons/2/29/Wikimania_beach_party_2.webm",
@@ -430,7 +452,14 @@ export default function LedVelvetCercleMockup() {
           <div className="grid md:grid-cols-3 gap-6 mt-10">
             {products.map((p) => (
               <div key={p.sku} className="rounded-[28px] border border-black/10 bg-[#F7F5F1] overflow-hidden">
-                <div className="aspect-square bg-[radial-gradient(circle_at_35%_30%,rgba(0,0,0,0.08),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(0,0,0,0.10),transparent_55%)]" />
+                <div className="aspect-square overflow-hidden bg-black">
+                  <img
+                    src={p.image}
+                    alt={p.name}
+                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                    loading="lazy"
+                  />
+                </div>
                 <div className="p-6">
                   <div className="flex items-start justify-between gap-3">
                     <div>
