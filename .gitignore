@@ -4,3 +4,4 @@ out
 .env.local
 .env
 .DS_Store
+.vercel

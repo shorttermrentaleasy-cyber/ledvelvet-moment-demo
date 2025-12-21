@@ -4,10 +4,9 @@ import React, { useMemo, useRef, useState } from "react";
 
 /**
  * LedVelvet – Demo Navigabile (Cercle Moment mockup) – DARK EDITION
- * Mobile fixes:
- * - overlay non blocca i tap (pointer-events-none)
- * - audio toggle iOS-safe (muted=false + play() nello stesso tap)
- * - fullscreen iOS-safe (webkitEnterFullscreen) + fallback requestFullscreen
+ * Mood: nero profondo + rosso velvet, contrasto alto, vibe club / giovani.
+ * Functionality kept: membership levels, KYC modal, tessera QR modal, shop w/ sizes+stock,
+ * member discounts, shipping rules, cart drawer.
  */
 
 type Level = "BASE" | "VIP" | "FOUNDER";
@@ -38,95 +37,87 @@ function formatEUR(n: number) {
 }
 
 export default function LedVelvetCercleMockup() {
+  // Dark palette (nero + rosso velvet) con superfici e bordi coerenti.
   const palette = {
-    bg: "#050508",
-    surface: "#0B0B10",
-    surface2: "#10101A",
-    text: "#F6F6F7",
-    muted: "#B9BAC2",
+    bg: "#050508", // background principale
+    surface: "#0B0B10", // surface header/drawer
+    surface2: "#10101A", // cards
+    text: "#F6F6F7", // testo primario
+    muted: "#B9BAC2", // testo secondario
     border: "rgba(255,255,255,0.10)",
-    accent: "#E11D48",
-    accent2: "#FF2E63",
+    accent: "#E11D48", // rosso velvet
+    accent2: "#FF2E63", // rosso neon per hover/glow
   } as const;
 
   const [user, setUser] = useState<{ email: string | null; level?: Level; kyc?: boolean }>({ email: null });
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showKyc, setShowKyc] = useState(false);
-  const [showQR, setShowQR] = useState(false);
+  const [showQR, setShowQR] = useState(false); // (tenuto per compatibilità, anche se non usato ora)
   const [selectedSize, setSelectedSize] = useState<Record<string, string>>({});
   const [showCart, setShowCart] = useState(false);
   const [cartTimerMin, setCartTimerMin] = useState(10);
 
-  // VIDEO / AUDIO
+  // AUDIO/VIDEO CONTROLS
+  // Autoplay su mobile richiede muted=true. L’audio si attiva solo su gesto utente.
   const [muted, setMuted] = useState(true);
-  const [tapHint, setTapHint] = useState<string | null>(null);
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  const isIOS = () => {
-    if (typeof navigator === "undefined") return false;
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-  };
-
   async function toggleMute() {
-    const v = heroVideoRef.current;
-    if (!v) return;
-
-    // IMPORTANT: su iOS per attivare l’audio bisogna farlo dentro il tap:
-    // 1) set muted=false
-    // 2) play()
-    const nextMuted = !muted;
-
-    setMuted(nextMuted);
-    v.muted = nextMuted;
-
+    setMuted((m) => !m);
+    // Su iOS spesso serve un play() dopo il gesto utente
     try {
-      if (!nextMuted) {
-        v.volume = 1;
-        await v.play();
-        setTapHint(null);
-      } else {
-        // se rimuti, ok anche senza play
-        setTapHint(null);
-      }
+      const v = heroVideoRef.current;
+      if (!v) return;
+      await v.play();
     } catch {
-      // iOS a volte richiede un secondo tap "valido"
-      setTapHint(isIOS() ? "Su iPhone: se l’audio non parte, riprova a toccare Audio." : "Audio bloccato dal browser: riprova.");
-      // rimaniamo in stato muted per coerenza se non parte
-      setMuted(true);
-      v.muted = true;
+      // ok: alcuni browser bloccano comunque finché non c'è un'interazione "valida"
     }
   }
 
   function requestHeroFullscreen() {
-    const v = heroVideoRef.current as any;
-    if (!v) return;
-
+    const el = heroVideoRef.current as any;
+    if (!el) return;
+    const fn =
+      el.requestFullscreen ||
+      el.webkitRequestFullscreen ||
+      el.mozRequestFullScreen ||
+      el.msRequestFullscreen ||
+      null;
     try {
-      // iOS Safari: fullscreen “vero” solo così
-      if (v.webkitEnterFullscreen) {
-        v.webkitEnterFullscreen();
-        return;
-      }
-
-      // standard fullscreen (desktop + molti Android)
-      const el: any = v;
-      const fn =
-        el.requestFullscreen ||
-        el.webkitRequestFullscreen ||
-        el.mozRequestFullScreen ||
-        el.msRequestFullscreen ||
-        null;
-
       fn?.call(el);
     } catch {
       // ignore
     }
   }
 
+  // Video: in produzione (e su Vercel) i file dentro /public sono serviti da root.
+  // Quindi /public/media/petra_led.mp4 diventa: /media/petra_led.mp4
+
   const products: Product[] = [
-    { sku: "LV-TEE-BLK", name: "LedVelvet Tee – Black", price: 34, sizes: ["S", "M", "L", "XL"], stock: { S: 12, M: 20, L: 14, XL: 8 }, image: "/shop/tee.png" },
-    { sku: "LV-HAT", name: "LedVelvet Cap", price: 29, sizes: ["UNI"], stock: { UNI: 30 }, image: "/shop/cap.png" },
-    { sku: "LV-SCARF", name: "LedVelvet Scarf", price: 49, sizes: ["UNI"], stock: { UNI: 15 }, image: "/shop/scarf.png" },
+    {
+      sku: "LV-TEE-BLK",
+      name: "LedVelvet Tee – Black",
+      price: 34,
+      sizes: ["S", "M", "L", "XL"],
+      stock: { S: 12, M: 20, L: 14, XL: 8 },
+      image: "/shop/tee.png",
+    },
+    {
+      sku: "LV-HAT",
+      name: "LedVelvet Cap",
+      price: 29,
+      sizes: ["UNI"],
+      stock: { UNI: 30 },
+      image: "/shop/cap.png",
+    },
+    {
+      sku: "LV-SCARF",
+      name: "LedVelvet Scarf",
+      price: 49,
+      sizes: ["UNI"],
+      stock: { UNI: 15 },
+      image: "/shop/scarf.png",
+    },
   ];
 
   const brand = {
@@ -137,8 +128,26 @@ export default function LedVelvetCercleMockup() {
   };
 
   const events = [
-    { id: "evt1", name: "CRYPTA – Ethereal Clubbing", city: "Milano", date: "25 Gen 2026", href: "#", tag: "LISTE & TICKETS", videoSrc: null as any, posterSrc: "/og.jpg" },
-    { id: "evt2", name: "HANGAR – Secret Night", city: "Toscana", date: "10 Feb 2026", href: "#", tag: "LIMITED", videoSrc: null as any, posterSrc: "/og.jpg" },
+    {
+      id: "evt1",
+      name: "CRYPTA – Ethereal Clubbing",
+      city: "Milano",
+      date: "25 Gen 2026",
+      href: "#",
+      tag: "LISTE & TICKETS",
+      videoSrc: null as any,
+      posterSrc: "/og.jpg",
+    },
+    {
+      id: "evt2",
+      name: "HANGAR – Secret Night",
+      city: "Toscana",
+      date: "10 Feb 2026",
+      href: "#",
+      tag: "LIMITED",
+      videoSrc: null as any,
+      posterSrc: "/og.jpg",
+    },
   ];
 
   const { subtotal, discountRate, discount, shipping, total } = useMemo(() => {
@@ -220,7 +229,7 @@ export default function LedVelvetCercleMockup() {
         }}
       />
 
-      {/* Top utility */}
+      {/* Top utility (Cercle-like cart timer) */}
       <div className="sticky top-0 z-50 border-b border-white/10 bg-[var(--surface)]/85 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-xs tracking-wide">
           <div className="flex items-center gap-2 text-[var(--muted)]">
@@ -297,6 +306,7 @@ export default function LedVelvetCercleMockup() {
       <section id="home" className="pt-6">
         <div className="max-w-6xl mx-auto px-4">
           <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[var(--surface2)]">
+            {/* Mobile-first: hero più alto su telefono, così il testo rimane leggibile */}
             <div className="relative aspect-[9/16] sm:aspect-[16/7] w-full bg-black">
               <video
                 ref={heroVideoRef}
@@ -314,48 +324,34 @@ export default function LedVelvetCercleMockup() {
 
               <img src={brand.hero} alt="LedVelvet" className="absolute inset-0 z-0 h-full w-full object-cover" loading="eager" />
 
-              {/* Overlay (NON blocca tap) */}
-              <div className="absolute inset-0 z-20 pointer-events-none bg-gradient-to-t from-black/95 via-black/55 to-black/15" />
-              <div
-                className="absolute inset-0 z-20 pointer-events-none opacity-60"
-                style={{ background: "radial-gradient(800px circle at 20% 60%, rgba(225,29,72,0.18), transparent 60%)" }}
-              />
+              {/* Overlay: più club, più contrasto */}
+              <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/95 via-black/55 to-black/15" />
+              <div className="absolute inset-0 z-20 opacity-60" style={{ background: "radial-gradient(800px circle at 20% 60%, rgba(225,29,72,0.18), transparent 60%)" }} />
 
-              {/* Controls (devono ricevere tap) */}
-              <div className="absolute right-3 top-3 z-40 flex flex-col gap-2 pointer-events-auto">
+              {/* Controls: Audio + Fullscreen */}
+              <div className="absolute right-3 top-3 z-40 flex flex-col gap-2">
                 <button
                   type="button"
                   onClick={toggleMute}
-                  className="px-3 py-2 rounded-full border border-white/15 bg-black/40 text-white text-[10px] tracking-[0.22em] uppercase hover:bg-black/60 active:scale-[0.99]"
+                  className="px-3 py-2 rounded-full border border-white/15 bg-black/40 text-white text-[10px] tracking-[0.22em] uppercase hover:bg-black/60"
                   style={{ backdropFilter: "blur(10px)" as any }}
                 >
                   {muted ? "Audio off" : "Audio on"}
                 </button>
-
                 <button
                   type="button"
                   onClick={requestHeroFullscreen}
-                  className="px-3 py-2 rounded-full border border-white/15 bg-black/40 text-white text-[10px] tracking-[0.22em] uppercase hover:bg-black/60 active:scale-[0.99]"
+                  className="px-3 py-2 rounded-full border border-white/15 bg-black/40 text-white text-[10px] tracking-[0.22em] uppercase hover:bg-black/60"
                   style={{ backdropFilter: "blur(10px)" as any }}
                 >
                   Fullscreen
                 </button>
-
-                {tapHint && (
-                  <div
-                    className="mt-1 max-w-[210px] rounded-2xl border border-white/10 bg-black/55 px-3 py-2 text-[10px] leading-snug text-white/80"
-                    style={{ backdropFilter: "blur(10px)" as any }}
-                  >
-                    {tapHint}
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Content layer (cliccabile) */}
-            <div className="absolute inset-0 z-30 flex items-end text-white pointer-events-none">
+            <div className="absolute inset-0 z-30 flex items-end text-white">
               <div className="w-full p-4 sm:p-6 md:p-10">
-                <div className="flex flex-col gap-3 max-w-3xl rounded-[24px] bg-black/55 backdrop-blur-md border border-white/10 p-4 sm:p-6 md:p-7 pointer-events-auto">
+                <div className="flex flex-col gap-3 max-w-3xl rounded-[24px] bg-black/55 backdrop-blur-md border border-white/10 p-4 sm:p-6 md:p-7">
                   <div className="text-[10px] sm:text-xs tracking-[0.22em] uppercase text-white/80">
                     Ethereal clubbing in unconventional places
                   </div>
@@ -369,6 +365,7 @@ export default function LedVelvetCercleMockup() {
                     Iscriviti alla membership APS, accedi alle pre-sale e sblocca sconti merch. Ticketing eventi via piattaforme esterne (Xceed/Shotgun) con CRM unificato sul sito.
                   </p>
 
+                  {/* CTA mobile: colonna (più leggibile) */}
                   <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-2">
                     <a
                       href="#eventi"
@@ -394,7 +391,8 @@ export default function LedVelvetCercleMockup() {
                   </div>
                 </div>
 
-                <div className="mt-4 sm:mt-6 h-px w-full max-w-3xl bg-gradient-to-r from-transparent via-white/12 to-transparent pointer-events-none" />
+                {/* micro-line per “energia” */}
+                <div className="mt-4 sm:mt-6 h-px w-full max-w-3xl bg-gradient-to-r from-transparent via-white/12 to-transparent" />
               </div>
             </div>
           </div>
@@ -445,12 +443,8 @@ export default function LedVelvetCercleMockup() {
 
                   <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-0 h-full w-full object-cover" loading="lazy" />
 
-                  {/* overlay non blocca tap */}
-                  <div className="absolute inset-0 z-20 pointer-events-none bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
-                  <div
-                    className="absolute inset-0 z-20 pointer-events-none opacity-70"
-                    style={{ background: "radial-gradient(700px circle at 20% 80%, rgba(225,29,72,0.14), transparent 60%)" }}
-                  />
+                  <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+                  <div className="absolute inset-0 z-20 opacity-70" style={{ background: "radial-gradient(700px circle at 20% 80%, rgba(225,29,72,0.14), transparent 60%)" }} />
                 </div>
 
                 <div className="p-6">
@@ -483,15 +477,17 @@ export default function LedVelvetCercleMockup() {
           <div className="max-w-2xl">
             <div className="text-xs tracking-[0.22em] uppercase text-white/70">What is a membership?</div>
             <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Membership APS</h2>
-            <p className="mt-4 text-white/70">Onboarding con verifica documento (KYC light), tessera digitale con QR e benefici per livello.</p>
+            <p className="mt-4 text-white/70">
+              Onboarding con verifica documento (KYC light), tessera digitale con QR e benefici per livello.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 mt-10">
-            {[
+            {([
               { code: "BASE" as const, price: 39, perks: ["Tessera digitale", "Pre-sale 15'", "Sconto Shop 5%"] },
               { code: "VIP" as const, price: 99, perks: ["Priority list", "Pre-sale 60'", "Sconto Shop 10%", "Eventi solo soci"] },
               { code: "FOUNDER" as const, price: 199, perks: ["Badge Founder", "Inviti speciali", "Sconto Shop 15%", "Meet & Greet"] },
-            ].map((m) => (
+            ]).map((m) => (
               <div
                 key={m.code}
                 className="rounded-[28px] border border-white/10 bg-[var(--surface2)] p-6 flex flex-col"
@@ -638,7 +634,8 @@ export default function LedVelvetCercleMockup() {
                     className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/15 pointer-events-none" />
+                  {/* overlay leggero + badge */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/15" />
                   <div
                     className="absolute left-4 top-4 px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/40 text-white/80"
                     style={{ backdropFilter: "blur(8px)" as any }}
@@ -697,6 +694,7 @@ export default function LedVelvetCercleMockup() {
             ))}
           </div>
 
+          {/* CART DRAWER */}
           {showCart && (
             <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm" onClick={() => setShowCart(false)}>
               <aside className="absolute right-0 top-0 h-full w-full max-w-md bg-[var(--surface)] border-l border-white/10 p-6" onClick={(e) => e.stopPropagation()}>
