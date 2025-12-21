@@ -8,6 +8,7 @@ import React, { useMemo, useRef, useState } from "react";
  * - overlay non blocca i tap (pointer-events-none)
  * - audio toggle iOS-safe (muted=false + play() nello stesso tap)
  * - fullscreen iOS-safe (webkitEnterFullscreen) + fallback requestFullscreen
+ * + Sponsor area (form + CTA + anchor in menu)
  */
 
 type Level = "BASE" | "VIP" | "FOUNDER";
@@ -62,6 +63,17 @@ export default function LedVelvetCercleMockup() {
   const [tapHint, setTapHint] = useState<string | null>(null);
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
+  // SPONSOR form (client-side only, mailto)
+  const sponsorEmail = "sponsor@ledvelvet.com";
+  const [sponsor, setSponsor] = useState({
+    brand: "",
+    name: "",
+    email: "",
+    phone: "",
+    budget: "",
+    note: "",
+  });
+
   const isIOS = () => {
     if (typeof navigator === "undefined") return false;
     return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
@@ -85,13 +97,10 @@ export default function LedVelvetCercleMockup() {
         await v.play();
         setTapHint(null);
       } else {
-        // se rimuti, ok anche senza play
         setTapHint(null);
       }
     } catch {
-      // iOS a volte richiede un secondo tap "valido"
       setTapHint(isIOS() ? "Su iPhone: se l’audio non parte, riprova a toccare Audio." : "Audio bloccato dal browser: riprova.");
-      // rimaniamo in stato muted per coerenza se non parte
       setMuted(true);
       v.muted = true;
     }
@@ -123,6 +132,27 @@ export default function LedVelvetCercleMockup() {
     }
   }
 
+  function openSponsorMail() {
+    const subject = encodeURIComponent("LedVelvet – Richiesta Sponsorship");
+    const body = encodeURIComponent(
+      [
+        `Brand/Azienda: ${sponsor.brand || "-"}`,
+        `Referente: ${sponsor.name || "-"}`,
+        `Email: ${sponsor.email || "-"}`,
+        `Telefono: ${sponsor.phone || "-"}`,
+        `Budget indicativo: ${sponsor.budget || "-"}`,
+        "",
+        "Messaggio:",
+        sponsor.note || "-",
+        "",
+        "Inviato dal sito LedVelvet (/moment).",
+      ].join("\n")
+    );
+
+    // Mail client
+    window.location.href = `mailto:${sponsorEmail}?subject=${subject}&body=${body}`;
+  }
+
   const products: Product[] = [
     { sku: "LV-TEE-BLK", name: "LedVelvet Tee – Black", price: 34, sizes: ["S", "M", "L", "XL"], stock: { S: 12, M: 20, L: 14, XL: 8 }, image: "/shop/tee.png" },
     { sku: "LV-HAT", name: "LedVelvet Cap", price: 29, sizes: ["UNI"], stock: { UNI: 30 }, image: "/shop/cap.png" },
@@ -139,6 +169,14 @@ export default function LedVelvetCercleMockup() {
   const events = [
     { id: "evt1", name: "CRYPTA – Ethereal Clubbing", city: "Milano", date: "25 Gen 2026", href: "#", tag: "LISTE & TICKETS", videoSrc: null as any, posterSrc: "/og.jpg" },
     { id: "evt2", name: "HANGAR – Secret Night", city: "Toscana", date: "10 Feb 2026", href: "#", tag: "LIMITED", videoSrc: null as any, posterSrc: "/og.jpg" },
+  ];
+
+  // Sponsor “logo wall” demo (metti i tuoi asset in /public/sponsors/*)
+  const sponsorWall = [
+    { name: "Red Bull (demo)", role: "Energy Partner", src: "/sponsors/sponsor1.png" },
+    { name: "Jägermeister (demo)", role: "Night Partner", src: "/sponsors/sponsor2.png" },
+    { name: "Local Club (demo)", role: "Venue Partner", src: "/sponsors/sponsor3.png" },
+    { name: "Fashion Label (demo)", role: "Style Partner", src: "/sponsors/sponsor4.png" },
   ];
 
   const { subtotal, discountRate, discount, shipping, total } = useMemo(() => {
@@ -259,6 +297,7 @@ export default function LedVelvetCercleMockup() {
             <a href="#eventi" className="hover:text-[var(--text)]">Momenti</a>
             <a href="#membership" className="hover:text-[var(--text)]">Membership</a>
             <a href="#shop" className="hover:text-[var(--text)]">Shop</a>
+            <a href="#sponsor" className="hover:text-[var(--text)]">Sponsor</a>
             <a href="#community" className="hover:text-[var(--text)]">Community</a>
           </nav>
 
@@ -321,7 +360,7 @@ export default function LedVelvetCercleMockup() {
                 style={{ background: "radial-gradient(800px circle at 20% 60%, rgba(225,29,72,0.18), transparent 60%)" }}
               />
 
-              {/* Controls (devono ricevere tap) */}
+              {/* Controls */}
               <div className="absolute right-3 top-3 z-40 flex flex-col gap-2 pointer-events-auto">
                 <button
                   type="button"
@@ -352,7 +391,7 @@ export default function LedVelvetCercleMockup() {
               </div>
             </div>
 
-            {/* Content layer (cliccabile) */}
+            {/* Content layer */}
             <div className="absolute inset-0 z-30 flex items-end text-white pointer-events-none">
               <div className="w-full p-4 sm:p-6 md:p-10">
                 <div className="flex flex-col gap-3 max-w-3xl rounded-[24px] bg-black/55 backdrop-blur-md border border-white/10 p-4 sm:p-6 md:p-7 pointer-events-auto">
@@ -390,6 +429,13 @@ export default function LedVelvetCercleMockup() {
                       className="w-full sm:w-auto px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30 text-center"
                     >
                       Shop the drop
+                    </a>
+
+                    <a
+                      href="#sponsor"
+                      className="w-full sm:w-auto px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30 text-center"
+                    >
+                      Become a sponsor
                     </a>
                   </div>
                 </div>
@@ -445,7 +491,6 @@ export default function LedVelvetCercleMockup() {
 
                   <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-0 h-full w-full object-cover" loading="lazy" />
 
-                  {/* overlay non blocca tap */}
                   <div className="absolute inset-0 z-20 pointer-events-none bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
                   <div
                     className="absolute inset-0 z-20 pointer-events-none opacity-70"
@@ -763,6 +808,167 @@ export default function LedVelvetCercleMockup() {
         </div>
       </section>
 
+      {/* SPONSOR */}
+      <section id="sponsor" className="py-16">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
+            <div className="p-8 md:p-10">
+              <div className="grid md:grid-cols-2 gap-10 items-start">
+                <div>
+                  <div className="text-xs tracking-[0.22em] uppercase text-white/70">Partnership</div>
+                  <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Sponsor & Brand Activation</h2>
+                  <p className="mt-4 text-white/70">
+                    LedVelvet è un format giovane: esperienze, musica e visual. Se vuoi diventare sponsor, trovi qui una richiesta rapida.
+                    Ti rispondiamo via email con media kit e pacchetti.
+                  </p>
+
+                  <div className="mt-6 grid sm:grid-cols-2 gap-4">
+                    {[
+                      { t: "Brand visibility", d: "Logo wall, credits e contenuti social dedicati." },
+                      { t: "On-site activation", d: "Corner esperienziali, sampling e photo moment." },
+                      { t: "Content package", d: "Reels, stories e recap dell’evento." },
+                      { t: "Community reach", d: "Newsletter e audience profilata." },
+                    ].map((x) => (
+                      <div key={x.t} className="rounded-[22px] border border-white/10 bg-black/25 p-5">
+                        <div className="text-xs tracking-[0.22em] uppercase text-white/80">{x.t}</div>
+                        <div className="mt-2 text-sm text-white/70">{x.d}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-7 flex flex-wrap gap-2">
+                    <a
+                      href={`mailto:${sponsorEmail}?subject=${encodeURIComponent("LedVelvet – Sponsorship")}`}
+                      className="px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
+                      style={{ boxShadow: "0 12px 38px rgba(225,29,72,0.22)" }}
+                    >
+                      Scrivi a {sponsorEmail}
+                    </a>
+
+                    <a
+                      href="#community"
+                      className="px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
+                    >
+                      Join the community
+                    </a>
+                  </div>
+
+                  {/* Sponsor wall demo */}
+                  <div className="mt-10">
+                    <div className="text-xs tracking-[0.22em] uppercase text-white/60">Current sponsors (demo)</div>
+                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {sponsorWall.map((s) => (
+                        <div key={s.name} className="rounded-[18px] border border-white/10 bg-black/25 p-3 flex flex-col items-center text-center">
+                          <div className="w-full aspect-[4/3] rounded-2xl bg-black/30 border border-white/10 overflow-hidden grid place-items-center">
+                            {/* Se non hai ancora i file, resterà un box “vuoto” ma bello */}
+                            <img
+                              src={s.src}
+                              alt={s.name}
+                              className="w-full h-full object-contain p-2 opacity-90"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                            <div className="text-[10px] text-white/45 px-2">logo</div>
+                          </div>
+                          <div className="mt-2 text-[10px] tracking-[0.22em] uppercase text-white/70">{s.role}</div>
+                          <div className="mt-1 text-xs text-white/85 font-medium">{s.name}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Form */}
+                <div className="rounded-[26px] border border-white/10 bg-black/25 p-6 md:p-7">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs tracking-[0.22em] uppercase text-white/60">Sponsor request</div>
+                      <h3 className="text-xl font-semibold mt-1">Richiedi info</h3>
+                      <p className="mt-2 text-sm text-white/70">
+                        Compila 30 secondi. Si aprirà la tua mail con i dati già pronti.
+                      </p>
+                    </div>
+                    <div
+                      className="px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/30 text-white/70"
+                      style={{ backdropFilter: "blur(10px)" as any }}
+                    >
+                      demo
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-3">
+                    <input
+                      value={sponsor.brand}
+                      onChange={(e) => setSponsor((p) => ({ ...p, brand: e.target.value }))}
+                      placeholder="Brand / Azienda"
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                    />
+
+                    <div className="grid md:grid-cols-2 gap-3">
+                      <input
+                        value={sponsor.name}
+                        onChange={(e) => setSponsor((p) => ({ ...p, name: e.target.value }))}
+                        placeholder="Referente"
+                        className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                      />
+                      <input
+                        value={sponsor.phone}
+                        onChange={(e) => setSponsor((p) => ({ ...p, phone: e.target.value }))}
+                        placeholder="Telefono (opzionale)"
+                        className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                      />
+                    </div>
+
+                    <input
+                      value={sponsor.email}
+                      onChange={(e) => setSponsor((p) => ({ ...p, email: e.target.value }))}
+                      placeholder="Email"
+                      inputMode="email"
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                    />
+
+                    <input
+                      value={sponsor.budget}
+                      onChange={(e) => setSponsor((p) => ({ ...p, budget: e.target.value }))}
+                      placeholder="Budget indicativo (es: 1.000€ – 5.000€)"
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                    />
+
+                    <textarea
+                      value={sponsor.note}
+                      onChange={(e) => setSponsor((p) => ({ ...p, note: e.target.value }))}
+                      placeholder="Che tipo di partnership cerchi? (logo, stand, sampling, contenuti, ecc.)"
+                      rows={5}
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 resize-none"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={openSponsorMail}
+                      className="mt-1 w-full px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
+                      style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
+                    >
+                      Invia richiesta (email)
+                    </button>
+
+                    <div className="text-xs text-white/55">
+                      Oppure scrivi direttamente:{" "}
+                      <a className="underline underline-offset-4 hover:text-white" href={`mailto:${sponsorEmail}`}>
+                        {sponsorEmail}
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* thin glow bottom */}
+            <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          </div>
+        </div>
+      </section>
+
       {/* COMMUNITY */}
       <section id="community" className="py-16">
         <div className="max-w-6xl mx-auto px-4">
@@ -803,6 +1009,7 @@ export default function LedVelvetCercleMockup() {
           <div className="flex gap-4 text-xs tracking-[0.22em] uppercase text-white/60">
             <a className="hover:text-white" href="#">Instagram</a>
             <a className="hover:text-white" href="#">TikTok</a>
+            <a className="hover:text-white" href="#sponsor">Sponsor</a>
             <a className="hover:text-white" href="#">Press Kit</a>
           </div>
         </div>
