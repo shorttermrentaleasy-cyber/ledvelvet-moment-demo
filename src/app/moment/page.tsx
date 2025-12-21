@@ -82,7 +82,7 @@ export default function LedVelvetCercleMockup() {
   ];
 
   const brand = {
-    logo: "/logo.svg",
+    logo: "/logo.png",
     hero: "/og.jpg",
     heroVideoMp4: "/media/petra_led.mp4",
     heroVideoWebm: "https://upload.wikimedia.org/wikipedia/commons/2/29/Wikimania_beach_party_2.webm",
