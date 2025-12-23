@@ -21,11 +21,11 @@ export async function POST(req: Request) {
     // --- Airtable env ---
     const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
     const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
-    const AIRTABLE_TABLE_SPONSOR_REQUESTS = process.env.AIRTABLE_TABLE_SPONSOR_REQUESTS; // meglio: tbl...
+    const AIRTABLE_TABLE_SPONSORS_REQUESTS = process.env.AIRTABLE_TABLE_SPONSORS_REQUESTS; // meglio: tbl...
 
     if (!AIRTABLE_TOKEN) return badRequest("Missing AIRTABLE_TOKEN env var");
     if (!AIRTABLE_BASE_ID) return badRequest("Missing AIRTABLE_BASE_ID env var");
-    if (!AIRTABLE_TABLE_SPONSOR_REQUESTS) return badRequest("Missing AIRTABLE_TABLE_SPONSOR_REQUESTS env var");
+    if (!AIRTABLE_TABLE_SPONSORS_REQUESTS) return badRequest("Missing AIRTABLE_TABLE_SPONSORS_REQUESTS env var");
 
     // --- SMTP env ---
     const SMTP_HOST = process.env.SMTP_HOST;
@@ -60,15 +60,13 @@ export async function POST(req: Request) {
       budget,
       message: note,                  // note -> message
       source: "website",
-      createdat: new Date().toISOString(),
-
       // SOLO se in Airtable esiste davvero l'opzione "New"
       select: "New",
       // interest type: "Sponsor"  <-- mettilo solo se è una select e l'opzione esiste
     };
 
     const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
-      AIRTABLE_TABLE_SPONSOR_REQUESTS
+      AIRTABLE_TABLE_SPONSORS_REQUESTS
     )}`;
 
     const r = await fetch(url, {
