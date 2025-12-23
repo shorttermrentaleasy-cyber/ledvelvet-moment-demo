@@ -4,12 +4,12 @@ import nodemailer from "nodemailer";
 export const runtime = "nodejs";
 
 type SponsorPayload = {
-  brand: string;   // nel form
-  name: string;    // nel form
+  brand: string; // nel form
+  name: string; // nel form
   email: string;
   phone?: string;
   budget?: string;
-  note?: string;   // nel form
+  note?: string; // nel form
 };
 
 function badRequest(msg: string) {
@@ -21,11 +21,13 @@ export async function POST(req: Request) {
     // --- Airtable env ---
     const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
     const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
-    const AIRTABLE_TABLE_SPONSORS_REQUESTS = process.env.AIRTABLE_TABLE_SPONSORS_REQUESTS; // meglio: tbl...
+    const AIRTABLE_TABLE_SPONSORS_REQUESTS =
+      process.env.AIRTABLE_TABLE_SPONSORS_REQUESTS;
 
     if (!AIRTABLE_TOKEN) return badRequest("Missing AIRTABLE_TOKEN env var");
     if (!AIRTABLE_BASE_ID) return badRequest("Missing AIRTABLE_BASE_ID env var");
-    if (!AIRTABLE_TABLE_SPONSORS_REQUESTS) return badRequest("Missing AIRTABLE_TABLE_SPONSORS_REQUESTS env var");
+    if (!AIRTABLE_TABLE_SPONSORS_REQUESTS)
+      return badRequest("Missing AIRTABLE_TABLE_SPONSORS_REQUESTS env var");
 
     // --- SMTP env ---
     const SMTP_HOST = process.env.SMTP_HOST;
@@ -51,18 +53,17 @@ export async function POST(req: Request) {
     if (!name) return badRequest("Referente obbligatorio");
     if (!email) return badRequest("Email obbligatoria");
 
-    // 1) --- Airtable insert (MAPPING CORRETTO) ---
-    const fields = {
-      company: brand,                 // brand -> company
-      contact: name,                  // name -> contact
+    // 1) --- Airtable insert ---
+    // ATTENZIONE: i nomi dei campi Airtable sono CASE-SENSITIVE.
+    const fields: Record<string, any> = {
+      company: brand, // brand -> company
+      contact: name, // name -> contact
       email,
       phone,
       budget,
-      message: note,                  // note -> message
+      message: note, // note -> message
       source: "website",
-      // SOLO se in Airtable esiste davvero l'opzione "New"
-      select: "New",
-      // interest type: "Sponsor"  <-- mettilo solo se è una select e l'opzione esiste
+      // select: "New", // <-- COMMENTATO per isolare errori (select + opzioni spesso causano 422)
     };
 
     const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
@@ -78,10 +79,22 @@ export async function POST(req: Request) {
       body: JSON.stringify({ records: [{ fields }] }),
     });
 
-    const airtableData = await r.json();
+    // DEBUG: logga SEMPRE la risposta raw di Airtable (fondamentale su Vercel)
+    const airtableText = await r.text();
+    console.error("Airtable response:", r.status, airtableText);
 
     if (!r.ok) {
-      return NextResponse.json({ ok: false, error: "Airtable error", details: airtableData }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Airtable error", details: airtableText },
+        { status: 500 }
+      );
+    }
+
+    let airtableData: any = {};
+    try {
+      airtableData = airtableText ? JSON.parse(airtableText) : {};
+    } catch {
+      airtableData = {};
     }
 
     const recordId = airtableData?.records?.[0]?.id || null;
@@ -118,7 +131,15 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ ok: true, recordId });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: "Server error", details: String(e?.message || e) }, { status: 500 });
+  } catch (err: any) {
+    console.error("SPONSOR_REQUEST_ERROR");
+    console.error("Message:", err?.message);
+    console.error("Status:", err?.statusCode || err?.status);
+    console.error("Error data:", err?.error || err);
+
+    return NextResponse.json(
+      { ok: false, error: err?.message || "Internal error" },
+      { status: 500 }
+    );
   }
 }
