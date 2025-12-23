@@ -4,12 +4,12 @@ import nodemailer from "nodemailer";
 export const runtime = "nodejs";
 
 type SponsorPayload = {
-  brand: string; // nel form
-  name: string; // nel form
+  brand: string;
+  name: string;
   email: string;
   phone?: string;
   budget?: string;
-  note?: string; // nel form
+  note?: string;
 };
 
 function badRequest(msg: string) {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     // --- SMTP env ---
     const SMTP_HOST = process.env.SMTP_HOST;
     const SMTP_PORT = process.env.SMTP_PORT;
-    const SMTP_USER = process.env.SMTP_USER; // sponsor@ledvelvet.com
+    const SMTP_USER = process.env.SMTP_USER;
     const SMTP_PASS = process.env.SMTP_PASS;
 
     if (!SMTP_HOST) return badRequest("Missing SMTP_HOST env var");
@@ -54,16 +54,15 @@ export async function POST(req: Request) {
     if (!email) return badRequest("Email obbligatoria");
 
     // 1) --- Airtable insert ---
-    // ATTENZIONE: i nomi dei campi Airtable sono CASE-SENSITIVE.
     const fields: Record<string, any> = {
-      company: brand, // brand -> company
-      contact: name, // name -> contact
+      company: brand,
+      contact: name,
       email,
       phone,
       budget,
-      message: note, // note -> message
+      message: note,
       source: "website",
-      // select: "New", // <-- COMMENTATO per isolare errori (select + opzioni spesso causano 422)
+      // select: "New",
     };
 
     const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
@@ -79,13 +78,20 @@ export async function POST(req: Request) {
       body: JSON.stringify({ records: [{ fields }] }),
     });
 
-    // DEBUG: logga SEMPRE la risposta raw di Airtable (fondamentale su Vercel)
+    // ✅ Leggiamo SEMPRE text per poterlo ritornare
     const airtableText = await r.text();
-    console.error("Airtable response:", r.status, airtableText);
 
+    // ❗ Se Airtable fallisce, lo vedrai in risposta (anche da Network del browser)
     if (!r.ok) {
       return NextResponse.json(
-        { ok: false, error: "Airtable error", details: airtableText },
+        {
+          ok: false,
+          error: "Airtable error",
+          airtableStatus: r.status,
+          details: airtableText,
+          hint:
+            "Controlla: Base ID, Table name (case-sensitive), Field names (case-sensitive), Select options",
+        },
         { status: 500 }
       );
     }
@@ -132,13 +138,13 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, recordId });
   } catch (err: any) {
-    console.error("SPONSOR_REQUEST_ERROR");
-    console.error("Message:", err?.message);
-    console.error("Status:", err?.statusCode || err?.status);
-    console.error("Error data:", err?.error || err);
-
     return NextResponse.json(
-      { ok: false, error: err?.message || "Internal error" },
+      {
+        ok: false,
+        error: err?.message || "Internal error",
+        // questo aiuta se è un errore runtime vero (non Airtable)
+        debug: String(err),
+      },
       { status: 500 }
     );
   }
