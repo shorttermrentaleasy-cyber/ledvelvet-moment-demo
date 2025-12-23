@@ -3,12 +3,14 @@
 import React, { useMemo, useRef, useState } from "react";
 
 /**
- * LedVelvet – Demo Navigabile (Cercle Moment mockup) – DARK EDITION
- * Mobile fixes:
- * - overlay non blocca i tap (pointer-events-none)
- * - audio toggle iOS-safe (muted=false + play() nello stesso tap)
- * - fullscreen iOS-safe (webkitEnterFullscreen) + fallback requestFullscreen
- * + Sponsor area (form + CTA + anchor in menu)
+ * LedVelvet – /moment – DARK EDITION (single-file)
+ * Includes:
+ * - Dark neon UI (black/red)
+ * - Hero video with mobile-friendly audio + fullscreen controls
+ * - Upcoming + Past events (mock data)
+ * - Membership (mock)
+ * - Shop + Cart (demo)
+ * - Sponsor Area with form -> /api/sponsor-request (Airtable + email handled server-side)
  */
 
 type Level = "BASE" | "VIP" | "FOUNDER";
@@ -30,6 +32,27 @@ type CartItem = {
   size?: string;
 };
 
+type EventItem = {
+  id: string;
+  name: string;
+  city: string;
+  date: string;
+  href: string;
+  tag: string;
+  posterSrc: string;
+  videoMp4?: string | null;
+  status: "upcoming" | "past";
+};
+
+type SponsorForm = {
+  brand: string;
+  name: string;
+  email: string;
+  phone: string;
+  budget: string;
+  note: string;
+};
+
 function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
@@ -38,7 +61,7 @@ function formatEUR(n: number) {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
 }
 
-export default function LedVelvetCercleMockup() {
+export default function MomentPage() {
   const palette = {
     bg: "#050508",
     surface: "#0B0B10",
@@ -50,22 +73,21 @@ export default function LedVelvetCercleMockup() {
     accent2: "#FF2E63",
   } as const;
 
+  const brand = {
+    logo: "/logo.png",
+    heroPoster: "/og.jpg",
+    heroVideoMp4: "/media/petra_led.mp4",
+    heroVideoWebm: "https://upload.wikimedia.org/wikipedia/commons/2/29/Wikimania_beach_party_2.webm",
+  };
+
   const [user, setUser] = useState<{ email: string | null; level?: Level; kyc?: boolean }>({ email: null });
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showKyc, setShowKyc] = useState(false);
-  const [showQR, setShowQR] = useState(false);
   const [selectedSize, setSelectedSize] = useState<Record<string, string>>({});
   const [showCart, setShowCart] = useState(false);
   const [cartTimerMin, setCartTimerMin] = useState(10);
 
-  // VIDEO / AUDIO
-  const [muted, setMuted] = useState(true);
-  const [tapHint, setTapHint] = useState<string | null>(null);
-  const heroVideoRef = useRef<HTMLVideoElement | null>(null);
-
-  // SPONSOR form (client-side only, mailto)
-  const sponsorEmail = "sponsor@ledvelvet.com";
-  const [sponsor, setSponsor] = useState({
+  const [sponsor, setSponsor] = useState<SponsorForm>({
     brand: "",
     name: "",
     email: "",
@@ -73,111 +95,133 @@ export default function LedVelvetCercleMockup() {
     budget: "",
     note: "",
   });
+  const [sponsorSending, setSponsorSending] = useState(false);
+  const [sponsorSentOk, setSponsorSentOk] = useState<string | null>(null);
+  const [sponsorSentErr, setSponsorSentErr] = useState<string | null>(null);
 
-  const isIOS = () => {
-    if (typeof navigator === "undefined") return false;
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-  };
+  const [muted, setMuted] = useState(true);
+  const [fsErr, setFsErr] = useState<string | null>(null);
+  const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
   async function toggleMute() {
-    const v = heroVideoRef.current;
-    if (!v) return;
-
-    // IMPORTANT: su iOS per attivare l’audio bisogna farlo dentro il tap:
-    // 1) set muted=false
-    // 2) play()
-    const nextMuted = !muted;
-
-    setMuted(nextMuted);
-    v.muted = nextMuted;
-
+    setFsErr(null);
     try {
-      if (!nextMuted) {
-        v.volume = 1;
-        await v.play();
-        setTapHint(null);
-      } else {
-        setTapHint(null);
-      }
+      const v = heroVideoRef.current;
+      if (!v) return;
+
+      const nextMuted = !muted;
+      v.muted = nextMuted;
+      v.volume = nextMuted ? 0 : 1;
+      setMuted(nextMuted);
+
+      await v.play();
     } catch {
-      setTapHint(isIOS() ? "Su iPhone: se l’audio non parte, riprova a toccare Audio." : "Audio bloccato dal browser: riprova.");
-      setMuted(true);
-      v.muted = true;
+      setFsErr("Su mobile l'audio può essere bloccato: prova a toccare il video e poi riprova.");
     }
   }
 
   function requestHeroFullscreen() {
-    const v = heroVideoRef.current as any;
-    if (!v) return;
+    setFsErr(null);
+    const el = heroVideoRef.current as any;
+    if (!el) return;
 
     try {
-      // iOS Safari: fullscreen “vero” solo così
-      if (v.webkitEnterFullscreen) {
-        v.webkitEnterFullscreen();
+      if (typeof el.webkitEnterFullscreen === "function") {
+        el.webkitEnterFullscreen();
         return;
       }
+    } catch {}
 
-      // standard fullscreen (desktop + molti Android)
-      const el: any = v;
-      const fn =
-        el.requestFullscreen ||
-        el.webkitRequestFullscreen ||
-        el.mozRequestFullScreen ||
-        el.msRequestFullscreen ||
-        null;
+    const fn =
+      el.requestFullscreen ||
+      el.webkitRequestFullscreen ||
+      el.mozRequestFullScreen ||
+      el.msRequestFullscreen ||
+      null;
 
+    try {
       fn?.call(el);
     } catch {
-      // ignore
+      setFsErr("Fullscreen non supportato su questo dispositivo/browser.");
     }
   }
 
-  function openSponsorMail() {
-    const subject = encodeURIComponent("LedVelvet – Richiesta Sponsorship");
-    const body = encodeURIComponent(
-      [
-        `Brand/Azienda: ${sponsor.brand || "-"}`,
-        `Referente: ${sponsor.name || "-"}`,
-        `Email: ${sponsor.email || "-"}`,
-        `Telefono: ${sponsor.phone || "-"}`,
-        `Budget indicativo: ${sponsor.budget || "-"}`,
-        "",
-        "Messaggio:",
-        sponsor.note || "-",
-        "",
-        "Inviato dal sito LedVelvet (/moment).",
-      ].join("\n")
-    );
-
-    // Mail client
-    window.location.href = `mailto:${sponsorEmail}?subject=${subject}&body=${body}`;
-  }
-
   const products: Product[] = [
-    { sku: "LV-TEE-BLK", name: "LedVelvet Tee – Black", price: 34, sizes: ["S", "M", "L", "XL"], stock: { S: 12, M: 20, L: 14, XL: 8 }, image: "/shop/tee.png" },
-    { sku: "LV-HAT", name: "LedVelvet Cap", price: 29, sizes: ["UNI"], stock: { UNI: 30 }, image: "/shop/cap.png" },
-    { sku: "LV-SCARF", name: "LedVelvet Scarf", price: 49, sizes: ["UNI"], stock: { UNI: 15 }, image: "/shop/scarf.png" },
+    {
+      sku: "LV-TEE-BLK",
+      name: "LedVelvet Tee – Black",
+      price: 34,
+      sizes: ["S", "M", "L", "XL"],
+      stock: { S: 12, M: 20, L: 14, XL: 8 },
+      image: "/shop/tee.png",
+    },
+    {
+      sku: "LV-HAT",
+      name: "LedVelvet Cap",
+      price: 29,
+      sizes: ["UNI"],
+      stock: { UNI: 30 },
+      image: "/shop/cap.png",
+    },
+    {
+      sku: "LV-SCARF",
+      name: "LedVelvet Scarf",
+      price: 49,
+      sizes: ["UNI"],
+      stock: { UNI: 15 },
+      image: "/shop/scarf.png",
+    },
   ];
 
-  const brand = {
-    logo: "/logo.png",
-    hero: "/og.jpg",
-    heroVideoMp4: "/media/petra_led.mp4",
-    heroVideoWebm: "https://upload.wikimedia.org/wikipedia/commons/2/29/Wikimania_beach_party_2.webm",
-  };
-
-  const events = [
-    { id: "evt1", name: "CRYPTA – Ethereal Clubbing", city: "Milano", date: "25 Gen 2026", href: "#", tag: "LISTE & TICKETS", videoSrc: null as any, posterSrc: "/og.jpg" },
-    { id: "evt2", name: "HANGAR – Secret Night", city: "Toscana", date: "10 Feb 2026", href: "#", tag: "LIMITED", videoSrc: null as any, posterSrc: "/og.jpg" },
+  const events: EventItem[] = [
+    {
+      id: "evt1",
+      name: "CRYPTA – Ethereal Clubbing",
+      city: "Milano",
+      date: "25 Gen 2026",
+      href: "#",
+      tag: "LISTE & TICKETS",
+      posterSrc: "/og.jpg",
+      videoMp4: null,
+      status: "upcoming",
+    },
+    {
+      id: "evt2",
+      name: "HANGAR – Secret Night",
+      city: "Toscana",
+      date: "10 Feb 2026",
+      href: "#",
+      tag: "LIMITED",
+      posterSrc: "/og.jpg",
+      videoMp4: null,
+      status: "upcoming",
+    },
+    {
+      id: "evt3",
+      name: "VELVET ROOM – Afterhours",
+      city: "Firenze",
+      date: "12 Ott 2025",
+      href: "#",
+      tag: "SOLD OUT",
+      posterSrc: "/og.jpg",
+      videoMp4: null,
+      status: "past",
+    },
+    {
+      id: "evt4",
+      name: "NEON GROVE – Secret Garden",
+      city: "Pisa",
+      date: "20 Lug 2025",
+      href: "#",
+      tag: "RECAP",
+      posterSrc: "/og.jpg",
+      videoMp4: null,
+      status: "past",
+    },
   ];
 
-  // Sponsor “logo wall” demo (metti i tuoi asset in /public/sponsors/*)
-  const sponsorWall = [
-    { name: "Red Bull (demo)", role: "Energy Partner", src: "/sponsors/sponsor1.png" },
-    { name: "Jägermeister (demo)", role: "Night Partner", src: "/sponsors/sponsor2.png" },
-    { name: "Local Club (demo)", role: "Venue Partner", src: "/sponsors/sponsor3.png" },
-    { name: "Fashion Label (demo)", role: "Style Partner", src: "/sponsors/sponsor4.png" },
-  ];
+  const upcomingEvents = events.filter((e) => e.status === "upcoming");
+  const pastEvents = events.filter((e) => e.status === "past");
 
   const { subtotal, discountRate, discount, shipping, total } = useMemo(() => {
     const subtotal = cart.reduce((s, i) => s + i.qty * i.price, 0);
@@ -185,7 +229,7 @@ export default function LedVelvetCercleMockup() {
     const discountRate = level === "FOUNDER" ? 0.15 : level === "VIP" ? 0.1 : level === "BASE" ? 0.05 : 0;
     const discount = Math.round(subtotal * discountRate * 100) / 100;
     const shipping = subtotal - discount > 0 && subtotal - discount < 60 ? 5 : 0;
-    const total = Math.max(0, Math.round(((subtotal - discount) + shipping) * 100) / 100);
+    const total = Math.max(0, Math.round((subtotal - discount + shipping) * 100) / 100);
     return { subtotal, discountRate, discount, shipping, total };
   }, [cart, user.level, user.email]);
 
@@ -231,6 +275,48 @@ export default function LedVelvetCercleMockup() {
     setCart((c) => c.filter((_, i) => i !== index));
   }
 
+  async function submitSponsorRequest() {
+    setSponsorSentOk(null);
+    setSponsorSentErr(null);
+
+    if (!sponsor.brand.trim()) return setSponsorSentErr("Inserisci Brand/Azienda.");
+    if (!sponsor.name.trim()) return setSponsorSentErr("Inserisci il referente.");
+    if (!sponsor.email.trim()) return setSponsorSentErr("Inserisci l’email.");
+
+    setSponsorSending(true);
+    try {
+      const res = await fetch("/api/sponsor-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sponsor),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data?.ok) {
+        const msg =
+          data?.error ||
+          data?.details?.error?.message ||
+          "Errore invio richiesta. Controlla configurazione Airtable/SMTP.";
+        throw new Error(msg);
+      }
+
+      setSponsorSentOk("Richiesta inviata! Ti risponderemo via email a breve.");
+      setSponsor({
+        brand: "",
+        name: "",
+        email: "",
+        phone: "",
+        budget: "",
+        note: "",
+      });
+    } catch (err: any) {
+      setSponsorSentErr(err?.message || "Errore invio richiesta.");
+    } finally {
+      setSponsorSending(false);
+    }
+  }
+
   const tier = user.level || (user.email ? "BASE" : undefined);
   const tierLabel = tier ? `SOCIO ${tier}` : "VISITATORE";
 
@@ -248,7 +334,6 @@ export default function LedVelvetCercleMockup() {
         ["--accent2" as any]: palette.accent2,
       }}
     >
-      {/* Soft neon ambience */}
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 opacity-60"
@@ -258,7 +343,6 @@ export default function LedVelvetCercleMockup() {
         }}
       />
 
-      {/* Top utility */}
       <div className="sticky top-0 z-50 border-b border-white/10 bg-[var(--surface)]/85 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-xs tracking-wide">
           <div className="flex items-center gap-2 text-[var(--muted)]">
@@ -268,6 +352,7 @@ export default function LedVelvetCercleMockup() {
               className="underline underline-offset-4 hover:text-[var(--text)]"
               onClick={() => setCartTimerMin((m) => (m >= 30 ? 10 : m + 5))}
               title="Demo: incrementa timer"
+              type="button"
             >
               Add time
             </button>
@@ -277,6 +362,7 @@ export default function LedVelvetCercleMockup() {
             <button
               className="px-3 py-1 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10"
               onClick={() => setShowCart(true)}
+              type="button"
             >
               Cart ({formatEUR(total)})
             </button>
@@ -284,7 +370,6 @@ export default function LedVelvetCercleMockup() {
         </div>
       </div>
 
-      {/* NAV */}
       <header className="sticky top-8 z-40 bg-[var(--surface)]/60 backdrop-blur border-b border-white/10">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <a href="#home" className="flex items-center gap-3">
@@ -295,10 +380,10 @@ export default function LedVelvetCercleMockup() {
           <nav className="hidden md:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
             <a href="#home" className="hover:text-[var(--text)]">Home</a>
             <a href="#eventi" className="hover:text-[var(--text)]">Momenti</a>
+            <a href="#past" className="hover:text-[var(--text)]">Past events</a>
             <a href="#membership" className="hover:text-[var(--text)]">Membership</a>
             <a href="#shop" className="hover:text-[var(--text)]">Shop</a>
             <a href="#sponsor" className="hover:text-[var(--text)]">Sponsor</a>
-            <a href="#community" className="hover:text-[var(--text)]">Community</a>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -306,6 +391,7 @@ export default function LedVelvetCercleMockup() {
               <button
                 onClick={() => setUser({ email: "demo@ledvelvet.it", level: "BASE" })}
                 className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
+                type="button"
               >
                 Accedi (demo)
               </button>
@@ -323,6 +409,7 @@ export default function LedVelvetCercleMockup() {
                 <button
                   onClick={() => setUser({ email: null })}
                   className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
+                  type="button"
                 >
                   Esci
                 </button>
@@ -332,7 +419,6 @@ export default function LedVelvetCercleMockup() {
         </div>
       </header>
 
-      {/* HERO */}
       <section id="home" className="pt-6">
         <div className="max-w-6xl mx-auto px-4">
           <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[var(--surface2)]">
@@ -340,7 +426,7 @@ export default function LedVelvetCercleMockup() {
               <video
                 ref={heroVideoRef}
                 className="absolute inset-0 z-10 h-full w-full object-cover"
-                poster={brand.hero}
+                poster={brand.heroPoster}
                 autoPlay
                 loop
                 muted={muted}
@@ -351,17 +437,11 @@ export default function LedVelvetCercleMockup() {
                 <source src={brand.heroVideoWebm} type="video/webm" />
               </video>
 
-              <img src={brand.hero} alt="LedVelvet" className="absolute inset-0 z-0 h-full w-full object-cover" loading="eager" />
+              <img src={brand.heroPoster} alt="LedVelvet" className="absolute inset-0 z-0 h-full w-full object-cover" loading="eager" />
+              <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/95 via-black/55 to-black/15" />
+              <div className="absolute inset-0 z-20 opacity-60" style={{ background: "radial-gradient(800px circle at 20% 60%, rgba(225,29,72,0.18), transparent 60%)" }} />
 
-              {/* Overlay (NON blocca tap) */}
-              <div className="absolute inset-0 z-20 pointer-events-none bg-gradient-to-t from-black/95 via-black/55 to-black/15" />
-              <div
-                className="absolute inset-0 z-20 pointer-events-none opacity-60"
-                style={{ background: "radial-gradient(800px circle at 20% 60%, rgba(225,29,72,0.18), transparent 60%)" }}
-              />
-
-              {/* Controls */}
-              <div className="absolute right-3 top-3 z-40 flex flex-col gap-2 pointer-events-auto">
+              <div className="absolute right-3 top-3 z-40 flex flex-col gap-2">
                 <button
                   type="button"
                   onClick={toggleMute}
@@ -370,7 +450,6 @@ export default function LedVelvetCercleMockup() {
                 >
                   {muted ? "Audio off" : "Audio on"}
                 </button>
-
                 <button
                   type="button"
                   onClick={requestHeroFullscreen}
@@ -379,22 +458,18 @@ export default function LedVelvetCercleMockup() {
                 >
                   Fullscreen
                 </button>
-
-                {tapHint && (
-                  <div
-                    className="mt-1 max-w-[210px] rounded-2xl border border-white/10 bg-black/55 px-3 py-2 text-[10px] leading-snug text-white/80"
-                    style={{ backdropFilter: "blur(10px)" as any }}
-                  >
-                    {tapHint}
-                  </div>
-                )}
               </div>
+
+              {fsErr && (
+                <div className="absolute left-3 right-3 bottom-3 z-40 rounded-2xl border border-white/10 bg-black/60 p-3 text-xs text-white/75">
+                  {fsErr}
+                </div>
+              )}
             </div>
 
-            {/* Content layer */}
-            <div className="absolute inset-0 z-30 flex items-end text-white pointer-events-none">
+            <div className="absolute inset-0 z-30 flex items-end text-white">
               <div className="w-full p-4 sm:p-6 md:p-10">
-                <div className="flex flex-col gap-3 max-w-3xl rounded-[24px] bg-black/55 backdrop-blur-md border border-white/10 p-4 sm:p-6 md:p-7 pointer-events-auto">
+                <div className="flex flex-col gap-3 max-w-3xl rounded-[24px] bg-black/55 backdrop-blur-md border border-white/10 p-4 sm:p-6 md:p-7">
                   <div className="text-[10px] sm:text-xs tracking-[0.22em] uppercase text-white/80">
                     Ethereal clubbing in unconventional places
                   </div>
@@ -430,22 +505,14 @@ export default function LedVelvetCercleMockup() {
                     >
                       Shop the drop
                     </a>
-
-                    <a
-                      href="#sponsor"
-                      className="w-full sm:w-auto px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30 text-center"
-                    >
-                      Become a sponsor
-                    </a>
                   </div>
                 </div>
 
-                <div className="mt-4 sm:mt-6 h-px w-full max-w-3xl bg-gradient-to-r from-transparent via-white/12 to-transparent pointer-events-none" />
+                <div className="mt-4 sm:mt-6 h-px w-full max-w-3xl bg-gradient-to-r from-transparent via-white/12 to-transparent" />
               </div>
             </div>
           </div>
 
-          {/* Feature bullets */}
           <div className="grid md:grid-cols-3 gap-4 mt-10">
             {[
               { t: "Once in a lifetime", d: "Location particolari, atmosfere rare, dettagli curati." },
@@ -461,7 +528,6 @@ export default function LedVelvetCercleMockup() {
         </div>
       </section>
 
-      {/* EVENTI / MOMENTI */}
       <section id="eventi" className="py-16">
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex items-end justify-between gap-4">
@@ -473,7 +539,7 @@ export default function LedVelvetCercleMockup() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6 mt-8">
-            {events.map((e) => (
+            {upcomingEvents.map((e) => (
               <article key={e.id} className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
                 <div className="relative aspect-[16/9] bg-black">
                   <video
@@ -485,17 +551,14 @@ export default function LedVelvetCercleMockup() {
                     playsInline
                     preload="metadata"
                   >
-                    <source src={brand.heroVideoMp4} type="video/mp4" />
+                    <source src={e.videoMp4 || brand.heroVideoMp4} type="video/mp4" />
                     <source src={brand.heroVideoWebm} type="video/webm" />
                   </video>
 
                   <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-0 h-full w-full object-cover" loading="lazy" />
 
-                  <div className="absolute inset-0 z-20 pointer-events-none bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
-                  <div
-                    className="absolute inset-0 z-20 pointer-events-none opacity-70"
-                    style={{ background: "radial-gradient(700px circle at 20% 80%, rgba(225,29,72,0.14), transparent 60%)" }}
-                  />
+                  <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+                  <div className="absolute inset-0 z-20 opacity-70" style={{ background: "radial-gradient(700px circle at 20% 80%, rgba(225,29,72,0.14), transparent 60%)" }} />
                 </div>
 
                 <div className="p-6">
@@ -522,21 +585,65 @@ export default function LedVelvetCercleMockup() {
         </div>
       </section>
 
-      {/* MEMBERSHIP */}
-      <section id="membership" className="py-16 border-y border-white/10 bg-[var(--surface)]">
+      <section id="past" className="py-16 border-y border-white/10 bg-[var(--surface)]">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-xs tracking-[0.22em] uppercase text-white/70">Recap</div>
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Past Events</h2>
+          <p className="mt-3 text-white/65 text-sm">
+            Una timeline “di credibilità”: mostra cosa avete già fatto (foto/recap/video).
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-6 mt-8">
+            {pastEvents.map((e) => (
+              <article key={e.id} className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
+                <div className="relative aspect-[16/9] bg-black">
+                  <img src={e.posterSrc} alt={e.name} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
+                  <div className="absolute left-4 top-4 px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/40 text-white/80">
+                    {e.tag}
+                  </div>
+                </div>
+                <div className="p-6">
+                  <h3 className="text-xl font-semibold">{e.name}</h3>
+                  <div className="mt-2 text-sm text-white/65">{e.city} • {e.date}</div>
+                  <div className="mt-4 flex gap-2">
+                    <a
+                      href={e.href}
+                      className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
+                    >
+                      Gallery
+                    </a>
+                    <a
+                      href={e.href}
+                      className="px-4 py-2 rounded-full bg-white/10 text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)]"
+                      style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.06) inset" }}
+                    >
+                      Watch recap
+                    </a>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="membership" className="py-16">
         <div className="max-w-6xl mx-auto px-4">
           <div className="max-w-2xl">
             <div className="text-xs tracking-[0.22em] uppercase text-white/70">What is a membership?</div>
             <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Membership APS</h2>
-            <p className="mt-4 text-white/70">Onboarding con verifica documento (KYC light), tessera digitale con QR e benefici per livello.</p>
+            <p className="mt-4 text-white/70">
+              Onboarding con verifica documento (KYC light), tessera digitale con benefici per livello.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 mt-10">
-            {[
+            {([
               { code: "BASE" as const, price: 39, perks: ["Tessera digitale", "Pre-sale 15'", "Sconto Shop 5%"] },
               { code: "VIP" as const, price: 99, perks: ["Priority list", "Pre-sale 60'", "Sconto Shop 10%", "Eventi solo soci"] },
               { code: "FOUNDER" as const, price: 199, perks: ["Badge Founder", "Inviti speciali", "Sconto Shop 15%", "Meet & Greet"] },
-            ].map((m) => (
+            ]).map((m) => (
               <div
                 key={m.code}
                 className="rounded-[28px] border border-white/10 bg-[var(--surface2)] p-6 flex flex-col"
@@ -560,6 +667,7 @@ export default function LedVelvetCercleMockup() {
                   <button
                     onClick={() => setShowKyc(true)}
                     className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
+                    type="button"
                   >
                     KYC
                   </button>
@@ -568,6 +676,7 @@ export default function LedVelvetCercleMockup() {
                     onClick={() => alert(`Checkout membership ${m.code} (demo)`)}
                     className="px-4 py-2 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
                     style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
+                    type="button"
                   >
                     Join
                   </button>
@@ -584,7 +693,7 @@ export default function LedVelvetCercleMockup() {
                     <div className="text-xs tracking-[0.22em] uppercase text-white/60">KYC</div>
                     <h4 className="text-xl font-semibold mt-1">Dati Socio</h4>
                   </div>
-                  <button className="px-3 py-1 rounded-full border border-white/15 text-xs hover:bg-white/10" onClick={() => setShowKyc(false)}>
+                  <button className="px-3 py-1 rounded-full border border-white/15 text-xs hover:bg-white/10" onClick={() => setShowKyc(false)} type="button">
                     Chiudi
                   </button>
                 </div>
@@ -611,17 +720,6 @@ export default function LedVelvetCercleMockup() {
                     className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-white/80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
                   />
 
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <label className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-sm text-white/70">
-                      Documento fronte
-                      <input type="file" className="block mt-2 text-sm text-white/70" />
-                    </label>
-                    <label className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-sm text-white/70">
-                      Documento retro
-                      <input type="file" className="block mt-2 text-sm text-white/70" />
-                    </label>
-                  </div>
-
                   <label className="text-sm text-white/70 flex items-center gap-2">
                     <input type="checkbox" /> Consenso privacy/GDPR
                   </label>
@@ -631,6 +729,7 @@ export default function LedVelvetCercleMockup() {
                   <button
                     className="px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
                     onClick={() => setShowKyc(false)}
+                    type="button"
                   >
                     Annulla
                   </button>
@@ -642,6 +741,7 @@ export default function LedVelvetCercleMockup() {
                       setShowKyc(false);
                     }}
                     style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.22)" }}
+                    type="button"
                   >
                     Invia
                   </button>
@@ -652,7 +752,6 @@ export default function LedVelvetCercleMockup() {
         </div>
       </section>
 
-      {/* SHOP */}
       <section id="shop" className="py-16 border-y border-white/10 bg-[var(--surface)]">
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex items-end justify-between gap-4">
@@ -668,6 +767,7 @@ export default function LedVelvetCercleMockup() {
               className="px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
               onClick={() => setShowCart(true)}
               style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
+              type="button"
             >
               Checkout ({formatEUR(total)})
             </button>
@@ -683,7 +783,7 @@ export default function LedVelvetCercleMockup() {
                     className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/15 pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/15" />
                   <div
                     className="absolute left-4 top-4 px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/40 text-white/80"
                     style={{ backdropFilter: "blur(8px)" as any }}
@@ -719,6 +819,7 @@ export default function LedVelvetCercleMockup() {
                                 : "border-white/15 text-white/80 hover:bg-white/10 hover:border-white/30",
                               !inStock && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-inherit"
                             )}
+                            type="button"
                           >
                             {s}
                           </button>
@@ -734,6 +835,7 @@ export default function LedVelvetCercleMockup() {
                     onClick={() => addToCart(p)}
                     className="mt-5 w-full px-5 py-3 rounded-full bg-white/10 text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)]"
                     style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset" }}
+                    type="button"
                   >
                     Add to cart
                   </button>
@@ -751,7 +853,7 @@ export default function LedVelvetCercleMockup() {
                     <h3 className="text-2xl font-semibold mt-1">Il tuo carrello</h3>
                     <div className="mt-2 text-xs text-white/55">Reservation time: {cartTimerMin} min (demo)</div>
                   </div>
-                  <button className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10" onClick={() => setShowCart(false)}>
+                  <button className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10" onClick={() => setShowCart(false)} type="button">
                     Chiudi
                   </button>
                 </div>
@@ -767,18 +869,18 @@ export default function LedVelvetCercleMockup() {
                           </div>
                           <div className="text-xs text-white/55 mt-1">{formatEUR(i.price)} cad.</div>
                         </div>
-                        <button className="text-xs underline underline-offset-4 text-white/60 hover:text-white" onClick={() => removeFromCart(idx)}>
+                        <button className="text-xs underline underline-offset-4 text-white/60 hover:text-white" onClick={() => removeFromCart(idx)} type="button">
                           Rimuovi
                         </button>
                       </div>
 
                       <div className="mt-4 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => decQty(idx)}>
+                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => decQty(idx)} type="button">
                             -
                           </button>
                           <div className="w-10 text-center text-sm">{i.qty}</div>
-                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => incQty(idx)}>
+                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => incQty(idx)} type="button">
                             +
                           </button>
                         </div>
@@ -798,6 +900,7 @@ export default function LedVelvetCercleMockup() {
                     className="w-full mt-3 px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
                     onClick={() => alert(`Redirect a Stripe Checkout (demo) – Totale ${formatEUR(total)}`)}
                     style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
+                    type="button"
                   >
                     Procedi al pagamento
                   </button>
@@ -808,193 +911,94 @@ export default function LedVelvetCercleMockup() {
         </div>
       </section>
 
-      {/* SPONSOR */}
       <section id="sponsor" className="py-16">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
-            <div className="p-8 md:p-10">
-              <div className="grid md:grid-cols-2 gap-10 items-start">
-                <div>
-                  <div className="text-xs tracking-[0.22em] uppercase text-white/70">Partnership</div>
-                  <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Sponsor & Brand Activation</h2>
-                  <p className="mt-4 text-white/70">
-                    LedVelvet è un format giovane: esperienze, musica e visual. Se vuoi diventare sponsor, trovi qui una richiesta rapida.
-                    Ti rispondiamo via email con media kit e pacchetti.
-                  </p>
-
-                  <div className="mt-6 grid sm:grid-cols-2 gap-4">
-                    {[
-                      { t: "Brand visibility", d: "Logo wall, credits e contenuti social dedicati." },
-                      { t: "On-site activation", d: "Corner esperienziali, sampling e photo moment." },
-                      { t: "Content package", d: "Reels, stories e recap dell’evento." },
-                      { t: "Community reach", d: "Newsletter e audience profilata." },
-                    ].map((x) => (
-                      <div key={x.t} className="rounded-[22px] border border-white/10 bg-black/25 p-5">
-                        <div className="text-xs tracking-[0.22em] uppercase text-white/80">{x.t}</div>
-                        <div className="mt-2 text-sm text-white/70">{x.d}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-7 flex flex-wrap gap-2">
-                    <a
-                      href={`mailto:${sponsorEmail}?subject=${encodeURIComponent("LedVelvet – Sponsorship")}`}
-                      className="px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
-                      style={{ boxShadow: "0 12px 38px rgba(225,29,72,0.22)" }}
-                    >
-                      Scrivi a {sponsorEmail}
-                    </a>
-
-                    <a
-                      href="#community"
-                      className="px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
-                    >
-                      Join the community
-                    </a>
-                  </div>
-
-                  {/* Sponsor wall demo */}
-                  <div className="mt-10">
-                    <div className="text-xs tracking-[0.22em] uppercase text-white/60">Current sponsors (demo)</div>
-                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {sponsorWall.map((s) => (
-                        <div key={s.name} className="rounded-[18px] border border-white/10 bg-black/25 p-3 flex flex-col items-center text-center">
-                          <div className="w-full aspect-[4/3] rounded-2xl bg-black/30 border border-white/10 overflow-hidden grid place-items-center">
-                            {/* Se non hai ancora i file, resterà un box “vuoto” ma bello */}
-                            <img
-                              src={s.src}
-                              alt={s.name}
-                              className="w-full h-full object-contain p-2 opacity-90"
-                              onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).style.display = "none";
-                              }}
-                            />
-                            <div className="text-[10px] text-white/45 px-2">logo</div>
-                          </div>
-                          <div className="mt-2 text-[10px] tracking-[0.22em] uppercase text-white/70">{s.role}</div>
-                          <div className="mt-1 text-xs text-white/85 font-medium">{s.name}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Form */}
-                <div className="rounded-[26px] border border-white/10 bg-black/25 p-6 md:p-7">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs tracking-[0.22em] uppercase text-white/60">Sponsor request</div>
-                      <h3 className="text-xl font-semibold mt-1">Richiedi info</h3>
-                      <p className="mt-2 text-sm text-white/70">
-                        Compila 30 secondi. Si aprirà la tua mail con i dati già pronti.
-                      </p>
-                    </div>
-                    <div
-                      className="px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/30 text-white/70"
-                      style={{ backdropFilter: "blur(10px)" as any }}
-                    >
-                      demo
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-3">
-                    <input
-                      value={sponsor.brand}
-                      onChange={(e) => setSponsor((p) => ({ ...p, brand: e.target.value }))}
-                      placeholder="Brand / Azienda"
-                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                    />
-
-                    <div className="grid md:grid-cols-2 gap-3">
-                      <input
-                        value={sponsor.name}
-                        onChange={(e) => setSponsor((p) => ({ ...p, name: e.target.value }))}
-                        placeholder="Referente"
-                        className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                      />
-                      <input
-                        value={sponsor.phone}
-                        onChange={(e) => setSponsor((p) => ({ ...p, phone: e.target.value }))}
-                        placeholder="Telefono (opzionale)"
-                        className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                      />
-                    </div>
-
-                    <input
-                      value={sponsor.email}
-                      onChange={(e) => setSponsor((p) => ({ ...p, email: e.target.value }))}
-                      placeholder="Email"
-                      inputMode="email"
-                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                    />
-
-                    <input
-                      value={sponsor.budget}
-                      onChange={(e) => setSponsor((p) => ({ ...p, budget: e.target.value }))}
-                      placeholder="Budget indicativo (es: 1.000€ – 5.000€)"
-                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                    />
-
-                    <textarea
-                      value={sponsor.note}
-                      onChange={(e) => setSponsor((p) => ({ ...p, note: e.target.value }))}
-                      placeholder="Che tipo di partnership cerchi? (logo, stand, sampling, contenuti, ecc.)"
-                      rows={5}
-                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 resize-none"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={openSponsorMail}
-                      className="mt-1 w-full px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
-                      style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
-                    >
-                      Invia richiesta (email)
-                    </button>
-
-                    <div className="text-xs text-white/55">
-                      Oppure scrivi direttamente:{" "}
-                      <a className="underline underline-offset-4 hover:text-white" href={`mailto:${sponsorEmail}`}>
-                        {sponsorEmail}
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* thin glow bottom */}
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-          </div>
-        </div>
-      </section>
-
-      {/* COMMUNITY */}
-      <section id="community" className="py-16">
-        <div className="max-w-6xl mx-auto px-4">
           <div className="rounded-[28px] border border-white/10 bg-[var(--surface2)] p-8 md:p-10">
-            <div className="grid md:grid-cols-2 gap-8 items-center">
+            <div className="grid md:grid-cols-2 gap-10 items-start">
               <div>
-                <div className="text-xs tracking-[0.22em] uppercase text-white/70">Be part of the circle</div>
-                <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Community LedVelvet</h2>
-                <p className="mt-4 text-white/70">Newsletter (no spam): pre-sale, drop merch, location reveal e inviti.</p>
+                <div className="text-xs tracking-[0.22em] uppercase text-white/70">Become a partner</div>
+                <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Sponsor Area</h2>
+                <p className="mt-4 text-white/70">
+                  Compila il form: la richiesta viene salvata su Airtable e inviata via email al team.
+                </p>
+
+                <div className="mt-6 rounded-[22px] border border-white/10 bg-black/25 p-5">
+                  <div className="text-xs tracking-[0.22em] uppercase text-white/60">Cosa offriamo</div>
+                  <ul className="mt-3 space-y-2 text-sm text-white/75">
+                    <li>• Visibilità su pagina evento + social + recap.</li>
+                    <li>• Product placement e corner in location (quando possibile).</li>
+                    <li>• Pacchetti personalizzati per brand (budget-based).</li>
+                  </ul>
+                </div>
               </div>
 
-              <div className="rounded-[22px] border border-white/10 bg-black/25 p-5">
-                <div className="text-xs tracking-[0.22em] uppercase text-white/60">Subscribe</div>
-                <div className="mt-3 grid gap-3">
+              <div className="rounded-[22px] border border-white/10 bg-black/25 p-6">
+                <div className="text-xs tracking-[0.22em] uppercase text-white/60">Sponsor request</div>
+
+                <div className="mt-4 grid gap-3">
                   <input
-                    placeholder="Email"
+                    value={sponsor.brand}
+                    onChange={(e) => setSponsor((s) => ({ ...s, brand: e.target.value }))}
+                    placeholder="Brand / Azienda *"
                     className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
                   />
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <input
+                      value={sponsor.name}
+                      onChange={(e) => setSponsor((s) => ({ ...s, name: e.target.value }))}
+                      placeholder="Referente *"
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                    />
+                    <input
+                      value={sponsor.phone}
+                      onChange={(e) => setSponsor((s) => ({ ...s, phone: e.target.value }))}
+                      placeholder="Telefono (opzionale)"
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                    />
+                  </div>
+                  <input
+                    value={sponsor.email}
+                    onChange={(e) => setSponsor((s) => ({ ...s, email: e.target.value }))}
+                    placeholder="Email *"
+                    className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                  />
+                  <input
+                    value={sponsor.budget}
+                    onChange={(e) => setSponsor((s) => ({ ...s, budget: e.target.value }))}
+                    placeholder="Budget indicativo (opzionale)"
+                    className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                  />
+                  <textarea
+                    value={sponsor.note}
+                    onChange={(e) => setSponsor((s) => ({ ...s, note: e.target.value }))}
+                    placeholder="Note / obiettivi / idee (opzionale)"
+                    rows={5}
+                    className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 resize-none"
+                  />
+
+                  {sponsorSentErr && (
+                    <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+                      {sponsorSentErr}
+                    </div>
+                  )}
+                  {sponsorSentOk && (
+                    <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100">
+                      {sponsorSentOk}
+                    </div>
+                  )}
+
                   <button
-                    className="px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
-                    onClick={() => alert("Iscrizione newsletter (demo)")}
-                    style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
+                    type="button"
+                    onClick={submitSponsorRequest}
+                    disabled={sponsorSending}
+                    className={cn(
+                      "w-full px-5 py-3 rounded-full text-white text-xs tracking-[0.18em] uppercase transition",
+                      sponsorSending ? "bg-white/10 cursor-not-allowed" : "bg-[var(--accent)] hover:bg-[var(--accent2)]"
+                    )}
+                    style={!sponsorSending ? { boxShadow: "0 10px 30px rgba(225,29,72,0.20)" } : undefined}
                   >
-                    Join
+                    {sponsorSending ? "Invio..." : "Invia richiesta sponsor"}
                   </button>
-                  <div className="text-xs text-white/55">Puoi disiscriverti in qualsiasi momento.</div>
                 </div>
               </div>
             </div>
@@ -1002,14 +1006,12 @@ export default function LedVelvetCercleMockup() {
         </div>
       </section>
 
-      {/* FOOTER */}
       <footer className="border-t border-white/10 py-10">
         <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <p className="text-xs tracking-[0.22em] uppercase text-white/60">© {new Date().getFullYear()} LedVelvet APS • Privacy • Cookie • Termini</p>
           <div className="flex gap-4 text-xs tracking-[0.22em] uppercase text-white/60">
             <a className="hover:text-white" href="#">Instagram</a>
             <a className="hover:text-white" href="#">TikTok</a>
-            <a className="hover:text-white" href="#sponsor">Sponsor</a>
             <a className="hover:text-white" href="#">Press Kit</a>
           </div>
         </div>
