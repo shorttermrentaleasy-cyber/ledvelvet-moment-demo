@@ -6,9 +6,13 @@ import AdminTopbarClient from "../../AdminTopbarClient";
 
 export const dynamic = "force-dynamic";
 
+/* -------------------- AUTH -------------------- */
+
 function unauthorized() {
   redirect("/admin/login");
 }
+
+/* -------------------- HELPERS -------------------- */
 
 function isHttpUrl(v: string) {
   if (!v) return true;
@@ -29,8 +33,9 @@ function firstAttachmentUrl(v: any): string {
 
 async function fetchAirtableRecord(recordId: string) {
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_EVENTS } = process.env;
-  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS)
+  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) {
     throw new Error("Missing env");
+  }
 
   const r = await fetch(
     `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
@@ -62,21 +67,23 @@ async function fetchMetaChoices() {
   const table = data.tables.find((t: any) => t.name === "EVENTS");
 
   const status =
-    table.fields.find((f: any) => f.name === "Status")?.options?.choices?.map(
-      (c: any) => c.name
-    ) || [];
+    table?.fields
+      ?.find((f: any) => f.name === "Status")
+      ?.options?.choices?.map((c: any) => c.name) || [];
 
   const ticketPlatform =
-    table.fields.find((f: any) => f.name === "Ticket Platform")?.options
-      ?.choices?.map((c: any) => c.name) || [];
+    table?.fields
+      ?.find((f: any) => f.name === "Ticket Platform")
+      ?.options?.choices?.map((c: any) => c.name) || [];
 
   return { status, ticketPlatform };
 }
 
 async function fetchSponsors() {
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_SPONSOR } = process.env;
-  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_SPONSOR)
+  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_SPONSOR) {
     throw new Error("Missing env");
+  }
 
   const r = await fetch(
     `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
@@ -103,15 +110,16 @@ export default async function AdminEditEventPage({
   searchParams: { id?: string };
 }) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) unauthorized();
+
+  const email = session?.user?.email?.toLowerCase();
+  if (!email) unauthorized();
 
   const allowed = (process.env.ADMIN_EMAILS || "")
     .split(",")
-    .map((s) => s.trim().toLowerCase());
- 	const email = session?.user?.email?.toLowerCase();
-	if (!email) unauthorized();
-	if (!allowed.includes(email)) unauthorized();
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 
+  if (!allowed.includes(email)) unauthorized();
 
   const id = searchParams.id;
   if (!id) redirect("/admin/events");
@@ -150,13 +158,16 @@ export default async function AdminEditEventPage({
     const hero = formData.get("heroImageUrl") as string;
     const after = formData.get("aftermovieUrl") as string;
 
-    if (!isHttpUrl(hero) || !isHttpUrl(after))
+    if (!isHttpUrl(hero) || !isHttpUrl(after)) {
       redirect(`/admin/events/edit?id=${id}`);
+    }
 
     if (hero) fields["Hero Image"] = [{ url: hero }];
     if (after) fields["Aftermovie"] = [{ url: after }];
 
-    Object.keys(fields).forEach((k) => fields[k] === undefined && delete fields[k]);
+    Object.keys(fields).forEach(
+      (k) => fields[k] === undefined && delete fields[k]
+    );
 
     await fetch(
       `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
@@ -198,7 +209,6 @@ export default async function AdminEditEventPage({
               options={meta.ticketPlatform}
             />
 
-            {/* SPONSORS */}
             <label style={styles.field}>
               <span style={styles.label}>Sponsors</span>
               <select
@@ -216,16 +226,8 @@ export default async function AdminEditEventPage({
             </label>
 
             <Input label="Ticket URL" name="ticketUrl" defaultValue={f["Ticket Url"]} />
-            <Input
-              label="Hero image URL"
-              name="heroImageUrl"
-              defaultValue={firstAttachmentUrl(f["Hero Image"])}
-            />
-            <Input
-              label="Aftermovie URL"
-              name="aftermovieUrl"
-              defaultValue={firstAttachmentUrl(f["Aftermovie"])}
-            />
+            <Input label="Hero image URL" name="heroImageUrl" defaultValue={firstAttachmentUrl(f["Hero Image"])} />
+            <Input label="Aftermovie URL" name="aftermovieUrl" defaultValue={firstAttachmentUrl(f["Aftermovie"])} />
 
             <Textarea label="Notes" name="notes" defaultValue={f["Notes"]} />
           </div>
