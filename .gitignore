@@ -5,3 +5,5 @@ out
 .env
 .DS_Store
 .vercel
+
+/src/generated/prisma

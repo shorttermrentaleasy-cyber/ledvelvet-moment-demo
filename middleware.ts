@@ -1,26 +1,26 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Lascia libere login e verify
+  if (pathname.startsWith("/admin/login") || pathname.startsWith("/admin/verify")) {
+    return NextResponse.next();
+  }
+
   // Protegge tutto sotto /admin
-  if (!pathname.startsWith("/admin")) return NextResponse.next();
+  if (pathname.startsWith("/admin")) {
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    if (!token) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/admin/login";
+      return NextResponse.redirect(url);
+    }
+  }
 
-  const pass = process.env.ADMIN_PASSWORD || "";
-  const auth = req.headers.get("authorization") || "";
-
-  if (!pass) return new NextResponse("ADMIN_PASSWORD missing", { status: 500 });
-
-  // Basic Auth: admin:<password>
-  const expected = "Basic " + Buffer.from(`admin:${pass}`).toString("base64");
-
-  if (auth === expected) return NextResponse.next();
-
-  return new NextResponse("Auth required", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="LedVelvet Admin"' },
-  });
+  return NextResponse.next();
 }
 
 export const config = {
