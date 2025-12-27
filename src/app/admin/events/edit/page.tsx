@@ -108,7 +108,10 @@ export default async function AdminEditEventPage({
   const allowed = (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map((s) => s.trim().toLowerCase());
-  if (!allowed.includes(session.user.email.toLowerCase())) unauthorized();
+ 	const email = session?.user?.email?.toLowerCase();
+	if (!email) unauthorized();
+	if (!allowed.includes(email)) unauthorized();
+
 
   const id = searchParams.id;
   if (!id) redirect("/admin/events");
