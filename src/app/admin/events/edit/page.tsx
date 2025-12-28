@@ -29,7 +29,12 @@ function firstAttachmentUrl(v: any): string {
   return v[0]?.url || "";
 }
 
-type SponsorOption = { id: string; label: string };
+/* -------------------- TYPES -------------------- */
+
+type SponsorOption = {
+  id: string;
+  label: string;
+};
 
 /* -------------------- FETCH -------------------- */
 
@@ -53,7 +58,10 @@ async function fetchAirtableRecord(recordId: string) {
   return r.json();
 }
 
-async function fetchMetaChoices() {
+async function fetchMetaChoices(): Promise<{
+  status: string[];
+  ticketPlatform: string[];
+}> {
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID } = process.env;
   if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) throw new Error("Missing env");
 
@@ -68,12 +76,12 @@ async function fetchMetaChoices() {
   const data = await r.json();
   const table = data.tables.find((t: any) => t.name === "EVENTS");
 
-  const status =
+  const status: string[] =
     table?.fields
       ?.find((f: any) => f.name === "Status")
       ?.options?.choices?.map((c: any) => c.name) || [];
 
-  const ticketPlatform =
+  const ticketPlatform: string[] =
     table?.fields
       ?.find((f: any) => f.name === "Ticket Platform")
       ?.options?.choices?.map((c: any) => c.name) || [];
@@ -81,7 +89,7 @@ async function fetchMetaChoices() {
   return { status, ticketPlatform };
 }
 
-async function fetchSponsors() {
+async function fetchSponsors(): Promise<SponsorOption[]> {
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_SPONSOR } = process.env;
   if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_SPONSOR) {
     throw new Error("Missing env");
@@ -98,12 +106,13 @@ async function fetchSponsors() {
   );
 
   const data = await r.json();
-    const out: SponsorOption[] = (data.records || []).map((r: any) => ({
+
+  const out: SponsorOption[] = (data.records || []).map((r: any) => ({
     id: r.id,
     label: r.fields?.["Brand Name"] || "",
   }));
-  return out;
 
+  return out;
 }
 
 /* -------------------- PAGE -------------------- */
@@ -115,13 +124,13 @@ export default async function AdminEditEventPage({
 }) {
   const session = await getServerSession(authOptions);
 
- const email = (session?.user?.email || "").toLowerCase();
-if (!email) unauthorized();
+  const email: string = (session?.user?.email || "").toLowerCase();
+  if (!email) unauthorized();
 
-const allowed = (process.env.ADMIN_EMAILS || "")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter((x): x is string => Boolean(x));
+  const allowed: string[] = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((x): x is string => Boolean(x));
 
   if (!allowed.includes(email)) unauthorized();
 
