@@ -8,16 +8,16 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminHomePage() {
   const session = await getServerSession(authOptions);
-  if (!session) redirect("/admin/login");
+
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  if (!email) redirect("/admin/login");
 
   const allowed = (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 
-  if (!session.user?.email || !allowed.includes(session.user.email.toLowerCase())) {
-    redirect("/admin/login");
-  }
+  if (!allowed.includes(email)) redirect("/admin/auth-error?error=AccessDenied");
 
   return (
     <main style={styles.page}>
@@ -32,41 +32,19 @@ export default async function AdminHomePage() {
             <div style={styles.kicker}>LED VELVET • ADMIN</div>
             <h1 style={styles.h1}>Dashboard</h1>
             <p style={styles.sub}>Scegli cosa vuoi gestire.</p>
-            <p style={styles.user}>Logged in as: {session.user.email}</p>
+            <p style={styles.user}>Logged in as: {email}</p>
           </div>
         </header>
 
         <div style={styles.grid}>
-          <Card
-            title="Events"
-            desc="Crea e modifica eventi"
-            href="/admin/events"
-          />
+          <Card title="Events" desc="Crea e modifica eventi" href="/admin/events" />
+          <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
 
-          <Card
-            title="Sponsors"
-            desc="Crea e gestisci sponsor"
-            href="/admin/sponsors"
-          />
-
-          <Card
-            title="Associati"
-            desc="Gestione soci / membership"
-            href="/admin/members"
-            disabled
-          />
-
-          <Card
-            title="Settings"
-            desc="Impostazioni admin"
-            href="/admin/settings"
-            disabled
-          />
+          <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" disabled />
+          <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
         </div>
 
-        <p style={styles.note}>
-          Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.
-        </p>
+        <p style={styles.note}>Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.</p>
       </div>
     </main>
   );
