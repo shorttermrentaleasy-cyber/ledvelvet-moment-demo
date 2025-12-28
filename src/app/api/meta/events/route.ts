@@ -3,81 +3,92 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+/* -------------------- helpers -------------------- */
 
 function unauthorized() {
   return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 }
 
+function normalizeList(v: any[]): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((x) => (typeof x === "string" ? x : x?.name))
+    .filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+}
+
+/* -------------------- META EVENTS -------------------- */
+
 export async function GET() {
-  // AUTH
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return unauthorized();
+  try {
+    const session = await getServerSession(authOptions);
 
-  const allowed = (process.env.ADMIN_EMAILS || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+    const email = (session?.user?.email || "").toLowerCase().trim();
+    if (!email) return unauthorized();
 
-  if (!allowed.includes(session.user.email.toLowerCase())) {
-    return unauthorized();
-  }
+    const allowed = (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
 
-  // ENV
-  const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
-  const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+    if (!allowed.includes(email)) return unauthorized();
 
-  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) {
-    return NextResponse.json(
-      { ok: false, error: "Missing Airtable env vars" },
-      { status: 400 }
-    );
-  }
-
-  // META API: schema tabelle
-  const url = `https://api.airtable.com/v0/meta/bases/${AIRTABLE_BASE_ID}/tables`;
-
-  const r = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-    },
-  });
-
-  const data = await r.json();
-
-  if (!r.ok) {
-    console.error("Airtable meta error", data);
-    return NextResponse.json({ ok: false, error: "Airtable meta error" }, { status: 500 });
-  }
-
-  // trova tabella EVENTS
-  const table = (data.tables || []).find((t: any) => t.name === "EVENTS");
-  if (!table) {
-    return NextResponse.json(
-      { ok: false, error: "Table EVENTS not found" },
-      { status: 400 }
-    );
-  }
-
-  const status: { id: string; label: string }[] = [];
-  const ticketPlatform: { id: string; label: string }[] = [];
-
-  for (const field of table.fields || []) {
-    if (field.name === "Status" && field.options?.choices) {
-      for (const c of field.options.choices) {
-        status.push({ id: c.id, label: c.name });
-      }
+    const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID } = process.env;
+    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) {
+      return NextResponse.json(
+        { ok: false, error: "Missing Airtable env" },
+        { status: 500 }
+      );
     }
 
-    if (field.name === "Ticket Platform" && field.options?.choices) {
-      for (const c of field.options.choices) {
-        ticketPlatform.push({ id: c.id, label: c.name });
+    const r = await fetch(
+      `https://api.airtable.com/v0/meta/bases/${AIRTABLE_BASE_ID}/tables`,
+      {
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+        },
       }
-    }
-  }
+    );
 
-  return NextResponse.json({
-    ok: true,
-    status,
-    ticketPlatform,
-  });
+    const data = await r.json();
+    if (!r.ok) {
+      return NextResponse.json(
+        { ok: false, error: "Airtable meta fetch failed", data },
+        { status: r.status }
+      );
+    }
+
+    const tables: any[] = Array.isArray(data.tables) ? data.tables : [];
+    const table =
+      tables.find((t) => String(t.name).toLowerCase() === "events") || null;
+
+    if (!table || !Array.isArray(table.fields)) {
+      return NextResponse.json(
+        { ok: false, error: "EVENTS table not found in Airtable meta" },
+        { status: 404 }
+      );
+    }
+
+    const fieldChoices = (fieldName: string): string[] => {
+      const field = table.fields.find((f: any) => f.name === fieldName);
+      return normalizeList(field?.options?.choices || []);
+    };
+
+    const status = fieldChoices("Status");
+    const ticketPlatform = fieldChoices("Ticket Platform");
+
+    return NextResponse.json({
+      ok: true,
+      status,
+      ticketPlatform,
+    });
+  } catch (e: any) {
+    console.error(e);
+    return NextResponse.json(
+      { ok: false, error: e?.message || "Server error" },
+      { status: 500 }
+    );
+  }
 }
