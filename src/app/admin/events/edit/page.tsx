@@ -111,13 +111,13 @@ export default async function AdminEditEventPage({
 }) {
   const session = await getServerSession(authOptions);
 
-  const email = session?.user?.email?.toLowerCase();
-  if (!email) unauthorized();
+ const email = (session?.user?.email || "").toLowerCase();
+if (!email) unauthorized();
 
-  const allowed = (process.env.ADMIN_EMAILS || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+const allowed = (process.env.ADMIN_EMAILS || "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter((x): x is string => Boolean(x));
 
   if (!allowed.includes(email)) unauthorized();
 
