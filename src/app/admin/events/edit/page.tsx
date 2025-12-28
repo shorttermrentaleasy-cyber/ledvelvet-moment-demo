@@ -29,6 +29,8 @@ function firstAttachmentUrl(v: any): string {
   return v[0]?.url || "";
 }
 
+type SponsorOption = { id: string; label: string };
+
 /* -------------------- FETCH -------------------- */
 
 async function fetchAirtableRecord(recordId: string) {
@@ -96,10 +98,12 @@ async function fetchSponsors() {
   );
 
   const data = await r.json();
-  return (data.records || []).map((r: any) => ({
+    const out: SponsorOption[] = (data.records || []).map((r: any) => ({
     id: r.id,
     label: r.fields?.["Brand Name"] || "",
   }));
+  return out;
+
 }
 
 /* -------------------- PAGE -------------------- */
