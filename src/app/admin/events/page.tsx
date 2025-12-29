@@ -39,6 +39,15 @@ function fmtDate(value: any) {
   return s;
 }
 
+function getEventLabel(fields: Record<string, any>, id: string) {
+  const label =
+    normStr(fields["Event name"]) ||
+    normStr(fields["Event Name"]) ||
+    normStr(fields.Name) ||
+    normStr(fields.name);
+  return label || `Event ${id.slice(0, 6)}`;
+}
+
 export default async function AdminEventsPage({
   searchParams,
 }: {
@@ -88,9 +97,8 @@ export default async function AdminEventsPage({
   let error: string | null = null;
 
   try {
-    const res = await fetch(`${process.env.NEXTAUTH_URL}${apiUrl}`, {
-      cache: "no-store",
-    });
+    const baseUrl = process.env.NEXTAUTH_URL || "";
+    const res = await fetch(`${baseUrl}${apiUrl}`, { cache: "no-store" });
     const json = await res.json().catch(() => ({}));
 
     if (!res.ok) {
@@ -131,7 +139,7 @@ export default async function AdminEventsPage({
         <p style={errorBox}>{error}</p>
       ) : records.length === 0 ? (
         <p style={subtle}>Nessun evento trovato.</p>
-      ) : !error ? (
+      ) : (
         <div
           style={{
             marginTop: 16,
@@ -157,6 +165,8 @@ export default async function AdminEventsPage({
             <tbody>
               {records.map((e) => {
                 const f = e.fields || {};
+                const label = getEventLabel(f, e.id);
+
                 const sponsors = Array.isArray(f.Sponsors)
                   ? f.Sponsors.join(", ")
                   : normStr(f.Sponsors);
@@ -164,7 +174,7 @@ export default async function AdminEventsPage({
                 return (
                   <tr key={e.id}>
                     <td style={td}>
-                      <b>{normStr(f["Event name"] || f.Name || f.name)}</b>
+                      <b>{label}</b>
                     </td>
                     <td style={td}>{fmtDate(f.Date || f.date)}</td>
                     <td style={td}>{normStr(f.City || f.city)}</td>
@@ -187,7 +197,9 @@ export default async function AdminEventsPage({
                         <span style={{ opacity: 0.6 }}>—</span>
                       )}
                     </td>
-                    <td style={td}>{sponsors || <span style={{ opacity: 0.6 }}>—</span>}</td>
+                    <td style={td}>
+                      {sponsors || <span style={{ opacity: 0.6 }}>—</span>}
+                    </td>
                     <td style={tdMono}>{e.id}</td>
 
                     <td
@@ -205,8 +217,8 @@ export default async function AdminEventsPage({
                       >
                         Edit
                       </a>
-                      <EventsDeleteButtonClient id={e.id} label={e.name} />
-                      <EventsDuplicateButtonClient id={e.id} label={e.name} />
+                      <EventsDeleteButtonClient id={e.id} label={label} />
+                      <EventsDuplicateButtonClient id={e.id} label={label} />
                     </td>
                   </tr>
                 );
@@ -215,11 +227,10 @@ export default async function AdminEventsPage({
           </table>
 
           <p style={{ marginTop: 10, opacity: 0.6, fontSize: 12 }}>
-            Nota: "Sponsors" è un campo linked records (multi) e viene mostrato
-            come lista.
+            Su mobile puoi scorrere orizzontalmente la tabella.
           </p>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -303,11 +314,6 @@ const td: React.CSSProperties = {
   borderBottom: "1px solid rgba(255,255,255,0.08)",
   verticalAlign: "top",
   whiteSpace: "nowrap",
-};
-
-const fontFamily: React.CSSProperties = {
-  fontFamily:
-    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
 };
 
 const tableDark: React.CSSProperties = {
