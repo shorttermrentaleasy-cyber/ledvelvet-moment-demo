@@ -48,6 +48,30 @@ function getEventLabel(fields: Record<string, any>, id: string) {
   return label || `Event ${id.slice(0, 6)}`;
 }
 
+function getSponsorLabel(fields: Record<string, any>, id: string) {
+  const label =
+    normStr(fields["Brand Name"]) ||
+    normStr(fields["Brand"]) ||
+    normStr(fields.Name) ||
+    normStr(fields.name);
+  return label || `Sponsor ${id.slice(0, 6)}`;
+}
+
+async function airtableFetchJson(
+  url: string,
+  token: string
+): Promise<{ ok: true; records: AirtableRecord[] } | { ok: false; status: number; text: string }> {
+  const r = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const text = await r.text();
+  if (!r.ok) return { ok: false, status: r.status, text };
+  const data = text ? JSON.parse(text) : {};
+  const records = Array.isArray(data?.records) ? data.records : [];
+  return { ok: true, records };
+}
+
 export default async function AdminEventsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
@@ -57,10 +81,12 @@ export default async function AdminEventsPage() {
   const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
   const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
   const AIRTABLE_TABLE_EVENTS = process.env.AIRTABLE_TABLE_EVENTS;
+  const AIRTABLE_TABLE_SPONSOR = process.env.AIRTABLE_TABLE_SPONSOR;
 
   if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) {
     return (
       <div style={wrap}>
+        <style>{globalDarkCss}</style>
         <AdminTopbarClient />
         <h1 style={h1}>Events</h1>
         <p style={errorBox}>
@@ -71,26 +97,39 @@ export default async function AdminEventsPage() {
   }
 
   let records: AirtableRecord[] = [];
+  let sponsorNameById: Record<string, string> = {};
   let error: string | null = null;
 
   try {
-    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
+    // 1) Fetch EVENTS
+    const eventsUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
       AIRTABLE_TABLE_EVENTS
     )}?pageSize=100`;
 
-    const r = await fetch(url, {
-      headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-      cache: "no-store",
-    });
-
-    const text = await r.text();
-
-    if (!r.ok) {
-      error = `Airtable error ${r.status}`;
-      console.error("Airtable events error:", r.status, text);
+    const eventsRes = await airtableFetchJson(eventsUrl, AIRTABLE_TOKEN);
+    if (!eventsRes.ok) {
+      error = `Airtable error ${eventsRes.status}`;
+      console.error("Airtable events error:", eventsRes.status, eventsRes.text);
     } else {
-      const data = text ? JSON.parse(text) : {};
-      records = Array.isArray(data?.records) ? data.records : [];
+      records = eventsRes.records;
+    }
+
+    // 2) Fetch SPONSOR table to map recordId -> Brand Name (optional but improves UX)
+    if (!error && AIRTABLE_TABLE_SPONSOR) {
+      const sponsorUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
+        AIRTABLE_TABLE_SPONSOR
+      )}?pageSize=100`;
+
+      const sponsorRes = await airtableFetchJson(sponsorUrl, AIRTABLE_TOKEN);
+      if (sponsorRes.ok) {
+        sponsorNameById = sponsorRes.records.reduce((acc, s) => {
+          acc[s.id] = getSponsorLabel(s.fields || {}, s.id);
+          return acc;
+        }, {} as Record<string, string>);
+      } else {
+        // non blocchiamo la pagina: se sponsor mapping fallisce, lasciamo gli ID
+        console.warn("Airtable sponsor map error:", sponsorRes.status, sponsorRes.text);
+      }
     }
   } catch (e: any) {
     error = `Fetch failed: ${e?.message || "unknown error"}`;
@@ -98,7 +137,6 @@ export default async function AdminEventsPage() {
 
   return (
     <div style={wrap}>
-      {/* forza dark anche su Vercel */}
       <style>{globalDarkCss}</style>
 
       <AdminTopbarClient />
@@ -111,7 +149,7 @@ export default async function AdminEventsPage() {
           </p>
         </div>
 
-        {/* BOTTONI: vicini, coerenti, testo bianco */}
+        {/* BOTTONI: 1 sola riga, niente doppioni */}
         <div style={rightTop}>
           <a href="/admin" style={btnGhost}>
             ← Back
@@ -125,7 +163,7 @@ export default async function AdminEventsPage() {
         </div>
       </div>
 
-      {/* Toolbar (filtri) - ma nascondiamo il suo eventuale bottone "Create" duplicato */}
+      {/* Toolbar filtri - nascondo l’eventuale “Create event” duplicato interno */}
       <div className="eventsToolbarWrap">
         <EventsToolbarClient />
       </div>
@@ -135,13 +173,7 @@ export default async function AdminEventsPage() {
       ) : records.length === 0 ? (
         <p style={subtle}>Nessun evento trovato.</p>
       ) : (
-        <div
-          style={{
-            marginTop: 16,
-            overflowX: "auto",
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
+        <div style={{ marginTop: 16, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table style={tableDark}>
             <thead>
               <tr>
@@ -153,18 +185,23 @@ export default async function AdminEventsPage() {
                 <th style={th}>Ticket Platform</th>
                 <th style={th}>Ticket URL</th>
                 <th style={th}>Sponsors</th>
-                <th style={th}>Record ID</th>
-                <th style={th}>Actions</th>
+                <th style={thRight}>Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {records.map((e) => {
                 const f = e.fields || {};
                 const label = getEventLabel(f, e.id);
 
-                const sponsors = Array.isArray(f.Sponsors)
-                  ? f.Sponsors.join(", ")
-                  : normStr(f.Sponsors);
+                // Sponsors: Airtable linked records = array of record IDs
+                const sponsorIds = Array.isArray(f.Sponsors) ? f.Sponsors : [];
+                const sponsorLabel =
+                  sponsorIds.length > 0
+                    ? sponsorIds
+                        .map((id: any) => sponsorNameById[String(id)] || String(id))
+                        .join(", ")
+                    : normStr(f.Sponsors);
 
                 return (
                   <tr key={e.id}>
@@ -175,9 +212,7 @@ export default async function AdminEventsPage() {
                     <td style={td}>{normStr(f.City || f.city)}</td>
                     <td style={td}>{normStr(f.Venue || f.venue)}</td>
                     <td style={td}>{normStr(f.Status || f.status)}</td>
-                    <td style={td}>
-                      {normStr(f["Ticket Platform"] || f.TicketPlatform)}
-                    </td>
+                    <td style={td}>{normStr(f["Ticket Platform"] || f.TicketPlatform)}</td>
                     <td style={td}>
                       {f["Ticket URL"] || f.TicketURL ? (
                         <a
@@ -192,21 +227,12 @@ export default async function AdminEventsPage() {
                         <span style={{ opacity: 0.6 }}>—</span>
                       )}
                     </td>
-                    <td style={td}>
-                      {sponsors || <span style={{ opacity: 0.6 }}>—</span>}
-                    </td>
-                    <td style={tdMono}>{e.id}</td>
 
-                    <td
-                      style={{
-                        ...td,
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        justifyContent: "flex-end",
-                      }}
-                    >
+                    <td style={{ ...td, whiteSpace: "normal", maxWidth: 420 }}>
+                      {sponsorLabel ? sponsorLabel : <span style={{ opacity: 0.6 }}>—</span>}
+                    </td>
+
+                    <td style={tdActions}>
                       <a
                         href={`/admin/events/edit?id=${encodeURIComponent(e.id)}`}
                         style={btnGhostSmall}
@@ -233,7 +259,7 @@ export default async function AdminEventsPage() {
 
 const globalDarkCss = `
   html, body { background: #07070c !important; color: rgba(255,255,255,0.92) !important; }
-  /* nasconde eventuale bottone duplicato "Create event" dentro il toolbar */
+  /* nasconde eventuale bottone duplicato "Create event" dentro toolbar */
   .eventsToolbarWrap a[href="/admin/events/create"] { display: none !important; }
 `;
 
@@ -282,7 +308,7 @@ const btnPrimary: React.CSSProperties = {
   padding: "10px 14px",
   borderRadius: 14,
   background: "linear-gradient(90deg, rgba(34,211,238,0.95), rgba(168,85,247,0.95))",
-  color: "rgba(255,255,255,0.98)", // ✅ testo bianco leggibile
+  color: "rgba(255,255,255,0.98)",
   textDecoration: "none",
   fontWeight: 800,
   boxShadow: "0 10px 26px rgba(0,0,0,0.45)",
@@ -326,6 +352,11 @@ const th: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const thRight: React.CSSProperties = {
+  ...th,
+  textAlign: "right",
+};
+
 const td: React.CSSProperties = {
   padding: "12px 12px",
   borderBottom: "1px solid rgba(255,255,255,0.08)",
@@ -335,7 +366,7 @@ const td: React.CSSProperties = {
 
 const tableDark: React.CSSProperties = {
   width: "100%",
-  minWidth: 1200,
+  minWidth: 1100,
   borderCollapse: "collapse",
   background: "rgba(255,255,255,0.03)",
   border: "1px solid rgba(255,255,255,0.10)",
@@ -343,11 +374,13 @@ const tableDark: React.CSSProperties = {
   overflow: "hidden",
 };
 
-const tdMono: React.CSSProperties = {
+const tdActions: React.CSSProperties = {
   ...td,
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-  fontSize: 12,
-  opacity: 0.85,
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  alignItems: "center",
+  justifyContent: "flex-end",
 };
 
 const btnGhostSmall: React.CSSProperties = {
