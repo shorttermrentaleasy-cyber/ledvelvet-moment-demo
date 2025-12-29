@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import EventsToolbarClient from "./EventsToolbarClient";
+import { headers } from "next/headers";
 
 type AirtableRecord = {
   id: string;
@@ -46,6 +47,14 @@ function getEventLabel(fields: Record<string, any>, id: string) {
     normStr(fields.Name) ||
     normStr(fields.name);
   return label || `Event ${id.slice(0, 6)}`;
+}
+
+function getOriginFromHeaders() {
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") || "https";
+  const host = h.get("x-forwarded-host") || h.get("host");
+  if (!host) return "";
+  return `${proto}://${host}`;
 }
 
 export default async function AdminEventsPage({
@@ -91,14 +100,14 @@ export default async function AdminEventsPage({
   if (to) qs.set("to", to);
   if (sort) qs.set("sort", sort);
 
-  const apiUrl = `/api/admin/events${qs.toString() ? `?${qs}` : ""}`;
+  const apiPath = `/api/admin/events${qs.toString() ? `?${qs}` : ""}`;
 
   let records: AirtableRecord[] = [];
   let error: string | null = null;
 
   try {
-    const baseUrl = process.env.NEXTAUTH_URL || "";
-    const res = await fetch(`${baseUrl}${apiUrl}`, { cache: "no-store" });
+    const origin = getOriginFromHeaders();
+    const res = await fetch(`${origin}${apiPath}`, { cache: "no-store" });
     const json = await res.json().catch(() => ({}));
 
     if (!res.ok) {
