@@ -87,7 +87,6 @@ export default async function AdminEventsPage() {
 
     if (!r.ok) {
       error = `Airtable error ${r.status}`;
-      // utile in caso di debug (non esporre troppo in UI)
       console.error("Airtable events error:", r.status, text);
     } else {
       const data = text ? JSON.parse(text) : {};
@@ -99,6 +98,9 @@ export default async function AdminEventsPage() {
 
   return (
     <div style={wrap}>
+      {/* forza dark anche su Vercel */}
+      <style>{globalDarkCss}</style>
+
       <AdminTopbarClient />
 
       <div style={topRow}>
@@ -109,6 +111,7 @@ export default async function AdminEventsPage() {
           </p>
         </div>
 
+        {/* BOTTONI: vicini, coerenti, testo bianco */}
         <div style={rightTop}>
           <a href="/admin" style={btnGhost}>
             ← Back
@@ -116,10 +119,16 @@ export default async function AdminEventsPage() {
           <a href="/admin/events/create" style={btnPrimary}>
             + Create event
           </a>
+          <a href="/admin/logout" style={btnQuit}>
+            Quit
+          </a>
         </div>
       </div>
 
-      <EventsToolbarClient />
+      {/* Toolbar (filtri) - ma nascondiamo il suo eventuale bottone "Create" duplicato */}
+      <div className="eventsToolbarWrap">
+        <EventsToolbarClient />
+      </div>
 
       {error ? (
         <p style={errorBox}>{error}</p>
@@ -195,6 +204,7 @@ export default async function AdminEventsPage() {
                         gap: 8,
                         flexWrap: "wrap",
                         alignItems: "center",
+                        justifyContent: "flex-end",
                       }}
                     >
                       <a
@@ -212,7 +222,7 @@ export default async function AdminEventsPage() {
             </tbody>
           </table>
 
-          <p style={{ marginTop: 10, opacity: 0.6, fontSize: 12 }}>
+          <p style={{ marginTop: 10, opacity: 0.65, fontSize: 12 }}>
             Su mobile puoi scorrere orizzontalmente la tabella.
           </p>
         </div>
@@ -221,9 +231,18 @@ export default async function AdminEventsPage() {
   );
 }
 
+const globalDarkCss = `
+  html, body { background: #07070c !important; color: rgba(255,255,255,0.92) !important; }
+  /* nasconde eventuale bottone duplicato "Create event" dentro il toolbar */
+  .eventsToolbarWrap a[href="/admin/events/create"] { display: none !important; }
+`;
+
 const wrap: React.CSSProperties = {
+  minHeight: "100vh",
   padding: 24,
   color: "rgba(255,255,255,0.92)",
+  background:
+    "radial-gradient(900px 500px at 20% 10%, rgba(168,85,247,0.20), transparent 55%), radial-gradient(900px 500px at 80% 15%, rgba(34,211,238,0.14), transparent 55%), linear-gradient(180deg, rgba(10,10,18,1), rgba(7,7,12,1))",
 };
 
 const topRow: React.CSSProperties = {
@@ -262,11 +281,12 @@ const errorBox: React.CSSProperties = {
 const btnPrimary: React.CSSProperties = {
   padding: "10px 14px",
   borderRadius: 14,
-  background: "linear-gradient(90deg, #00d4ff, #a855f7)",
-  color: "#0b0b10",
+  background: "linear-gradient(90deg, rgba(34,211,238,0.95), rgba(168,85,247,0.95))",
+  color: "rgba(255,255,255,0.98)", // ✅ testo bianco leggibile
   textDecoration: "none",
-  fontWeight: 700,
-  boxShadow: "0 8px 22px rgba(0,0,0,0.35)",
+  fontWeight: 800,
+  boxShadow: "0 10px 26px rgba(0,0,0,0.45)",
+  border: "1px solid rgba(255,255,255,0.18)",
 };
 
 const btnGhost: React.CSSProperties = {
@@ -276,6 +296,17 @@ const btnGhost: React.CSSProperties = {
   background: "rgba(0,0,0,0.25)",
   color: "rgba(255,255,255,0.92)",
   textDecoration: "none",
+  fontWeight: 700,
+};
+
+const btnQuit: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,0.20)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(255,255,255,0.90)",
+  textDecoration: "none",
+  fontWeight: 700,
 };
 
 const link: React.CSSProperties = {
