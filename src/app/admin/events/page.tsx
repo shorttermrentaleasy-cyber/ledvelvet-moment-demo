@@ -3,392 +3,361 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import AdminTopbarClient from "../AdminTopbarClient";
-import EventsToolbarClient from "./EventsToolbarClient";
 import EventsDeleteButtonClient from "./EventsDeleteButtonClient";
 import EventsDuplicateButtonClient from "./EventsDuplicateButtonClient";
+
+export const dynamic = "force-dynamic";
 
 type AirtableRecord = {
   id: string;
   fields: Record<string, any>;
 };
 
-function normStr(v: any): string {
-  if (v === null || v === undefined) return "";
+/* ---------------- helpers ---------------- */
+
+function txt(v: any): string {
   if (Array.isArray(v)) return v.join(", ");
+  if (v == null) return "";
   return String(v);
 }
 
-function isValidISODate(value: string) {
-  if (!value) return false;
-  const d = new Date(value);
-  return !Number.isNaN(d.getTime());
+function fmtDate(v: any) {
+  if (!v) return "";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return txt(v);
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(d);
 }
 
-function fmtDate(value: any) {
-  const s = normStr(value);
-  if (!s) return "";
-  if (isValidISODate(s)) {
-    try {
-      return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium" }).format(
-        new Date(s)
-      );
-    } catch {
-      return s;
-    }
-  }
-  return s;
+function eventLabel(f: any, id: string) {
+  return f["Event Name"] || f["Event name"] || f.Name || `Event ${id.slice(0, 6)}`;
 }
 
-function getEventLabel(fields: Record<string, any>, id: string) {
-  const label =
-    normStr(fields["Event name"]) ||
-    normStr(fields["Event Name"]) ||
-    normStr(fields.Name) ||
-    normStr(fields.name);
-  return label || `Event ${id.slice(0, 6)}`;
-}
+/* ---------------- page ---------------- */
 
-function getSponsorLabel(fields: Record<string, any>, id: string) {
-  const label =
-    normStr(fields["Brand Name"]) ||
-    normStr(fields["Brand"]) ||
-    normStr(fields.Name) ||
-    normStr(fields.name);
-  return label || `Sponsor ${id.slice(0, 6)}`;
-}
-
-async function airtableFetchJson(
-  url: string,
-  token: string
-): Promise<{ ok: true; records: AirtableRecord[] } | { ok: false; status: number; text: string }> {
-  const r = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  const text = await r.text();
-  if (!r.ok) return { ok: false, status: r.status, text };
-  const data = text ? JSON.parse(text) : {};
-  const records = Array.isArray(data?.records) ? data.records : [];
-  return { ok: true, records };
-}
-
-export default async function AdminEventsPage() {
+export default async function AdminEventsPage({
+  searchParams,
+}: {
+  searchParams?: {
+    q?: string;
+    status?: string;
+    city?: string;
+    venue?: string;
+    ticket?: string;
+  };
+}) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    redirect("/admin/login?callbackUrl=/admin/events");
-  }
+  if (!session) redirect("/admin/login");
 
-  const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
-  const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
-  const AIRTABLE_TABLE_EVENTS = process.env.AIRTABLE_TABLE_EVENTS;
-  const AIRTABLE_TABLE_SPONSOR = process.env.AIRTABLE_TABLE_SPONSOR;
+  const {
+    AIRTABLE_TOKEN,
+    AIRTABLE_BASE_ID,
+    AIRTABLE_TABLE_EVENTS,
+    AIRTABLE_TABLE_SPONSOR,
+  } = process.env;
 
   if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) {
     return (
-      <div style={wrap}>
-        <style>{globalDarkCss}</style>
-        <AdminTopbarClient />
-        <h1 style={h1}>Events</h1>
-        <p style={errorBox}>
-          Missing env vars: AIRTABLE_TOKEN / AIRTABLE_BASE_ID / AIRTABLE_TABLE_EVENTS
-        </p>
-      </div>
+      <main style={pageDark}>
+        <AdminTopbarClient backHref="/admin" />
+        <p style={{ marginTop: 20 }}>Missing Airtable env</p>
+      </main>
     );
   }
 
-  let records: AirtableRecord[] = [];
-  let sponsorNameById: Record<string, string> = {};
-  let error: string | null = null;
+  /* -------- fetch EVENTS -------- */
 
-  try {
-    // 1) Fetch EVENTS
-    const eventsUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
+  const evRes = await fetch(
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
       AIRTABLE_TABLE_EVENTS
-    )}?pageSize=100`;
-
-    const eventsRes = await airtableFetchJson(eventsUrl, AIRTABLE_TOKEN);
-    if (!eventsRes.ok) {
-      error = `Airtable error ${eventsRes.status}`;
-      console.error("Airtable events error:", eventsRes.status, eventsRes.text);
-    } else {
-      records = eventsRes.records;
+    )}?pageSize=100`,
+    {
+      headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+      cache: "no-store",
     }
+  );
 
-    // 2) Fetch SPONSOR table to map recordId -> Brand Name (optional but improves UX)
-    if (!error && AIRTABLE_TABLE_SPONSOR) {
-      const sponsorUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
+  const evData = await evRes.json();
+  let events: AirtableRecord[] = evData.records || [];
+
+  /* -------- fetch SPONSORS -------- */
+
+  let sponsorById: Record<string, string> = {};
+
+  if (AIRTABLE_TABLE_SPONSOR) {
+    const spRes = await fetch(
+      `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
         AIRTABLE_TABLE_SPONSOR
-      )}?pageSize=100`;
-
-      const sponsorRes = await airtableFetchJson(sponsorUrl, AIRTABLE_TOKEN);
-      if (sponsorRes.ok) {
-        sponsorNameById = sponsorRes.records.reduce((acc, s) => {
-          acc[s.id] = getSponsorLabel(s.fields || {}, s.id);
-          return acc;
-        }, {} as Record<string, string>);
-      } else {
-        // non blocchiamo la pagina: se sponsor mapping fallisce, lasciamo gli ID
-        console.warn("Airtable sponsor map error:", sponsorRes.status, sponsorRes.text);
+      )}?pageSize=100`,
+      {
+        headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+        cache: "no-store",
       }
-    }
-  } catch (e: any) {
-    error = `Fetch failed: ${e?.message || "unknown error"}`;
+    );
+
+    const spData = await spRes.json();
+    (spData.records || []).forEach((s: any) => {
+      sponsorById[s.id] = s.fields?.["Brand Name"] || s.fields?.Name || s.id;
+    });
   }
 
+  /* -------- build filter options -------- */
+
+  const uniq = (arr: string[]) => Array.from(new Set(arr.filter(Boolean))).sort();
+
+  const statusOpts = uniq(events.map((e) => txt(e.fields?.Status)));
+  const cityOpts = uniq(events.map((e) => txt(e.fields?.City)));
+  const venueOpts = uniq(events.map((e) => txt(e.fields?.Venue)));
+  const ticketOpts = uniq(events.map((e) => txt(e.fields?.["Ticket Platform"])));
+
+  /* -------- filters -------- */
+
+  const q = (searchParams?.q || "").toLowerCase();
+  const statusF = searchParams?.status || "";
+  const cityF = searchParams?.city || "";
+  const venueF = searchParams?.venue || "";
+  const ticketF = searchParams?.ticket || "";
+
+  events = events.filter((e) => {
+    const f = e.fields || {};
+    const hay = `${eventLabel(f, e.id)} ${txt(f.City)} ${txt(f.Venue)} ${txt(
+      f.Status
+    )} ${txt(f["Ticket Platform"])}`.toLowerCase();
+
+    if (q && !hay.includes(q)) return false;
+    if (statusF && txt(f.Status) !== statusF) return false;
+    if (cityF && txt(f.City) !== cityF) return false;
+    if (venueF && txt(f.Venue) !== venueF) return false;
+    if (ticketF && txt(f["Ticket Platform"]) !== ticketF) return false;
+
+    return true;
+  });
+
   return (
-    <div style={wrap}>
-      <style>{globalDarkCss}</style>
+    <main style={pageDark}>
+      <AdminTopbarClient backHref="/admin" />
 
-      <AdminTopbarClient />
-
-      <div style={topRow}>
-        <div>
-          <h1 style={h1}>Events</h1>
-          <p style={subtle}>
-            Logged in as: <b>{session.user.email}</b>
-          </p>
-        </div>
-
-        {/* BOTTONI: 1 sola riga, niente doppioni */}
-        <div style={rightTop}>
-          <a href="/admin" style={btnGhost}>
-            ← Back
-          </a>
-          <a href="/admin/events/create" style={btnPrimary}>
-            + Create event
-          </a>
-          <a href="/admin/logout" style={btnQuit}>
-            Quit
-          </a>
-        </div>
+      <div style={headerRow}>
+        <h1 style={{ margin: 0 }}>Events</h1>
+        <a href="/admin/events/create" style={createBtn}>
+          + Create event
+        </a>
       </div>
 
-      {/* Toolbar filtri - nascondo l’eventuale “Create event” duplicato interno */}
-      <div className="eventsToolbarWrap">
-        <EventsToolbarClient />
+      {/* -------- FILTER BAR -------- */}
+      <form method="GET" style={filterBar}>
+        <input name="q" placeholder="Search" defaultValue={searchParams?.q} style={filterInput} />
+
+        <select name="status" defaultValue={statusF} style={filterSelect}>
+          <option value="">All status</option>
+          {statusOpts.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+
+        <select name="city" defaultValue={cityF} style={filterSelect}>
+          <option value="">All cities</option>
+          {cityOpts.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+
+        <select name="venue" defaultValue={venueF} style={filterSelect}>
+          <option value="">All venues</option>
+          {venueOpts.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+
+        <select name="ticket" defaultValue={ticketF} style={filterSelect}>
+          <option value="">All ticket platforms</option>
+          {ticketOpts.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+
+        <button type="submit" style={filterBtn}>
+          Apply
+        </button>
+        <a href="/admin/events" style={filterReset}>
+          Reset
+        </a>
+      </form>
+
+      {/* -------- TABLE -------- */}
+      <div style={tableWrap}>
+        <table style={tableDark}>
+          <thead>
+            <tr>
+              <th style={th}>Event</th>
+              <th style={th}>Date</th>
+              <th style={th}>City</th>
+              <th style={th}>Venue</th>
+              <th style={th}>Status</th>
+              <th style={th}>Ticket Platform</th>
+              <th style={th}>Sponsors</th>
+              <th style={th}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((e) => {
+              const f = e.fields || {};
+              const sponsors = Array.isArray(f.Sponsors)
+                ? f.Sponsors.map((id: string) => sponsorById[id] || id).join(", ")
+                : "-";
+
+              return (
+                <tr key={e.id}>
+                  <td style={tdStrong}>{eventLabel(f, e.id)}</td>
+                  <td style={td}>{fmtDate(f.date || f.Date)}</td>
+                  <td style={td}>{txt(f.City)}</td>
+                  <td style={td}>{txt(f.Venue)}</td>
+                  <td style={td}>{txt(f.Status)}</td>
+                  <td style={td}>{txt(f["Ticket Platform"])}</td>
+                  <td style={{ ...td, whiteSpace: "normal", maxWidth: 360 }}>{sponsors}</td>
+                  <td style={td}>
+                    <a href={`/admin/events/edit?id=${e.id}`} style={editBtn}>
+                      Edit
+                    </a>
+                    <EventsDeleteButtonClient id={e.id} label={eventLabel(f, e.id)} />
+                    <EventsDuplicateButtonClient id={e.id} label={eventLabel(f, e.id)} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-
-      {error ? (
-        <p style={errorBox}>{error}</p>
-      ) : records.length === 0 ? (
-        <p style={subtle}>Nessun evento trovato.</p>
-      ) : (
-        <div style={{ marginTop: 16, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={tableDark}>
-            <thead>
-              <tr>
-                <th style={th}>Name</th>
-                <th style={th}>Date</th>
-                <th style={th}>City</th>
-                <th style={th}>Venue</th>
-                <th style={th}>Status</th>
-                <th style={th}>Ticket Platform</th>
-                <th style={th}>Ticket URL</th>
-                <th style={th}>Sponsors</th>
-                <th style={thRight}>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {records.map((e) => {
-                const f = e.fields || {};
-                const label = getEventLabel(f, e.id);
-
-                // Sponsors: Airtable linked records = array of record IDs
-                const sponsorIds = Array.isArray(f.Sponsors) ? f.Sponsors : [];
-                const sponsorLabel =
-                  sponsorIds.length > 0
-                    ? sponsorIds
-                        .map((id: any) => sponsorNameById[String(id)] || String(id))
-                        .join(", ")
-                    : normStr(f.Sponsors);
-
-                return (
-                  <tr key={e.id}>
-                    <td style={td}>
-                      <b>{label}</b>
-                    </td>
-                    <td style={td}>{fmtDate(f.Date || f.date)}</td>
-                    <td style={td}>{normStr(f.City || f.city)}</td>
-                    <td style={td}>{normStr(f.Venue || f.venue)}</td>
-                    <td style={td}>{normStr(f.Status || f.status)}</td>
-                    <td style={td}>{normStr(f["Ticket Platform"] || f.TicketPlatform)}</td>
-                    <td style={td}>
-                      {f["Ticket URL"] || f.TicketURL ? (
-                        <a
-                          href={normStr(f["Ticket URL"] || f.TicketURL)}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={link}
-                        >
-                          open ↗
-                        </a>
-                      ) : (
-                        <span style={{ opacity: 0.6 }}>—</span>
-                      )}
-                    </td>
-
-                    <td style={{ ...td, whiteSpace: "normal", maxWidth: 420 }}>
-                      {sponsorLabel ? sponsorLabel : <span style={{ opacity: 0.6 }}>—</span>}
-                    </td>
-
-                    <td style={tdActions}>
-                      <a
-                        href={`/admin/events/edit?id=${encodeURIComponent(e.id)}`}
-                        style={btnGhostSmall}
-                      >
-                        Edit
-                      </a>
-                      <EventsDeleteButtonClient id={e.id} label={label} />
-                      <EventsDuplicateButtonClient id={e.id} label={label} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          <p style={{ marginTop: 10, opacity: 0.65, fontSize: 12 }}>
-            Su mobile puoi scorrere orizzontalmente la tabella.
-          </p>
-        </div>
-      )}
-    </div>
+    </main>
   );
 }
 
-const globalDarkCss = `
-  html, body { background: #07070c !important; color: rgba(255,255,255,0.92) !important; }
-  /* nasconde eventuale bottone duplicato "Create event" dentro toolbar */
-  .eventsToolbarWrap a[href="/admin/events/create"] { display: none !important; }
-`;
+/* ---------------- STYLES (Sponsor-style) ---------------- */
 
-const wrap: React.CSSProperties = {
+const pageDark: React.CSSProperties = {
   minHeight: "100vh",
-  padding: 24,
+  padding: "18px 18px 48px",
   color: "rgba(255,255,255,0.92)",
   background:
-    "radial-gradient(900px 500px at 20% 10%, rgba(168,85,247,0.20), transparent 55%), radial-gradient(900px 500px at 80% 15%, rgba(34,211,238,0.14), transparent 55%), linear-gradient(180deg, rgba(10,10,18,1), rgba(7,7,12,1))",
+    "radial-gradient(1200px 600px at 20% -10%, rgba(255,0,199,0.16), transparent 60%), radial-gradient(1000px 700px at 90% 10%, rgba(0,255,209,0.12), transparent 55%), #070812",
 };
 
-const topRow: React.CSSProperties = {
+const headerRow: React.CSSProperties = {
   display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: 16,
-  flexWrap: "wrap",
-};
-
-const rightTop: React.CSSProperties = {
-  display: "flex",
-  gap: 10,
   alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 12,
 };
 
-const h1: React.CSSProperties = {
-  fontSize: 34,
-  margin: "0 0 4px 0",
+const createBtn: React.CSSProperties = {
+  height: 44,
+  padding: "0 18px",
+  borderRadius: 14,
+  border: "1px solid rgba(0,255,209,0.9)",
+  background: "rgba(0,255,209,0.95)",
+  color: "rgba(5,6,14,0.95)",
+  fontWeight: 900,
+  textDecoration: "none",
 };
 
-const subtle: React.CSSProperties = {
-  opacity: 0.75,
-  margin: 0,
+const filterBar: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+  padding: 12,
+  marginBottom: 14,
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.12)",
 };
 
-const errorBox: React.CSSProperties = {
-  marginTop: 16,
-  padding: "12px 14px",
+const filterInput: React.CSSProperties = {
+  height: 40,
+  padding: "0 12px",
   borderRadius: 12,
-  border: "1px solid rgba(255, 60, 80, 0.55)",
-  background: "rgba(255, 60, 80, 0.10)",
-  color: "rgba(255,255,255,0.95)",
+  background: "rgba(5,6,14,0.55)",
+  border: "1px solid rgba(255,255,255,0.14)",
+  color: "#fff",
 };
 
-const btnPrimary: React.CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 14,
-  background: "linear-gradient(90deg, rgba(34,211,238,0.95), rgba(168,85,247,0.95))",
-  color: "rgba(255,255,255,0.98)",
-  textDecoration: "none",
+const filterSelect: React.CSSProperties = {
+  ...filterInput,
+  minWidth: 160,
+};
+
+const filterBtn: React.CSSProperties = {
+  height: 40,
+  padding: "0 14px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,255,209,0.55)",
+  background: "rgba(5,6,14,0.85)",
+  color: "#fff",
   fontWeight: 800,
-  boxShadow: "0 10px 26px rgba(0,0,0,0.45)",
-  border: "1px solid rgba(255,255,255,0.18)",
 };
 
-const btnGhost: React.CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 14,
-  border: "1px solid rgba(255,255,255,0.25)",
-  background: "rgba(0,0,0,0.25)",
-  color: "rgba(255,255,255,0.92)",
-  textDecoration: "none",
-  fontWeight: 700,
-};
-
-const btnQuit: React.CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 14,
-  border: "1px solid rgba(255,255,255,0.20)",
-  background: "rgba(255,255,255,0.08)",
-  color: "rgba(255,255,255,0.90)",
-  textDecoration: "none",
-  fontWeight: 700,
-};
-
-const link: React.CSSProperties = {
-  color: "#7dd3fc",
+const filterReset: React.CSSProperties = {
+  height: 40,
+  padding: "0 14px",
+  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(0,0,0,0.22)",
+  color: "#fff",
   textDecoration: "none",
 };
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "12px 12px",
-  fontSize: 12,
-  letterSpacing: 0.5,
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.75)",
-  borderBottom: "1px solid rgba(255,255,255,0.10)",
-  background: "rgba(255,255,255,0.02)",
-  whiteSpace: "nowrap",
-};
-
-const thRight: React.CSSProperties = {
-  ...th,
-  textAlign: "right",
-};
-
-const td: React.CSSProperties = {
-  padding: "12px 12px",
-  borderBottom: "1px solid rgba(255,255,255,0.08)",
-  verticalAlign: "top",
-  whiteSpace: "nowrap",
+const tableWrap: React.CSSProperties = {
+  width: "100%",
+  overflowX: "auto",
 };
 
 const tableDark: React.CSSProperties = {
   width: "100%",
-  minWidth: 1100,
+  minWidth: 1500,
   borderCollapse: "collapse",
+  border: "1px solid rgba(255,255,255,0.12)",
   background: "rgba(255,255,255,0.03)",
-  border: "1px solid rgba(255,255,255,0.10)",
-  borderRadius: 14,
-  overflow: "hidden",
 };
 
-const tdActions: React.CSSProperties = {
-  ...td,
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-  alignItems: "center",
-  justifyContent: "flex-end",
-};
-
-const btnGhostSmall: React.CSSProperties = {
-  padding: "6px 10px",
-  borderRadius: 10,
-  border: "1px solid rgba(255,255,255,0.25)",
-  background: "rgba(0,0,0,0.35)",
-  color: "rgba(255,255,255,0.9)",
-  textDecoration: "none",
+const th: React.CSSProperties = {
+  textAlign: "left",
   fontSize: 12,
+  padding: "12px",
+  borderBottom: "1px solid rgba(255,255,255,0.10)",
+  whiteSpace: "nowrap",
+};
+
+const td: React.CSSProperties = {
+  padding: "12px",
+  borderBottom: "1px solid rgba(255,255,255,0.08)",
+  whiteSpace: "nowrap",
+};
+
+const tdStrong: React.CSSProperties = {
+  ...td,
+  fontWeight: 900,
+};
+
+const editBtn: React.CSSProperties = {
+  height: 34,
+  padding: "0 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,0.16)",
+  background: "rgba(0,0,0,0.22)",
+  color: "rgba(255,255,255,0.92)",
+  textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  marginRight: 6,
 };

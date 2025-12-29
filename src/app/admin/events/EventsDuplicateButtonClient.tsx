@@ -34,7 +34,9 @@ export default function EventsDuplicateButtonClient({
         data = {};
       }
 
-      if (!r.ok || !data.ok || !data.id) {
+      const newId = data?.id || data?.record?.id;
+
+      if (!r.ok || !data.ok || !newId) {
         const msg = data?.error || `HTTP ${r.status} ${r.statusText}`;
         console.error("DUPLICATE failed:", { status: r.status, raw, data });
         setError(msg);
@@ -42,8 +44,7 @@ export default function EventsDuplicateButtonClient({
         return;
       }
 
-      // Vai subito in edit del duplicato
-      router.push(`/admin/events/edit?id=${encodeURIComponent(data.id)}`);
+      router.push(`/admin/events/edit?id=${encodeURIComponent(newId)}`);
       router.refresh();
     } catch {
       setError("Errore di rete");
@@ -58,7 +59,7 @@ export default function EventsDuplicateButtonClient({
         onClick={duplicate}
         disabled={loading}
         style={loading ? styles.btnDisabled : styles.btn}
-        title="Duplicate"
+        title={label ? `Duplicate: ${label}` : "Duplicate"}
       >
         {loading ? "Duplicating…" : "Duplicate"}
       </button>

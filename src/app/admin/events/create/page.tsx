@@ -3,9 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type MetaOption = {
+type SponsorOption = {
   id: string;
   label: string;
+};
+
+type MetaResponse = {
+  ok: boolean;
+  statusOptions?: string[];
+  ticketPlatformOptions?: string[];
+  error?: string;
 };
 
 export default function AdminCreateEventPage() {
@@ -15,9 +22,9 @@ export default function AdminCreateEventPage() {
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [statusOptions, setStatusOptions] = useState<MetaOption[]>([]);
-  const [ticketPlatformOptions, setTicketPlatformOptions] = useState<MetaOption[]>([]);
-  const [sponsorOptions, setSponsorOptions] = useState<MetaOption[]>([]);
+  const [statusOptions, setStatusOptions] = useState<string[]>([]);
+  const [ticketPlatformOptions, setTicketPlatformOptions] = useState<string[]>([]);
+  const [sponsorOptions, setSponsorOptions] = useState<SponsorOption[]>([]);
 
   const [form, setForm] = useState({
     eventName: "",
@@ -43,30 +50,33 @@ export default function AdminCreateEventPage() {
 
     (async () => {
       try {
+        setError(null);
+
         const [metaRes, sponsorRes] = await Promise.all([
-          fetch("/api/meta/events", { cache: "no-store" }),
+          // ✅ endpoint GIUSTO (il tuo)
+          fetch("/api/admin/meta/events", { cache: "no-store" }),
           fetch("/api/admin/sponsors", { cache: "no-store" }),
         ]);
 
-        const meta = await metaRes.json();
-        const sponsors = await sponsorRes.json();
+        const meta: MetaResponse = await metaRes.json().catch(() => ({ ok: false }));
+        const sponsors = await sponsorRes.json().catch(() => ({ ok: false }));
 
         if (!alive) return;
 
         if (metaRes.ok && meta.ok) {
-          setStatusOptions(meta.status || []);
-          setTicketPlatformOptions(meta.ticketPlatform || []);
+          setStatusOptions(meta.statusOptions || []);
+          setTicketPlatformOptions(meta.ticketPlatformOptions || []);
         } else {
-          setError(meta.error || "Errore caricamento meta");
+          setError(meta?.error || `Meta error (${metaRes.status})`);
         }
 
         if (sponsorRes.ok && sponsors.ok) {
           setSponsorOptions(sponsors.sponsors || []);
         } else {
-          setError(sponsors.error || "Errore caricamento sponsor");
+          setError((prev) => prev || sponsors?.error || `Sponsor error (${sponsorRes.status})`);
         }
-      } catch {
-        if (alive) setError("Errore caricamento dati");
+      } catch (e: any) {
+        if (alive) setError(e?.message || "Errore caricamento dati");
       } finally {
         if (alive) setLoadingMeta(false);
       }
@@ -80,7 +90,8 @@ export default function AdminCreateEventPage() {
   function onChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) {
-    setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setForm((p) => ({ ...p, [name]: value }));
   }
 
   function onSponsorsChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -101,11 +112,11 @@ export default function AdminCreateEventPage() {
       body: JSON.stringify(form),
     });
 
-    const data = await r.json();
+    const data = await r.json().catch(() => ({}));
     setLoading(false);
 
     if (!r.ok || !data.ok) {
-      setError(data.error || "Errore creazione evento");
+      setError(data.error || `Errore creazione evento (${r.status})`);
       return;
     }
 
@@ -147,27 +158,34 @@ export default function AdminCreateEventPage() {
             </Field>
 
             <Field label="Status *">
-              <select name="status" value={form.status} onChange={onChange} style={styles.input}>
+              <select
+                name="status"
+                value={form.status}
+                onChange={onChange}
+                style={styles.input}
+                disabled={loadingMeta}
+              >
                 <option value="">Select</option>
-                {statusOptions.map((o) => (
-                  <option key={o.id} value={o.label}>
-                    {o.label}
+                {statusOptions.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
                   </option>
                 ))}
               </select>
             </Field>
 
-            <Field label="Ticket platform">
+            <Field label="Ticket Platform">
               <select
                 name="ticketPlatform"
                 value={form.ticketPlatform}
                 onChange={onChange}
                 style={styles.input}
+                disabled={loadingMeta}
               >
                 <option value="">Optional</option>
-                {ticketPlatformOptions.map((o) => (
-                  <option key={o.id} value={o.label}>
-                    {o.label}
+                {ticketPlatformOptions.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
                   </option>
                 ))}
               </select>
@@ -179,6 +197,7 @@ export default function AdminCreateEventPage() {
                 value={form.sponsors}
                 onChange={onSponsorsChange}
                 style={{ ...styles.input, height: 120 }}
+                disabled={loadingMeta}
               >
                 {sponsorOptions.map((o) => (
                   <option key={o.id} value={o.id}>
@@ -197,12 +216,7 @@ export default function AdminCreateEventPage() {
             </Field>
 
             <Field label="Aftermovie URL">
-              <input
-                name="aftermovieUrl"
-                value={form.aftermovieUrl}
-                onChange={onChange}
-                style={styles.input}
-              />
+              <input name="aftermovieUrl" value={form.aftermovieUrl} onChange={onChange} style={styles.input} />
             </Field>
 
             <div style={{ gridColumn: "1 / -1" }}>
@@ -260,6 +274,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.2)",
     background: "rgba(0,0,0,0.4)",
     color: "#fff",
+    colorScheme: "dark",
   },
   textarea: {
     width: "100%",
@@ -269,6 +284,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.2)",
     background: "rgba(0,0,0,0.4)",
     color: "#fff",
+    colorScheme: "dark",
   },
   footer: {
     marginTop: 20,
