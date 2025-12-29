@@ -1,12 +1,11 @@
-import EventsDuplicateButtonClient from "./EventsDuplicateButtonClient";
-import EventsDeleteButtonClient from "./EventsDeleteButtonClient";
-import AdminTopbarClient from "../AdminTopbarClient";
 import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import AdminTopbarClient from "../AdminTopbarClient";
 import EventsToolbarClient from "./EventsToolbarClient";
-import { headers } from "next/headers";
+import EventsDeleteButtonClient from "./EventsDeleteButtonClient";
+import EventsDuplicateButtonClient from "./EventsDuplicateButtonClient";
 
 type AirtableRecord = {
   id: string;
@@ -49,21 +48,8 @@ function getEventLabel(fields: Record<string, any>, id: string) {
   return label || `Event ${id.slice(0, 6)}`;
 }
 
-function getOriginFromHeaders() {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") || "https";
-  const host = h.get("x-forwarded-host") || h.get("host");
-  if (!host) return "";
-  return `${proto}://${host}`;
-}
-
-export default async function AdminEventsPage({
-  searchParams,
-}: {
-  searchParams?: Record<string, string | string[] | undefined>;
-}) {
+export default async function AdminEventsPage() {
   const session = await getServerSession(authOptions);
-
   if (!session?.user) {
     redirect("/admin/login?callbackUrl=/admin/events");
   }
@@ -78,43 +64,34 @@ export default async function AdminEventsPage({
         <AdminTopbarClient />
         <h1 style={h1}>Events</h1>
         <p style={errorBox}>
-          Missing env vars: AIRTABLE_TOKEN / AIRTABLE_BASE_ID /
-          AIRTABLE_TABLE_EVENTS
+          Missing env vars: AIRTABLE_TOKEN / AIRTABLE_BASE_ID / AIRTABLE_TABLE_EVENTS
         </p>
       </div>
     );
   }
 
-  const qs = new URLSearchParams();
-  const q = (searchParams?.q as string) || "";
-  const status = (searchParams?.status as string) || "";
-  const city = (searchParams?.city as string) || "";
-  const from = (searchParams?.from as string) || "";
-  const to = (searchParams?.to as string) || "";
-  const sort = (searchParams?.sort as string) || "date_desc";
-
-  if (q) qs.set("q", q);
-  if (status) qs.set("status", status);
-  if (city) qs.set("city", city);
-  if (from) qs.set("from", from);
-  if (to) qs.set("to", to);
-  if (sort) qs.set("sort", sort);
-
-  const apiPath = `/api/admin/events${qs.toString() ? `?${qs}` : ""}`;
-
   let records: AirtableRecord[] = [];
   let error: string | null = null;
 
   try {
-    const origin = getOriginFromHeaders();
-    const res = await fetch(`${origin}${apiPath}`, { cache: "no-store" });
-    const json = await res.json().catch(() => ({}));
+    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
+      AIRTABLE_TABLE_EVENTS
+    )}?pageSize=100`;
 
-    if (!res.ok) {
-      error = `Airtable error ${res.status}`;
-      if (json?.error) error += `: ${json.error}`;
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+      cache: "no-store",
+    });
+
+    const text = await r.text();
+
+    if (!r.ok) {
+      error = `Airtable error ${r.status}`;
+      // utile in caso di debug (non esporre troppo in UI)
+      console.error("Airtable events error:", r.status, text);
     } else {
-      records = Array.isArray(json?.records) ? json.records : [];
+      const data = text ? JSON.parse(text) : {};
+      records = Array.isArray(data?.records) ? data.records : [];
     }
   } catch (e: any) {
     error = `Fetch failed: ${e?.message || "unknown error"}`;
