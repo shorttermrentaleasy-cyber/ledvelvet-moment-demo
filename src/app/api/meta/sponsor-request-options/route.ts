@@ -8,7 +8,9 @@ function json(ok: boolean, data: any, status = 200) {
 
 export async function GET() {
   const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID } = process.env;
-  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) return json(false, { error: "Missing Airtable env" }, 500);
+  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) {
+    return json(false, { error: "Missing Airtable env" }, 500);
+  }
 
   const url = `https://api.airtable.com/v0/meta/bases/${AIRTABLE_BASE_ID}/tables`;
 
@@ -32,15 +34,12 @@ export async function GET() {
   if (!table) return json(false, { error: "SPONSORS_REQUESTS table not found" }, 500);
 
   const fields = table.fields || [];
-
   const interestField = fields.find((f: any) => f?.name === "interest type");
-  const selectField = fields.find((f: any) => f?.name === "select");
 
   const interestTypeOptions =
-    interestField?.options?.choices?.map((c: any) => ({ id: c.id, name: c.name, color: c.color }))?.filter((x: any) => x?.name) || [];
+    interestField?.options?.choices
+      ?.map((c: any) => ({ id: c.id, name: c.name, color: c.color }))
+      ?.filter((x: any) => x?.name) || [];
 
-  const selectOptions =
-    selectField?.options?.choices?.map((c: any) => ({ id: c.id, name: c.name, color: c.color }))?.filter((x: any) => x?.name) || [];
-
-  return json(true, { interestTypeOptions, selectOptions });
+  return json(true, { interestTypeOptions });
 }

@@ -4,10 +4,18 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * LedVelvet – /moment – DARK EDITION (single-file)
+ * Includes:
+ * - Dark neon UI (black/red)
+ * - Hero video with mobile-friendly audio + fullscreen controls
+ * - Upcoming + Past events (mock data)
+ * - Membership (mock)
+ * - Shop + Cart (demo)
+ * - Sponsor Area with form -> /api/sponsor-request (Airtable + email handled server-side)
+ *
  * Updates:
- * - Sponsor form: validates email/phone
- * - Sponsor form: dropdown "interest type" and "select" loaded from Airtable via meta API
- * - Payload sends { interestType, select } to /api/sponsor-request
+ * - Sponsor form: dropdown "interest type" loaded from Airtable (meta API)
+ * - Sponsor form: email/phone validation to avoid Airtable errors
+ * - Removed: "select" dropdown (admin-only)
  */
 
 type Level = "BASE" | "VIP" | "FOUNDER";
@@ -49,7 +57,6 @@ type SponsorForm = {
   budget: string;
   note: string;
   interestType: string; // NEW
-  select: string; // NEW
 };
 
 type MetaOption = { id?: string; name: string; color?: string | null };
@@ -101,9 +108,8 @@ export default function MomentPage() {
   const [showCart, setShowCart] = useState(false);
   const [cartTimerMin, setCartTimerMin] = useState(10);
 
-  // Sponsor meta options (loaded from Airtable via API)
+  // Sponsor meta options
   const [interestOptions, setInterestOptions] = useState<MetaOption[]>([]);
-  const [selectOptions, setSelectOptions] = useState<MetaOption[]>([]);
   const [metaLoading, setMetaLoading] = useState(false);
 
   const [sponsor, setSponsor] = useState<SponsorForm>({
@@ -114,7 +120,6 @@ export default function MomentPage() {
     budget: "",
     note: "",
     interestType: "",
-    select: "",
   });
   const [sponsorSending, setSponsorSending] = useState(false);
   const [sponsorSentOk, setSponsorSentOk] = useState<string | null>(null);
@@ -124,30 +129,25 @@ export default function MomentPage() {
   const [fsErr, setFsErr] = useState<string | null>(null);
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Load sponsor dropdown options from Airtable (single source of truth)
+  // Load "interest type" options from Airtable via meta API
   useEffect(() => {
     let alive = true;
 
     async function loadMeta() {
       setMetaLoading(true);
       try {
-        // route you will add: /api/meta/sponsor-request-options
         const r = await fetch("/api/meta/sponsor-request-options", { cache: "no-store" });
         const j = await r.json();
         if (!alive) return;
 
         if (r.ok && j?.ok) {
           setInterestOptions(Array.isArray(j?.interestTypeOptions) ? j.interestTypeOptions : []);
-          setSelectOptions(Array.isArray(j?.selectOptions) ? j.selectOptions : []);
         } else {
-          // non blocchiamo il form: solo no dropdown
           setInterestOptions([]);
-          setSelectOptions([]);
         }
       } catch {
         if (!alive) return;
         setInterestOptions([]);
-        setSelectOptions([]);
       } finally {
         if (!alive) return;
         setMetaLoading(false);
@@ -350,14 +350,10 @@ export default function MomentPage() {
     const phoneNorm = phoneVal ? normalizePhone(phoneVal) : "";
     if (phoneVal && !phoneNorm) return setSponsorSentErr("Telefono non valido (usa numeri e +).");
 
-    // If Airtable options exist, force dropdown values to be valid
+    // If Airtable options exist, enforce valid choice
     if (interestOptions.length > 0 && sponsor.interestType) {
       const ok = interestOptions.some((o) => o.name === sponsor.interestType);
       if (!ok) return setSponsorSentErr("Interest type non valido.");
-    }
-    if (selectOptions.length > 0 && sponsor.select) {
-      const ok = selectOptions.some((o) => o.name === sponsor.select);
-      if (!ok) return setSponsorSentErr("Select non valido.");
     }
 
     setSponsorSending(true);
@@ -367,8 +363,8 @@ export default function MomentPage() {
         brand: brandVal,
         name: nameVal,
         email: emailVal,
-        phone: phoneNorm || "", // send normalized phone
-        source: "moment", // helps Airtable
+        phone: phoneNorm || "",
+        source: "moment",
       };
 
       const res = await fetch("/api/sponsor-request", {
@@ -380,10 +376,7 @@ export default function MomentPage() {
       const data = await res.json();
 
       if (!res.ok || !data?.ok) {
-        const msg =
-          data?.error ||
-          data?.details?.error?.message ||
-          "Errore invio richiesta. Riprova.";
+        const msg = data?.error || data?.details?.error?.message || "Errore invio richiesta. Riprova.";
         throw new Error(msg);
       }
 
@@ -396,7 +389,6 @@ export default function MomentPage() {
         budget: "",
         note: "",
         interestType: "",
-        select: "",
       });
     } catch (err: any) {
       setSponsorSentErr(err?.message || "Errore invio richiesta.");
@@ -507,12 +499,497 @@ export default function MomentPage() {
         </div>
       </header>
 
-      {/* ... TUTTO IL RESTO IDENTICO FINO ALLA SEZIONE SPONSOR ... */}
+      <section id="home" className="pt-6">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[var(--surface2)]">
+            <div className="relative aspect-[9/16] sm:aspect-[16/7] w-full bg-black">
+              <video
+                ref={heroVideoRef}
+                className="absolute inset-0 z-10 h-full w-full object-cover"
+                poster={brand.heroPoster}
+                autoPlay
+                loop
+                muted={muted}
+                playsInline
+                preload="metadata"
+              >
+                <source src={brand.heroVideoMp4} type="video/mp4" />
+                <source src={brand.heroVideoWebm} type="video/webm" />
+              </video>
 
-      {/* (Ho lasciato invariato tutto il file sopra per brevità qui in chat.
-          NEL TUO PROGETTO DEVI INCOLLARE QUESTO FILE INTERO.
-          Se vuoi, te lo rigiro "full" senza i puntini: dimmi e lo posto completo al 100%.)
-      */}
+              <img src={brand.heroPoster} alt="LedVelvet" className="absolute inset-0 z-0 h-full w-full object-cover" loading="eager" />
+              <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/95 via-black/55 to-black/15" />
+              <div className="absolute inset-0 z-20 opacity-60" style={{ background: "radial-gradient(800px circle at 20% 60%, rgba(225,29,72,0.18), transparent 60%)" }} />
+
+              <div className="absolute right-3 top-3 z-40 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  className="px-3 py-2 rounded-full border border-white/15 bg-black/40 text-white text-[10px] tracking-[0.22em] uppercase hover:bg-black/60 active:scale-[0.99]"
+                  style={{ backdropFilter: "blur(10px)" as any }}
+                >
+                  {muted ? "Audio off" : "Audio on"}
+                </button>
+                <button
+                  type="button"
+                  onClick={requestHeroFullscreen}
+                  className="px-3 py-2 rounded-full border border-white/15 bg-black/40 text-white text-[10px] tracking-[0.22em] uppercase hover:bg-black/60 active:scale-[0.99]"
+                  style={{ backdropFilter: "blur(10px)" as any }}
+                >
+                  Fullscreen
+                </button>
+              </div>
+
+              {fsErr && (
+                <div className="absolute left-3 right-3 bottom-3 z-40 rounded-2xl border border-white/10 bg-black/60 p-3 text-xs text-white/75">
+                  {fsErr}
+                </div>
+              )}
+            </div>
+
+            <div className="absolute inset-0 z-30 flex items-end text-white">
+              <div className="w-full p-4 sm:p-6 md:p-10">
+                <div className="flex flex-col gap-3 max-w-3xl rounded-[24px] bg-black/55 backdrop-blur-md border border-white/10 p-4 sm:p-6 md:p-7">
+                  <div className="text-[10px] sm:text-xs tracking-[0.22em] uppercase text-white/80">
+                    Ethereal clubbing in unconventional places
+                  </div>
+
+                  <h1 className="text-3xl sm:text-4xl md:text-6xl leading-[0.95] font-semibold tracking-tight">
+                    A Night You Don’t Repeat.
+                    <span className="block text-white/80">You Remember.</span>
+                  </h1>
+
+                  <p className="max-w-2xl text-xs sm:text-sm md:text-base text-white/75">
+                    Iscriviti alla membership APS, accedi alle pre-sale e sblocca sconti merch. Ticketing eventi via piattaforme esterne (Xceed/Shotgun) con CRM unificato sul sito.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-2">
+                    <a
+                      href="#eventi"
+                      className="w-full sm:w-auto px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)] text-center"
+                      style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 12px 38px rgba(225,29,72,0.25)" }}
+                    >
+                      Discover moments
+                    </a>
+
+                    <a
+                      href="#membership"
+                      className="w-full sm:w-auto px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30 text-center"
+                    >
+                      Join membership
+                    </a>
+
+                    <a
+                      href="#shop"
+                      className="w-full sm:w-auto px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30 text-center"
+                    >
+                      Shop the drop
+                    </a>
+                  </div>
+                </div>
+
+                <div className="mt-4 sm:mt-6 h-px w-full max-w-3xl bg-gradient-to-r from-transparent via-white/12 to-transparent" />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-4 mt-10">
+            {[
+              { t: "Once in a lifetime", d: "Location particolari, atmosfere rare, dettagli curati." },
+              { t: "Renowned artists", d: "Lineup selezionate, set intimi e sorprese." },
+              { t: "Community access", d: "Priority list, presale e benefici per soci." },
+            ].map((x) => (
+              <div key={x.t} className="rounded-[22px] border border-white/10 bg-[var(--surface2)] p-6">
+                <div className="text-xs tracking-[0.22em] uppercase text-white/80">{x.t}</div>
+                <div className="mt-2 text-sm text-white/70">{x.d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="eventi" className="py-16">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <div className="text-xs tracking-[0.22em] uppercase text-white/70">Choose your moment</div>
+              <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Prossimi Eventi</h2>
+            </div>
+            <div className="text-xs tracking-[0.22em] uppercase text-white/50">tickets via Xceed / Shotgun</div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 mt-8">
+            {upcomingEvents.map((e) => (
+              <article key={e.id} className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
+                <div className="relative aspect-[16/9] bg-black">
+                  <video
+                    className="absolute inset-0 z-10 h-full w-full object-cover"
+                    poster={e.posterSrc}
+                    autoPlay
+                    loop
+                    muted={muted}
+                    playsInline
+                    preload="metadata"
+                  >
+                    <source src={e.videoMp4 || brand.heroVideoMp4} type="video/mp4" />
+                    <source src={brand.heroVideoWebm} type="video/webm" />
+                  </video>
+
+                  <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-0 h-full w-full object-cover" loading="lazy" />
+
+                  <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+                  <div className="absolute inset-0 z-20 opacity-70" style={{ background: "radial-gradient(700px circle at 20% 80%, rgba(225,29,72,0.14), transparent 60%)" }} />
+                </div>
+
+                <div className="p-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs tracking-[0.22em] uppercase text-white/60">{e.tag}</div>
+
+                    <a
+                      href={e.href}
+                      className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)] hover:border-[var(--accent)]"
+                      style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.06) inset" }}
+                    >
+                      Book
+                    </a>
+                  </div>
+
+                  <h3 className="text-xl font-semibold mt-3">{e.name}</h3>
+                  <div className="mt-2 text-sm text-white/65">
+                    {e.city} • {e.date}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="past" className="py-16 border-y border-white/10 bg-[var(--surface)]">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-xs tracking-[0.22em] uppercase text-white/70">Recap</div>
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Past Events</h2>
+          <p className="mt-3 text-white/65 text-sm">
+            Una timeline “di credibilità”: mostra cosa avete già fatto (foto/recap/video).
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-6 mt-8">
+            {pastEvents.map((e) => (
+              <article key={e.id} className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
+                <div className="relative aspect-[16/9] bg-black">
+                  <img src={e.posterSrc} alt={e.name} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
+                  <div className="absolute left-4 top-4 px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/40 text-white/80">
+                    {e.tag}
+                  </div>
+                </div>
+                <div className="p-6">
+                  <h3 className="text-xl font-semibold">{e.name}</h3>
+                  <div className="mt-2 text-sm text-white/65">{e.city} • {e.date}</div>
+                  <div className="mt-4 flex gap-2">
+                    <a
+                      href={e.href}
+                      className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
+                    >
+                      Gallery
+                    </a>
+                    <a
+                      href={e.href}
+                      className="px-4 py-2 rounded-full bg-white/10 text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)]"
+                      style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.06) inset" }}
+                    >
+                      Watch recap
+                    </a>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="membership" className="py-16">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="max-w-2xl">
+            <div className="text-xs tracking-[0.22em] uppercase text-white/70">What is a membership?</div>
+            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Membership APS</h2>
+            <p className="mt-4 text-white/70">
+              Onboarding con verifica documento (KYC light), tessera digitale con benefici per livello.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6 mt-10">
+            {([
+              { code: "BASE" as const, price: 39, perks: ["Tessera digitale", "Pre-sale 15'", "Sconto Shop 5%"] },
+              { code: "VIP" as const, price: 99, perks: ["Priority list", "Pre-sale 60'", "Sconto Shop 10%", "Eventi solo soci"] },
+              { code: "FOUNDER" as const, price: 199, perks: ["Badge Founder", "Inviti speciali", "Sconto Shop 15%", "Meet & Greet"] },
+            ]).map((m) => (
+              <div
+                key={m.code}
+                className="rounded-[28px] border border-white/10 bg-[var(--surface2)] p-6 flex flex-col"
+                style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.03) inset" }}
+              >
+                <div className="flex items-baseline justify-between">
+                  <div className="text-xs tracking-[0.22em] uppercase text-white/70">{m.code}</div>
+                  <div className="text-lg font-semibold">{formatEUR(m.price)}/anno</div>
+                </div>
+
+                <ul className="mt-4 space-y-2 text-sm text-white/80">
+                  {m.perks.map((p) => (
+                    <li key={p} className="flex gap-2">
+                      <span className="mt-[6px] w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-6 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowKyc(true)}
+                    className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
+                    type="button"
+                  >
+                    KYC
+                  </button>
+
+                  <button
+                    onClick={() => alert(`Checkout membership ${m.code} (demo)`)}
+                    className="px-4 py-2 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
+                    style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
+                    type="button"
+                  >
+                    Join
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {showKyc && (
+            <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm grid place-items-center p-4" onClick={() => setShowKyc(false)}>
+              <div className="w-full max-w-lg rounded-[28px] bg-[var(--surface2)] border border-white/10 p-6" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs tracking-[0.22em] uppercase text-white/60">KYC</div>
+                    <h4 className="text-xl font-semibold mt-1">Dati Socio</h4>
+                  </div>
+                  <button className="px-3 py-1 rounded-full border border-white/15 text-xs hover:bg-white/10" onClick={() => setShowKyc(false)} type="button">
+                    Chiudi
+                  </button>
+                </div>
+
+                <div className="grid gap-3 mt-5">
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <input
+                      placeholder="Nome"
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                    />
+                    <input
+                      placeholder="Cognome"
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                    />
+                  </div>
+
+                  <input
+                    placeholder="Codice Fiscale"
+                    className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                  />
+
+                  <input
+                    type="date"
+                    className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-white/80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                  />
+
+                  <label className="text-sm text-white/70 flex items-center gap-2">
+                    <input type="checkbox" /> Consenso privacy/GDPR
+                  </label>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    className="px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
+                    onClick={() => setShowKyc(false)}
+                    type="button"
+                  >
+                    Annulla
+                  </button>
+
+                  <button
+                    className="px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
+                    onClick={() => {
+                      setUser((u) => ({ ...u, kyc: true, email: u.email ?? "demo@ledvelvet.it", level: u.level ?? "BASE" }));
+                      setShowKyc(false);
+                    }}
+                    style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.22)" }}
+                    type="button"
+                  >
+                    Invia
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section id="shop" className="py-16 border-y border-white/10 bg-[var(--surface)]">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <div className="text-xs tracking-[0.22em] uppercase text-white/70">Merchandise</div>
+              <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Shop</h2>
+              <p className="mt-3 text-white/70 text-sm">
+                Sconti soci: BASE 5% • VIP 10% • FOUNDER 15% — Spedizione {formatEUR(5)} (gratis oltre {formatEUR(60)}).
+              </p>
+            </div>
+
+            <button
+              className="px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
+              onClick={() => setShowCart(true)}
+              style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
+              type="button"
+            >
+              Checkout ({formatEUR(total)})
+            </button>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6 mt-10">
+            {products.map((p) => (
+              <div key={p.sku} className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
+                <div className="relative aspect-square overflow-hidden bg-black">
+                  <img
+                    src={p.image}
+                    alt={p.name}
+                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/15" />
+                  <div
+                    className="absolute left-4 top-4 px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/40 text-white/80"
+                    style={{ backdropFilter: "blur(8px)" as any }}
+                  >
+                    Demo drop
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs tracking-[0.22em] uppercase text-white/60">{p.sku}</div>
+                      <div className="text-lg font-semibold mt-1">{p.name}</div>
+                    </div>
+                    <div className="text-sm font-medium">{formatEUR(p.price)}</div>
+                  </div>
+
+                  <div className="mt-4">
+                    <div className="text-xs tracking-[0.22em] uppercase text-white/60">Size</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {p.sizes.map((s) => {
+                        const inStock = (p.stock?.[s] ?? 0) > 0;
+                        const active = (selectedSize[p.sku] || p.sizes[0]) === s;
+                        return (
+                          <button
+                            key={s}
+                            disabled={!inStock}
+                            onClick={() => setSelectedSize((m) => ({ ...m, [p.sku]: s }))}
+                            className={cn(
+                              "px-3 py-1 rounded-full border text-xs tracking-[0.18em] uppercase",
+                              active
+                                ? "bg-white/10 text-white border-white/25"
+                                : "border-white/15 text-white/80 hover:bg-white/10 hover:border-white/30",
+                              !inStock && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-inherit"
+                            )}
+                            type="button"
+                          >
+                            {s}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 text-xs text-white/55">
+                      Stock: {p.stock?.[(selectedSize[p.sku] || p.sizes[0]) as any] ?? "–"}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => addToCart(p)}
+                    className="mt-5 w-full px-5 py-3 rounded-full bg-white/10 text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)]"
+                    style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset" }}
+                    type="button"
+                  >
+                    Add to cart
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {showCart && (
+            <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm" onClick={() => setShowCart(false)}>
+              <aside className="absolute right-0 top-0 h-full w-full max-w-md bg-[var(--surface)] border-l border-white/10 p-6" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs tracking-[0.22em] uppercase text-white/60">Cart</div>
+                    <h3 className="text-2xl font-semibold mt-1">Il tuo carrello</h3>
+                    <div className="mt-2 text-xs text-white/55">Reservation time: {cartTimerMin} min (demo)</div>
+                  </div>
+                  <button className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10" onClick={() => setShowCart(false)} type="button">
+                    Chiudi
+                  </button>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  {cart.length === 0 && <p className="text-sm text-white/60">Il carrello è vuoto.</p>}
+                  {cart.map((i, idx) => (
+                    <div key={`${i.sku}-${i.size}-${idx}`} className="rounded-[22px] border border-white/10 bg-[var(--surface2)] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium">
+                            {i.name} {i.size ? `(${i.size})` : ""}
+                          </div>
+                          <div className="text-xs text-white/55 mt-1">{formatEUR(i.price)} cad.</div>
+                        </div>
+                        <button className="text-xs underline underline-offset-4 text-white/60 hover:text-white" onClick={() => removeFromCart(idx)} type="button">
+                          Rimuovi
+                        </button>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => decQty(idx)} type="button">
+                            -
+                          </button>
+                          <div className="w-10 text-center text-sm">{i.qty}</div>
+                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => incQty(idx)} type="button">
+                            +
+                          </button>
+                        </div>
+                        <div className="text-sm font-medium">{formatEUR(i.qty * i.price)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 rounded-[28px] border border-white/10 bg-[var(--surface2)] p-5 text-sm space-y-2">
+                  <div className="flex items-center justify-between"><span className="text-white/70">Subtotale</span><span>{formatEUR(subtotal)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-white/70">Sconto soci {Math.round(discountRate * 100)}%</span><span>-{formatEUR(discount)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-white/70">Spedizione</span><span>{formatEUR(shipping)}</span></div>
+                  <div className="flex items-center justify-between text-base font-semibold"><span>Totale</span><span>{formatEUR(total)}</span></div>
+
+                  <button
+                    className="w-full mt-3 px-5 py-3 rounded-full bg-[var(--accent)] text-white text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent2)]"
+                    onClick={() => alert(`Redirect a Stripe Checkout (demo) – Totale ${formatEUR(total)}`)}
+                    style={{ boxShadow: "0 10px 30px rgba(225,29,72,0.20)" }}
+                    type="button"
+                  >
+                    Procedi al pagamento
+                  </button>
+                </div>
+              </aside>
+            </div>
+          )}
+        </div>
+      </section>
 
       <section id="sponsor" className="py-16">
         <div className="max-w-6xl mx-auto px-4">
@@ -546,39 +1023,21 @@ export default function MomentPage() {
                     className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
                   />
 
-                  {/* NEW: dropdowns */}
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div className="grid gap-1">
-                      <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Interest type</div>
-                      <select
-                        value={sponsor.interestType}
-                        onChange={(e) => setSponsor((s) => ({ ...s, interestType: e.target.value }))}
-                        className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-white/80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                      >
-                        <option value="">{metaLoading ? "Carico..." : "Seleziona (opzionale)"}</option>
-                        {interestOptions.map((o) => (
-                          <option key={o.id || o.name} value={o.name}>
-                            {o.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid gap-1">
-                      <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Select</div>
-                      <select
-                        value={sponsor.select}
-                        onChange={(e) => setSponsor((s) => ({ ...s, select: e.target.value }))}
-                        className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-white/80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                      >
-                        <option value="">{metaLoading ? "Carico..." : "Seleziona (opzionale)"}</option>
-                        {selectOptions.map((o) => (
-                          <option key={o.id || o.name} value={o.name}>
-                            {o.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* Interest type dropdown (Airtable single select) */}
+                  <div className="grid gap-1">
+                    <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Interest type</div>
+                    <select
+                      value={sponsor.interestType}
+                      onChange={(e) => setSponsor((s) => ({ ...s, interestType: e.target.value }))}
+                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-white/80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
+                    >
+                      <option value="">{metaLoading ? "Carico..." : "Seleziona (opzionale)"}</option>
+                      {interestOptions.map((o) => (
+                        <option key={o.id || o.name} value={o.name}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="grid sm:grid-cols-2 gap-3">
@@ -643,7 +1102,7 @@ export default function MomentPage() {
                   </button>
 
                   <div className="pt-2 text-[11px] text-white/40">
-                    {metaLoading ? "Carico opzioni da Airtable..." : interestOptions.length === 0 && selectOptions.length === 0 ? "Opzioni Airtable non disponibili (ok comunque)." : ""}
+                    {metaLoading ? "Carico opzioni da Airtable..." : interestOptions.length === 0 ? "Opzioni Airtable non disponibili (ok comunque)." : ""}
                   </div>
                 </div>
               </div>
