@@ -10,6 +10,21 @@ function getAllowedAdmins(): string[] {
     .filter(Boolean);
 }
 
+function cleanFrom(raw?: string | null) {
+  // rimuove spazi e virgolette accidentalmente messe in Vercel
+  const v = (raw || "").trim().replace(/^"+|"+$/g, "").replace(/^'+|'+$/g, "");
+  return v;
+}
+
+function isValidFromFormat(from: string) {
+  // accetta:
+  // - email@example.com
+  // - Name <email@example.com>
+  const emailOnly = /^[^\s<>"]+@[^\s<>"]+\.[^\s<>"]+$/;
+  const nameEmail = /^[^<>"]+\s<[^<>\s"]+@[^<>\s"]+\.[^<>\s"]+>$/;
+  return emailOnly.test(from) || nameEmail.test(from);
+}
+
 async function sendWithResend({
   to,
   subject,
@@ -21,15 +36,23 @@ async function sendWithResend({
   html: string;
   text?: string;
 }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("Resend error: missing RESEND_API_KEY");
+  }
+
+  const fromRaw = cleanFrom(process.env.EMAIL_FROM) || "onboarding@resend.dev";
+  const from = isValidFromFormat(fromRaw) ? fromRaw : "onboarding@resend.dev";
+
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM || "onboarding@resend.dev",
-      to,
+      from,
+      to: [to], // sempre array
       subject,
       html,
       text,
