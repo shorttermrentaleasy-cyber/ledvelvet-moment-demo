@@ -41,17 +41,6 @@ function getEventDateValue(f: any): string {
   return f?.date || f?.Date || "";
 }
 
-function toDateOnlyISO(v: any): string {
-  // ritorna YYYY-MM-DD o ""
-  if (!v) return "";
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return "";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
 function parseDateOnlyISO(v: string): Date | null {
   // accetta YYYY-MM-DD
   if (!v) return null;
@@ -111,6 +100,13 @@ export default async function AdminEventsPage({
   const evData = await evRes.json();
   let events: AirtableRecord[] = evData.records || [];
 
+  // ✅ SAFETY: dedupe per ID (evita qualunque doppione)
+  {
+    const byId = new Map<string, AirtableRecord>();
+    for (const r of events) byId.set(r.id, r);
+    events = Array.from(byId.values());
+  }
+
   /* -------- fetch SPONSORS -------- */
 
   let sponsorById: Record<string, string> = {};
@@ -132,7 +128,7 @@ export default async function AdminEventsPage({
     });
   }
 
-  /* -------- build filter options -------- */
+  /* -------- build filter options (da events ORIGINALI, non filtrati) -------- */
 
   const uniq = (arr: string[]) => Array.from(new Set(arr.filter(Boolean))).sort();
 
@@ -154,9 +150,12 @@ export default async function AdminEventsPage({
   const dateFrom = parseDateOnlyISO(dateFromStr);
   const dateTo = parseDateOnlyISO(dateToStr);
 
-  // per includere "dateTo" come fine giornata
-  const dateToEnd = dateTo ? new Date(dateTo.getFullYear(), dateTo.getMonth(), dateTo.getDate(), 23, 59, 59, 999) : null;
+  // includi dateTo fino a fine giornata
+  const dateToEnd = dateTo
+    ? new Date(dateTo.getFullYear(), dateTo.getMonth(), dateTo.getDate(), 23, 59, 59, 999)
+    : null;
 
+  // ✅ filtro (SENZA side-effects)
   events = events.filter((e) => {
     const f = e.fields || {};
     const hay = `${eventLabel(f, e.id)} ${txt(f.City)} ${txt(f.Venue)} ${txt(
@@ -176,14 +175,15 @@ export default async function AdminEventsPage({
       if (dateFrom && d < dateFrom) return false;
       if (dateToEnd && d > dateToEnd) return false;
     }
-	// -------- SORT BY DATE (desc) --------
-	events = events.sort((a, b) => {
-  	const da = new Date(getEventDateValue(a.fields) || 0).getTime();
-  	const db = new Date(getEventDateValue(b.fields) || 0).getTime();
-  	return db - da; // più recenti prima
-	});
 
     return true;
+  });
+
+  // ✅ SORT una volta sola, fuori dal filter
+  events = [...events].sort((a, b) => {
+    const da = new Date(getEventDateValue(a.fields) || 0).getTime();
+    const db = new Date(getEventDateValue(b.fields) || 0).getTime();
+    return db - da; // più recenti prima
   });
 
   return (
@@ -238,20 +238,8 @@ export default async function AdminEventsPage({
         </select>
 
         {/* DATE RANGE */}
-        <input
-          type="date"
-          name="dateFrom"
-          defaultValue={dateFromStr}
-          style={filterInput}
-          title="Date from"
-        />
-        <input
-          type="date"
-          name="dateTo"
-          defaultValue={dateToStr}
-          style={filterInput}
-          title="Date to"
-        />
+        <input type="date" name="dateFrom" defaultValue={dateFromStr} style={filterInput} title="Date from" />
+        <input type="date" name="dateTo" defaultValue={dateToStr} style={filterInput} title="Date to" />
 
         <button type="submit" style={filterBtn}>
           Apply
