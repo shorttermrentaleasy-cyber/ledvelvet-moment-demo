@@ -395,14 +395,19 @@ const th: React.CSSProperties = {
 };
 
 const td: React.CSSProperties = {
-  padding: "12px",
+  padding: "14px 12px",         // un filo più aria
   borderBottom: "1px solid rgba(255,255,255,0.08)",
   whiteSpace: "nowrap",
+  fontSize: 16,                 // ⬅️ chiave
+  lineHeight: "1.35",
+  color: "rgba(255,255,255,0.82)",
 };
 
 const tdStrong: React.CSSProperties = {
   ...td,
-  fontWeight: 900,
+  fontWeight: 500,              // normale
+  letterSpacing: "0.01em",
+  color: "rgba(255,255,255,0.95)",
 };
 
 const editBtn: React.CSSProperties = {
