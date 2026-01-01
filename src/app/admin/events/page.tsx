@@ -36,6 +36,32 @@ function eventLabel(f: any, id: string) {
   return f["Event Name"] || f["Event name"] || f.Name || `Event ${id.slice(0, 6)}`;
 }
 
+function getEventDateValue(f: any): string {
+  // supporta sia "date" che "Date"
+  return f?.date || f?.Date || "";
+}
+
+function toDateOnlyISO(v: any): string {
+  // ritorna YYYY-MM-DD o ""
+  if (!v) return "";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseDateOnlyISO(v: string): Date | null {
+  // accetta YYYY-MM-DD
+  if (!v) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
 /* ---------------- page ---------------- */
 
 export default async function AdminEventsPage({
@@ -47,6 +73,8 @@ export default async function AdminEventsPage({
     city?: string;
     venue?: string;
     ticket?: string;
+    dateFrom?: string; // YYYY-MM-DD
+    dateTo?: string; // YYYY-MM-DD
   };
 }) {
   const session = await getServerSession(authOptions);
@@ -121,6 +149,14 @@ export default async function AdminEventsPage({
   const venueF = searchParams?.venue || "";
   const ticketF = searchParams?.ticket || "";
 
+  const dateFromStr = searchParams?.dateFrom || "";
+  const dateToStr = searchParams?.dateTo || "";
+  const dateFrom = parseDateOnlyISO(dateFromStr);
+  const dateTo = parseDateOnlyISO(dateToStr);
+
+  // per includere "dateTo" come fine giornata
+  const dateToEnd = dateTo ? new Date(dateTo.getFullYear(), dateTo.getMonth(), dateTo.getDate(), 23, 59, 59, 999) : null;
+
   events = events.filter((e) => {
     const f = e.fields || {};
     const hay = `${eventLabel(f, e.id)} ${txt(f.City)} ${txt(f.Venue)} ${txt(
@@ -132,6 +168,20 @@ export default async function AdminEventsPage({
     if (cityF && txt(f.City) !== cityF) return false;
     if (venueF && txt(f.Venue) !== venueF) return false;
     if (ticketF && txt(f["Ticket Platform"]) !== ticketF) return false;
+
+    const rawDate = getEventDateValue(f);
+    if (dateFrom || dateToEnd) {
+      const d = rawDate ? new Date(rawDate) : null;
+      if (!d || isNaN(d.getTime())) return false;
+      if (dateFrom && d < dateFrom) return false;
+      if (dateToEnd && d > dateToEnd) return false;
+    }
+	// -------- SORT BY DATE (desc) --------
+	events = events.sort((a, b) => {
+  	const da = new Date(getEventDateValue(a.fields) || 0).getTime();
+  	const db = new Date(getEventDateValue(b.fields) || 0).getTime();
+  	return db - da; // più recenti prima
+	});
 
     return true;
   });
@@ -187,6 +237,22 @@ export default async function AdminEventsPage({
           ))}
         </select>
 
+        {/* DATE RANGE */}
+        <input
+          type="date"
+          name="dateFrom"
+          defaultValue={dateFromStr}
+          style={filterInput}
+          title="Date from"
+        />
+        <input
+          type="date"
+          name="dateTo"
+          defaultValue={dateToStr}
+          style={filterInput}
+          title="Date to"
+        />
+
         <button type="submit" style={filterBtn}>
           Apply
         </button>
@@ -217,10 +283,12 @@ export default async function AdminEventsPage({
                 ? f.Sponsors.map((id: string) => sponsorById[id] || id).join(", ")
                 : "-";
 
+              const rawDate = getEventDateValue(f);
+
               return (
                 <tr key={e.id}>
                   <td style={tdStrong}>{eventLabel(f, e.id)}</td>
-                  <td style={td}>{fmtDate(f.date || f.Date)}</td>
+                  <td style={td}>{fmtDate(rawDate)}</td>
                   <td style={td}>{txt(f.City)}</td>
                   <td style={td}>{txt(f.Venue)}</td>
                   <td style={td}>{txt(f.Status)}</td>
