@@ -4,18 +4,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * LedVelvet – /moment – DARK EDITION (single-file)
- * Includes:
- * - Dark neon UI (black/red)
- * - Hero video with mobile-friendly audio + fullscreen controls
- * - Upcoming + Past events (mock data)
- * - Membership (mock)
- * - Shop + Cart (demo)
- * - Sponsor Area with form -> /api/sponsor-request (Airtable + email handled server-side)
- *
  * Updates:
- * - Sponsor form: dropdown "interest type" loaded from Airtable (meta API)
- * - Sponsor form: email/phone validation to avoid Airtable errors
- * - Removed: "select" dropdown (admin-only)
+ * - Events loaded from Airtable via /api/public/events
+ * - Past/Upcoming split by Airtable field "Phase" (past/upcoming)
+ * - Past events "Watch recap" uses Aftermovie URL (YouTube recommended)
+ * - Sponsor request source set to "website"
  */
 
 type Level = "BASE" | "VIP" | "FOUNDER";
@@ -41,12 +34,13 @@ type EventItem = {
   id: string;
   name: string;
   city: string;
-  date: string;
-  href: string;
-  tag: string;
+  date: string; // ISO from Airtable recommended
+  phase: "upcoming" | "past";
+  ticketUrl?: string;
+  aftermovieUrl?: string;
+  tag?: string; // e.g. SOLD OUT / RECAP
   posterSrc: string;
   videoMp4?: string | null;
-  status: "upcoming" | "past";
 };
 
 type SponsorForm = {
@@ -56,7 +50,7 @@ type SponsorForm = {
   phone: string;
   budget: string;
   note: string;
-  interestType: string; // NEW
+  interestType: string;
 };
 
 type MetaOption = { id?: string; name: string; color?: string | null };
@@ -74,12 +68,18 @@ function isValidEmail(v: string) {
 }
 
 function normalizePhone(raw: string) {
-  // allow +, numbers, spaces
   const cleaned = raw.replace(/[^\d+\s]/g, "").trim();
   const digits = cleaned.replace(/[^\d]/g, "");
   if (!cleaned) return "";
-  if (digits.length < 6) return ""; // too short => invalid
+  if (digits.length < 6) return "";
   return cleaned;
+}
+
+function fmtDateIT(v: string) {
+  if (!v) return "";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return v;
+  return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 }
 
 export default function MomentPage() {
@@ -128,6 +128,68 @@ export default function MomentPage() {
   const [muted, setMuted] = useState(true);
   const [fsErr, setFsErr] = useState<string | null>(null);
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // EVENTS from Airtable
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsErr, setEventsErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadEvents() {
+      setEventsLoading(true);
+      setEventsErr(null);
+      try {
+        const r = await fetch("/api/public/events?limit=100", { cache: "no-store" });
+        const j = await r.json();
+        if (!alive) return;
+
+        if (!r.ok || !j?.ok) {
+          const extra = j?.extra ? ` — ${JSON.stringify(j.extra)}` : "";
+          throw new Error((j?.error || "Errore caricamento eventi") + extra);
+        }
+
+        // supporto sia "events" che "items" (nel caso tu abbia ancora una vecchia route deployata)
+        const raw: any[] = Array.isArray(j?.events) ? j.events : Array.isArray(j?.items) ? j.items : [];
+
+        const norm: EventItem[] = raw
+          .map((e) => {
+            const phaseRaw = (e.phase || "").toString().toLowerCase();
+            const phase: "past" | "upcoming" = phaseRaw === "past" ? "past" : "upcoming";
+
+            return {
+              id: e.id || e.airtableId || e.eventId || crypto.randomUUID(),
+              name: e.name || e["Event Name"] || "",
+              city: e.city || e["City"] || "",
+              date: e.date || e["date"] || "",
+              phase,
+              ticketUrl: e.ticketUrl || e["Ticket Url"] || "",
+              aftermovieUrl: e.aftermovieUrl || e.aftermovie || e["Aftermovie"] || "",
+              tag: (e.status || e.tag || "").toString(),
+              posterSrc: e.posterSrc || e.heroImage || e["Hero Image"] || "/og.jpg",
+              videoMp4: null,
+            };
+          })
+          .filter((x) => x.name)
+          .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+        setEvents(norm);
+      } catch (e: any) {
+        if (!alive) return;
+        setEventsErr(e?.message || "Errore caricamento eventi");
+        setEvents([]);
+      } finally {
+        if (!alive) return;
+        setEventsLoading(false);
+      }
+    }
+
+    loadEvents();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Load "interest type" options from Airtable via meta API
   useEffect(() => {
@@ -204,81 +266,13 @@ export default function MomentPage() {
   }
 
   const products: Product[] = [
-    {
-      sku: "LV-TEE-BLK",
-      name: "LedVelvet Tee – Black",
-      price: 34,
-      sizes: ["S", "M", "L", "XL"],
-      stock: { S: 12, M: 20, L: 14, XL: 8 },
-      image: "/shop/tee.png",
-    },
-    {
-      sku: "LV-HAT",
-      name: "LedVelvet Cap",
-      price: 29,
-      sizes: ["UNI"],
-      stock: { UNI: 30 },
-      image: "/shop/cap.png",
-    },
-    {
-      sku: "LV-SCARF",
-      name: "LedVelvet Scarf",
-      price: 49,
-      sizes: ["UNI"],
-      stock: { UNI: 15 },
-      image: "/shop/scarf.png",
-    },
+    { sku: "LV-TEE-BLK", name: "LedVelvet Tee – Black", price: 34, sizes: ["S", "M", "L", "XL"], stock: { S: 12, M: 20, L: 14, XL: 8 }, image: "/shop/tee.png" },
+    { sku: "LV-HAT", name: "LedVelvet Cap", price: 29, sizes: ["UNI"], stock: { UNI: 30 }, image: "/shop/cap.png" },
+    { sku: "LV-SCARF", name: "LedVelvet Scarf", price: 49, sizes: ["UNI"], stock: { UNI: 15 }, image: "/shop/scarf.png" },
   ];
 
-  const events: EventItem[] = [
-    {
-      id: "evt1",
-      name: "CRYPTA – Ethereal Clubbing",
-      city: "Milano",
-      date: "25 Gen 2026",
-      href: "#",
-      tag: "LISTE & TICKETS",
-      posterSrc: "/og.jpg",
-      videoMp4: null,
-      status: "upcoming",
-    },
-    {
-      id: "evt2",
-      name: "HANGAR – Secret Night",
-      city: "Toscana",
-      date: "10 Feb 2026",
-      href: "#",
-      tag: "LIMITED",
-      posterSrc: "/og.jpg",
-      videoMp4: null,
-      status: "upcoming",
-    },
-    {
-      id: "evt3",
-      name: "VELVET ROOM – Afterhours",
-      city: "Firenze",
-      date: "12 Ott 2025",
-      href: "#",
-      tag: "SOLD OUT",
-      posterSrc: "/og.jpg",
-      videoMp4: null,
-      status: "past",
-    },
-    {
-      id: "evt4",
-      name: "NEON GROVE – Secret Garden",
-      city: "Pisa",
-      date: "20 Lug 2025",
-      href: "#",
-      tag: "RECAP",
-      posterSrc: "/og.jpg",
-      videoMp4: null,
-      status: "past",
-    },
-  ];
-
-  const upcomingEvents = events.filter((e) => e.status === "upcoming");
-  const pastEvents = events.filter((e) => e.status === "past");
+  const upcomingEvents = events.filter((e) => e.phase === "upcoming");
+  const pastEvents = events.filter((e) => e.phase === "past");
 
   const { subtotal, discountRate, discount, shipping, total } = useMemo(() => {
     const subtotal = cart.reduce((s, i) => s + i.qty * i.price, 0);
@@ -346,11 +340,9 @@ export default function MomentPage() {
     if (!emailVal) return setSponsorSentErr("Inserisci l’email.");
     if (!isValidEmail(emailVal)) return setSponsorSentErr("Email non valida.");
 
-    // phone optional, but must be valid if present
     const phoneNorm = phoneVal ? normalizePhone(phoneVal) : "";
     if (phoneVal && !phoneNorm) return setSponsorSentErr("Telefono non valido (usa numeri e +).");
 
-    // If Airtable options exist, enforce valid choice
     if (interestOptions.length > 0 && sponsor.interestType) {
       const ok = interestOptions.some((o) => o.name === sponsor.interestType);
       if (!ok) return setSponsorSentErr("Interest type non valido.");
@@ -364,7 +356,7 @@ export default function MomentPage() {
         name: nameVal,
         email: emailVal,
         phone: phoneNorm || "",
-        source: "moment",
+        source: "website",
       };
 
       const res = await fetch("/api/sponsor-request", {
@@ -381,15 +373,7 @@ export default function MomentPage() {
       }
 
       setSponsorSentOk("Richiesta inviata! Ti risponderemo via email a breve.");
-      setSponsor({
-        brand: "",
-        name: "",
-        email: "",
-        phone: "",
-        budget: "",
-        note: "",
-        interestType: "",
-      });
+      setSponsor({ brand: "", name: "", email: "", phone: "", budget: "", note: "", interestType: "" });
     } catch (err: any) {
       setSponsorSentErr(err?.message || "Errore invio richiesta.");
     } finally {
@@ -499,6 +483,7 @@ export default function MomentPage() {
         </div>
       </header>
 
+      {/* HERO */}
       <section id="home" className="pt-6">
         <div className="max-w-6xl mx-auto px-4">
           <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[var(--surface2)]">
@@ -608,6 +593,7 @@ export default function MomentPage() {
         </div>
       </section>
 
+      {/* UPCOMING */}
       <section id="eventi" className="py-16">
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex items-end justify-between gap-4">
@@ -618,60 +604,76 @@ export default function MomentPage() {
             <div className="text-xs tracking-[0.22em] uppercase text-white/50">tickets via Xceed / Shotgun</div>
           </div>
 
+          {eventsLoading && <div className="mt-6 text-sm text-white/60">Carico eventi...</div>}
+          {eventsErr && <div className="mt-6 text-sm text-red-200">Errore: {eventsErr}</div>}
+
           <div className="grid md:grid-cols-2 gap-6 mt-8">
-            {upcomingEvents.map((e) => (
-              <article key={e.id} className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
-                <div className="relative aspect-[16/9] bg-black">
-                  <video
-                    className="absolute inset-0 z-10 h-full w-full object-cover"
-                    poster={e.posterSrc}
-                    autoPlay
-                    loop
-                    muted={muted}
-                    playsInline
-                    preload="metadata"
-                  >
-                    <source src={e.videoMp4 || brand.heroVideoMp4} type="video/mp4" />
-                    <source src={brand.heroVideoWebm} type="video/webm" />
-                  </video>
-
-                  <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-0 h-full w-full object-cover" loading="lazy" />
-
-                  <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
-                  <div className="absolute inset-0 z-20 opacity-70" style={{ background: "radial-gradient(700px circle at 20% 80%, rgba(225,29,72,0.14), transparent 60%)" }} />
-                </div>
-
-                <div className="p-6">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs tracking-[0.22em] uppercase text-white/60">{e.tag}</div>
-
-                    <a
-                      href={e.href}
-                      className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)] hover:border-[var(--accent)]"
-                      style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.06) inset" }}
+            {upcomingEvents.map((e) => {
+              const tag = (e.tag || "LISTE & TICKETS").toUpperCase();
+              const soldOut = tag.includes("SOLD");
+              return (
+                <article key={e.id} className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
+                  <div className="relative aspect-[16/9] bg-black">
+                    <video
+                      className="absolute inset-0 z-10 h-full w-full object-cover"
+                      poster={e.posterSrc}
+                      autoPlay
+                      loop
+                      muted={muted}
+                      playsInline
+                      preload="metadata"
                     >
-                      Book
-                    </a>
+                      <source src={e.videoMp4 || brand.heroVideoMp4} type="video/mp4" />
+                      <source src={brand.heroVideoWebm} type="video/webm" />
+                    </video>
+
+                    <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-0 h-full w-full object-cover" loading="lazy" />
+                    <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+                    <div className="absolute inset-0 z-20 opacity-70" style={{ background: "radial-gradient(700px circle at 20% 80%, rgba(225,29,72,0.14), transparent 60%)" }} />
                   </div>
 
-                  <h3 className="text-xl font-semibold mt-3">{e.name}</h3>
-                  <div className="mt-2 text-sm text-white/65">
-                    {e.city} • {e.date}
+                  <div className="p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs tracking-[0.22em] uppercase text-white/60">{tag}</div>
+
+                      {soldOut ? (
+                        <span className="text-xs text-white/40">Sold out</span>
+                      ) : e.ticketUrl ? (
+                        <a
+                          href={e.ticketUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)] hover:border-[var(--accent)]"
+                          style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.06) inset" }}
+                        >
+                          Book
+                        </a>
+                      ) : (
+                        <span className="text-xs text-white/40">Ticket soon</span>
+                      )}
+                    </div>
+
+                    <h3 className="text-xl font-semibold mt-3">{e.name}</h3>
+                    <div className="mt-2 text-sm text-white/65">
+                      {e.city} • {fmtDateIT(e.date)}
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         </div>
       </section>
 
+      {/* PAST */}
       <section id="past" className="py-16 border-y border-white/10 bg-[var(--surface)]">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-xs tracking-[0.22em] uppercase text-white/70">Recap</div>
           <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Past Events</h2>
-          <p className="mt-3 text-white/65 text-sm">
-            Una timeline “di credibilità”: mostra cosa avete già fatto (foto/recap/video).
-          </p>
+          <p className="mt-3 text-white/65 text-sm">Una timeline “di credibilità”: mostra cosa avete già fatto (foto/recap/video).</p>
+
+          {eventsLoading && <div className="mt-6 text-sm text-white/60">Carico eventi...</div>}
+          {eventsErr && <div className="mt-6 text-sm text-red-200">Errore: {eventsErr}</div>}
 
           <div className="grid md:grid-cols-2 gap-6 mt-8">
             {pastEvents.map((e) => (
@@ -680,26 +682,30 @@ export default function MomentPage() {
                   <img src={e.posterSrc} alt={e.name} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
                   <div className="absolute left-4 top-4 px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/40 text-white/80">
-                    {e.tag}
+                    {(e.tag || "RECAP").toString().toUpperCase()}
                   </div>
                 </div>
+
                 <div className="p-6">
                   <h3 className="text-xl font-semibold">{e.name}</h3>
-                  <div className="mt-2 text-sm text-white/65">{e.city} • {e.date}</div>
-                  <div className="mt-4 flex gap-2">
-                    <a
-                      href={e.href}
-                      className="px-4 py-2 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
-                    >
-                      Gallery
-                    </a>
-                    <a
-                      href={e.href}
-                      className="px-4 py-2 rounded-full bg-white/10 text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)]"
-                      style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.06) inset" }}
-                    >
-                      Watch recap
-                    </a>
+                  <div className="mt-2 text-sm text-white/65">
+                    {e.city} • {fmtDateIT(e.date)}
+                  </div>
+
+                  <div className="mt-4 flex gap-2 flex-wrap">
+                    {e.aftermovieUrl ? (
+                      <a
+                        href={e.aftermovieUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-4 py-2 rounded-full bg-white/10 text-xs tracking-[0.18em] uppercase hover:bg-[var(--accent)]"
+                        style={{ boxShadow: "0 0 0 1px rgba(255,255,255,0.06) inset" }}
+                      >
+                        Watch recap
+                      </a>
+                    ) : (
+                      <span className="text-xs text-white/40">Recap in arrivo</span>
+                    )}
                   </div>
                 </div>
               </article>
@@ -708,14 +714,13 @@ export default function MomentPage() {
         </div>
       </section>
 
+      {/* MEMBERSHIP */}
       <section id="membership" className="py-16">
         <div className="max-w-6xl mx-auto px-4">
           <div className="max-w-2xl">
             <div className="text-xs tracking-[0.22em] uppercase text-white/70">What is a membership?</div>
             <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Membership APS</h2>
-            <p className="mt-4 text-white/70">
-              Onboarding con verifica documento (KYC light), tessera digitale con benefici per livello.
-            </p>
+            <p className="mt-4 text-white/70">Onboarding con verifica documento (KYC light), tessera digitale con benefici per livello.</p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-6 mt-10">
@@ -780,25 +785,13 @@ export default function MomentPage() {
 
                 <div className="grid gap-3 mt-5">
                   <div className="grid md:grid-cols-2 gap-3">
-                    <input
-                      placeholder="Nome"
-                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                    />
-                    <input
-                      placeholder="Cognome"
-                      className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                    />
+                    <input placeholder="Nome" className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40" />
+                    <input placeholder="Cognome" className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40" />
                   </div>
 
-                  <input
-                    placeholder="Codice Fiscale"
-                    className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                  />
+                  <input placeholder="Codice Fiscale" className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40" />
 
-                  <input
-                    type="date"
-                    className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-white/80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
-                  />
+                  <input type="date" className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 text-white/80 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40" />
 
                   <label className="text-sm text-white/70 flex items-center gap-2">
                     <input type="checkbox" /> Consenso privacy/GDPR
@@ -806,11 +799,7 @@ export default function MomentPage() {
                 </div>
 
                 <div className="mt-6 flex justify-end gap-2">
-                  <button
-                    className="px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30"
-                    onClick={() => setShowKyc(false)}
-                    type="button"
-                  >
+                  <button className="px-5 py-3 rounded-full border border-white/15 text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/30" onClick={() => setShowKyc(false)} type="button">
                     Annulla
                   </button>
 
@@ -832,6 +821,7 @@ export default function MomentPage() {
         </div>
       </section>
 
+      {/* SHOP */}
       <section id="shop" className="py-16 border-y border-white/10 bg-[var(--surface)]">
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex items-end justify-between gap-4">
@@ -857,17 +847,9 @@ export default function MomentPage() {
             {products.map((p) => (
               <div key={p.sku} className="rounded-[28px] border border-white/10 bg-[var(--surface2)] overflow-hidden">
                 <div className="relative aspect-square overflow-hidden bg-black">
-                  <img
-                    src={p.image}
-                    alt={p.name}
-                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                    loading="lazy"
-                  />
+                  <img src={p.image} alt={p.name} className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" loading="lazy" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/15" />
-                  <div
-                    className="absolute left-4 top-4 px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/40 text-white/80"
-                    style={{ backdropFilter: "blur(8px)" as any }}
-                  >
+                  <div className="absolute left-4 top-4 px-3 py-1 rounded-full text-[10px] tracking-[0.22em] uppercase border border-white/15 bg-black/40 text-white/80" style={{ backdropFilter: "blur(8px)" as any }}>
                     Demo drop
                   </div>
                 </div>
@@ -894,9 +876,7 @@ export default function MomentPage() {
                             onClick={() => setSelectedSize((m) => ({ ...m, [p.sku]: s }))}
                             className={cn(
                               "px-3 py-1 rounded-full border text-xs tracking-[0.18em] uppercase",
-                              active
-                                ? "bg-white/10 text-white border-white/25"
-                                : "border-white/15 text-white/80 hover:bg-white/10 hover:border-white/30",
+                              active ? "bg-white/10 text-white border-white/25" : "border-white/15 text-white/80 hover:bg-white/10 hover:border-white/30",
                               !inStock && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-inherit"
                             )}
                             type="button"
@@ -906,9 +886,7 @@ export default function MomentPage() {
                         );
                       })}
                     </div>
-                    <div className="mt-3 text-xs text-white/55">
-                      Stock: {p.stock?.[(selectedSize[p.sku] || p.sizes[0]) as any] ?? "–"}
-                    </div>
+                    <div className="mt-3 text-xs text-white/55">Stock: {p.stock?.[(selectedSize[p.sku] || p.sizes[0]) as any] ?? "–"}</div>
                   </div>
 
                   <button
@@ -956,13 +934,9 @@ export default function MomentPage() {
 
                       <div className="mt-4 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => decQty(idx)} type="button">
-                            -
-                          </button>
+                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => decQty(idx)} type="button">-</button>
                           <div className="w-10 text-center text-sm">{i.qty}</div>
-                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => incQty(idx)} type="button">
-                            +
-                          </button>
+                          <button className="w-9 h-9 rounded-full border border-white/15 hover:bg-white/10" onClick={() => incQty(idx)} type="button">+</button>
                         </div>
                         <div className="text-sm font-medium">{formatEUR(i.qty * i.price)}</div>
                       </div>
@@ -991,6 +965,7 @@ export default function MomentPage() {
         </div>
       </section>
 
+      {/* SPONSOR */}
       <section id="sponsor" className="py-16">
         <div className="max-w-6xl mx-auto px-4">
           <div className="rounded-[28px] border border-white/10 bg-[var(--surface2)] p-8 md:p-10">
@@ -998,9 +973,7 @@ export default function MomentPage() {
               <div>
                 <div className="text-xs tracking-[0.22em] uppercase text-white/70">Become a partner</div>
                 <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Sponsor Area</h2>
-                <p className="mt-4 text-white/70">
-                  Compila il form: la richiesta viene salvata su Airtable e inviata via email al team.
-                </p>
+                <p className="mt-4 text-white/70">Compila il form: la richiesta viene salvata su Airtable e inviata via email al team.</p>
 
                 <div className="mt-6 rounded-[22px] border border-white/10 bg-black/25 p-5">
                   <div className="text-xs tracking-[0.22em] uppercase text-white/60">Cosa offriamo</div>
@@ -1023,7 +996,6 @@ export default function MomentPage() {
                     className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40"
                   />
 
-                  {/* Interest type dropdown (Airtable single select) */}
                   <div className="grid gap-1">
                     <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Interest type</div>
                     <select
@@ -1077,16 +1049,8 @@ export default function MomentPage() {
                     className="px-4 py-3 rounded-2xl bg-black/30 border border-white/10 placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 resize-none"
                   />
 
-                  {sponsorSentErr && (
-                    <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-                      {sponsorSentErr}
-                    </div>
-                  )}
-                  {sponsorSentOk && (
-                    <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100">
-                      {sponsorSentOk}
-                    </div>
-                  )}
+                  {sponsorSentErr && <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{sponsorSentErr}</div>}
+                  {sponsorSentOk && <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100">{sponsorSentOk}</div>}
 
                   <button
                     type="button"

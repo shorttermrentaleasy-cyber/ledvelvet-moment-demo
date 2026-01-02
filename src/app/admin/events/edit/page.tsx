@@ -175,11 +175,11 @@ export default async function AdminEditEventPage({
       redirect(`/admin/events/edit?id=${id}`);
     }
 
-    if (hero) fields["Hero Image"] = [{ url: hero }];
-    if (after) fields["Aftermovie"] = [{ url: after }];
+    	if (hero) fields["Hero Image"] = [{ url: hero }];
+	if (after) fields["Aftermovie"] = after;
 
-    Object.keys(fields).forEach(
-      (k) => fields[k] === undefined && delete fields[k]
+    	Object.keys(fields).forEach(
+      	(k) => fields[k] === undefined && delete fields[k]
     );
 
     await fetch(
@@ -240,8 +240,7 @@ export default async function AdminEditEventPage({
 
             <Input label="Ticket URL" name="ticketUrl" defaultValue={f["Ticket Url"]} />
             <Input label="Hero image URL" name="heroImageUrl" defaultValue={firstAttachmentUrl(f["Hero Image"])} />
-            <Input label="Aftermovie URL" name="aftermovieUrl" defaultValue={firstAttachmentUrl(f["Aftermovie"])} />
-
+            <Input label="Aftermovie URL" name="aftermovieUrl" defaultValue={f["Aftermovie"] || ""} />
             <Textarea label="Notes" name="notes" defaultValue={f["Notes"]} />
           </div>
 
