@@ -29,6 +29,12 @@ function urlField(v: any): string {
   return attachmentUrl(v);
 }
 
+function asBool(v: any): boolean {
+  if (typeof v === "boolean") return v;
+  const s = asString(v).toLowerCase();
+  return s === "true" || s === "1" || s === "yes" || s === "y";
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -50,7 +56,9 @@ export async function GET(req: Request) {
     const filterByFormula = doFilter ? `LOWER({Phase})="${phase}"` : "";
 
     const url = new URL(
-      `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_EVENTS)}`
+      `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
+        AIRTABLE_TABLE_EVENTS
+      )}`
     );
 
     url.searchParams.set("pageSize", String(limit));
@@ -84,6 +92,9 @@ export async function GET(req: Request) {
       const f = rec.fields || {};
 
       const heroUrl = urlField(f["Hero Image"]);
+      const teaserUrl = urlField(f["Teaser"]);
+      const aftermovieUrl = urlField(f["Aftermovie"]);
+      const featured = asBool(f["Featured"]);
 
       return {
         id: rec.id,
@@ -96,7 +107,12 @@ export async function GET(req: Request) {
         ticketPlatform: asString(f["Ticket Platform"]),
         ticketUrl: asString(f["Ticket Url"]),
         posterSrc: heroUrl, // MomentPage usa posterSrc
-        aftermovieUrl: asString(f["Aftermovie"]), // URL field
+
+        // NEW fields for /moment UI
+        teaserUrl, // Upcoming preview
+        aftermovieUrl, // Past recap
+        featured, // Hero selection
+
         notes: asString(f["Notes"]),
         sponsors: f["Sponsors"] ?? [],
         phase: asString(f["Phase"]).toLowerCase(), // "past" | "upcoming"
