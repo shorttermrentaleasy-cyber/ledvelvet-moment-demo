@@ -662,17 +662,28 @@ export default function Moment2() {
         </div>
 
         <div className="absolute inset-0 z-50 flex items-center justify-center text-center px-6">
-          <div className="max-w-2xl">
-            <img
+          <div className="w-full max-w-none">
+           
+		 <img
               src={brand.logo}
               alt="LedVelvet"
               className="mx-auto w-36 h-36 sm:w-40 sm:h-40 md:w-48 md:h-48 lg:w-56 lg:h-56 object-contain opacity-70 drop-shadow-[0_10px_30px_rgba(0,0,0,0.65)]"
             />
-            <div className="mt-5 text-[11px] tracking-[0.30em] uppercase text-white/70">LedVelvet</div>
 
-            {heroTitle ? <h1 className="mt-3 text-3xl md:text-5xl font-semibold tracking-tight">{heroTitle}</h1> : null}
+           {heroTitle ? (
+  <h1
+    className="mt-3 mx-auto text-center font-semibold tracking-tight md:whitespace-nowrap"
+    style={{
+      maxWidth: "75vw",
+      fontSize: "clamp(2rem, 5.5vw, 4.5rem)",
+      lineHeight: 1.05,
+    }}
+  >
+    {heroTitle}
+  </h1>
+) : null}
 
-            <p className="mt-4 text-white/75 text-base md:text-lg">{heroSubtitle}</p>
+           <p className="mt-4 text-white/75 text-base md:text-lg">{heroSubtitle}</p>
 
             <div className="mt-7 flex flex-wrap gap-3 justify-center">
               <a href="#eventi" className="px-7 py-3 bg-[var(--red-accent)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90">
