@@ -255,6 +255,7 @@ export default async function AdminEventsPage({
           <thead>
             <tr>
               <th style={th}>Event</th>
+              <th style={th}>Featured</th>
               <th style={th}>Date</th>
               <th style={th}>City</th>
               <th style={th}>Venue</th>
@@ -272,10 +273,16 @@ export default async function AdminEventsPage({
                 : "-";
 
               const rawDate = getEventDateValue(f);
+              const isFeatured = Boolean(f.Featured);
 
               return (
                 <tr key={e.id}>
                   <td style={tdStrong}>{eventLabel(f, e.id)}</td>
+
+                  <td style={td}>
+                    {isFeatured ? <span style={featuredBadge}>FEATURED</span> : ""}
+                  </td>
+
                   <td style={td}>{fmtDate(rawDate)}</td>
                   <td style={td}>{txt(f.City)}</td>
                   <td style={td}>{txt(f.Venue)}</td>
@@ -395,17 +402,17 @@ const th: React.CSSProperties = {
 };
 
 const td: React.CSSProperties = {
-  padding: "14px 12px",         // un filo più aria
+  padding: "14px 12px", // un filo più aria
   borderBottom: "1px solid rgba(255,255,255,0.08)",
   whiteSpace: "nowrap",
-  fontSize: 16,                 // ⬅️ chiave
+  fontSize: 16, // ⬅️ chiave
   lineHeight: "1.35",
   color: "rgba(255,255,255,0.82)",
 };
 
 const tdStrong: React.CSSProperties = {
   ...td,
-  fontWeight: 500,              // normale
+  fontWeight: 500, // normale
   letterSpacing: "0.01em",
   color: "rgba(255,255,255,0.95)",
 };
@@ -421,4 +428,16 @@ const editBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   marginRight: 6,
+};
+
+const featuredBadge: React.CSSProperties = {
+  display: "inline-block",
+  padding: "4px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: 0.6,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(147, 11, 12, 0.55)",
+  color: "#fff",
 };

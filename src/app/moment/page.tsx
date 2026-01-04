@@ -147,7 +147,7 @@ export default function MomentPage() {
   const brand = {
     logo: "/logo.png",
     heroPoster: "/og.jpg",
-    heroVideoMp4: "/media/petra_led.mp4",
+    heroVideoMp4: "/media/hero.mp4",
     heroVideoWebm: "https://upload.wikimedia.org/wikipedia/commons/2/29/Wikimania_beach_party_2.webm",
   };
 
