@@ -70,8 +70,6 @@ export default function AdminCreateEventPage() {
     HeroImageUrl: "",
     TeaserUrl: "",
     AftermovieUrl: "",
-    HeroTitle: "Moments that feel like a movie",
-    HeroSubtitle: "Ethereal clubbing in unconventional places",
     Featured: false,
     Notes: "",
     Sponsors: [] as string[], // MUST be Airtable record IDs (rec...)
@@ -306,14 +304,6 @@ export default function AdminCreateEventPage() {
 
           <Field label="Aftermovie URL (YouTube)">
             <input name="AftermovieUrl" value={form.AftermovieUrl} onChange={onChange} style={styles.input} />
-          </Field>
-
-          <Field label="Hero title">
-            <input name="HeroTitle" value={form.HeroTitle} onChange={onChange} style={styles.input} />
-          </Field>
-
-          <Field label="Hero subtitle">
-            <input name="HeroSubtitle" value={form.HeroSubtitle} onChange={onChange} style={styles.input} />
           </Field>
 
           <label style={styles.checkRow}>

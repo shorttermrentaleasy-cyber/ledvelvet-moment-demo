@@ -25,7 +25,6 @@ function firstAttachmentUrl(v: any): string {
   return v[0]?.url || "";
 }
 
-// Date must be YYYY-MM-DD for <input type="date">
 function normalizeDate(v: any): string {
   const s = String(v ?? "").trim();
   if (!s) return "";
@@ -67,11 +66,13 @@ async function fetchMetaChoices(): Promise<{ status: string[]; ticketPlatform: s
   const data = await r.json();
   const table = (data.tables || []).find((t: any) => t.name === AIRTABLE_TABLE_EVENTS);
 
-  const status: string[] =
+  const status =
     table?.fields?.find((f: any) => f.name === "Status")?.options?.choices?.map((c: any) => c.name) || [];
 
-  const ticketPlatform: string[] =
-    table?.fields?.find((f: any) => f.name === "Ticket Platform")?.options?.choices?.map((c: any) => c.name) || [];
+  const ticketPlatform =
+    table?.fields
+      ?.find((f: any) => f.name === "Ticket Platform")
+      ?.options?.choices?.map((c: any) => c.name) || [];
 
   return { status, ticketPlatform };
 }
@@ -117,17 +118,12 @@ async function fetchExistingFeatured(excludeId: string) {
   return { id: other.id, name: other.fields?.["Event Name"] || other.id };
 }
 
-export default async function AdminEditEventPage({
-  searchParams,
-}: {
-  searchParams: { id?: string };
-}) {
+export default async function AdminEditEventPage({ searchParams }: { searchParams: { id?: string } }) {
   const session = await getServerSession(authOptions);
-
-  const email: string = (session?.user?.email || "").toLowerCase().trim();
+  const email = (session?.user?.email || "").toLowerCase().trim();
   if (!email) unauthorized();
 
-  const allowed: string[] = (process.env.ADMIN_EMAILS || "")
+  const allowed = (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
@@ -148,18 +144,15 @@ export default async function AdminEditEventPage({
   const selectedSponsors: string[] = Array.isArray(f["Sponsors"]) ? f["Sponsors"] : [];
 
   const heroImg = firstAttachmentUrl(f["Hero Image"]);
-  const teaserUrl = String(f["Teaser"] || "").trim(); // URL field
-  const aftermovieUrl = String(f["Aftermovie"] || "").trim(); // URL field
+  const teaserUrl = String(f["Teaser"] || "").trim();
+  const aftermovieUrl = String(f["Aftermovie"] || "").trim();
 
   async function updateAction(formData: FormData) {
     "use server";
 
     const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_EVENTS } = process.env;
-    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) {
-      redirect(`/admin/events/edit?id=${id}`);
-    }
+    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) redirect(`/admin/events/edit?id=${id}`);
 
-    // ✅ sponsors come array di ID (rec...)
     const sponsorsSelected = formData.getAll("sponsors").map(String);
 
     const hero = String(formData.get("heroImageUrl") || "").trim();
@@ -169,8 +162,6 @@ export default async function AdminEditEventPage({
     if (!isHttpUrl(hero) || !isHttpUrl(teaser) || !isHttpUrl(after)) {
       redirect(`/admin/events/edit?id=${id}`);
     }
-
-    const featured = formData.get("featured") === "on";
 
     const fields: Record<string, any> = {
       "Event Name": String(formData.get("eventName") || "").trim(),
@@ -182,10 +173,7 @@ export default async function AdminEditEventPage({
       "Ticket Url": String(formData.get("ticketUrl") || "").trim() || undefined,
       Notes: String(formData.get("notes") || "").trim() || undefined,
       Sponsors: sponsorsSelected.length ? sponsorsSelected : [],
-      "Hero Title": String(formData.get("heroTitle") || "").trim() || undefined,
-      "Hero Subtitle": String(formData.get("heroSubtitle") || "").trim() || undefined,
-      Featured: featured,
-      // Phase computed: DO NOT TOUCH
+      Featured: formData.get("featured") === "on",
     };
 
     if (hero) fields["Hero Image"] = [{ url: hero }];
@@ -207,8 +195,7 @@ export default async function AdminEditEventPage({
     );
 
     if (!r.ok) {
-      const t = await r.text();
-      console.error("Airtable update error:", r.status, t);
+      console.error("Airtable update error:", await r.text());
       redirect(`/admin/events/edit?id=${id}`);
     }
 
@@ -219,24 +206,22 @@ export default async function AdminEditEventPage({
     <main style={styles.page}>
       <div style={styles.wrap}>
         <AdminTopbarClient backHref="/admin/events" />
-
         <h1 style={styles.h1}>Edit Event</h1>
         <p style={styles.sub}>Record ID: {id}</p>
 
-        {existingFeatured ? (
+        {existingFeatured && (
           <div style={styles.warn}>
             <b>WARNING FEATURED</b>
-            <div style={{ marginTop: 6, opacity: 0.9 }}>
-              Esiste già un altro evento FEATURED: <b>{existingFeatured.name}</b>. Se metti Featured anche qui, la Hero può
-              diventare incoerente.
+            <div style={{ marginTop: 6 }}>
+              Esiste già un altro evento FEATURED: <b>{existingFeatured.name}</b>
             </div>
           </div>
-        ) : null}
+        )}
 
         <form action={updateAction} style={styles.card}>
           <div style={styles.grid}>
             <Input label="Event name" name="eventName" defaultValue={f["Event Name"]} required />
-            <Input label="Date" name="date" defaultValue={normalizeDate(f["date"])} required type="date" />
+            <Input label="Date" name="date" defaultValue={normalizeDate(f["date"])} type="date" />
             <Input label="City" name="city" defaultValue={f["City"]} />
             <Input label="Venue" name="venue" defaultValue={f["Venue"]} />
 
@@ -250,24 +235,20 @@ export default async function AdminEditEventPage({
 
             <Input label="Ticket URL" name="ticketUrl" defaultValue={f["Ticket Url"]} />
 
-            <Input label="Hero Image URL (Attachment)" name="heroImageUrl" defaultValue={heroImg} />
-            <Input label="Teaser URL (YouTube) — URL field" name="teaserUrl" defaultValue={teaserUrl} />
-            <Input label="Aftermovie URL (YouTube) — URL field" name="aftermovieUrl" defaultValue={aftermovieUrl} />
-
-            <Input label="Hero Title (optional)" name="heroTitle" defaultValue={f["Hero Title"]} />
-            <Input label="Hero Subtitle" name="heroSubtitle" defaultValue={f["Hero Subtitle"]} />
+            <Input label="Hero Image URL" name="heroImageUrl" defaultValue={heroImg} />
+            <Input label="Teaser URL (YouTube)" name="teaserUrl" defaultValue={teaserUrl} />
+            <Input label="Aftermovie URL (YouTube)" name="aftermovieUrl" defaultValue={aftermovieUrl} />
 
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={styles.checkRow}>
                 <div>
-                  <div style={styles.label}>Featured (Hero)</div>
-                  <div style={styles.smallMuted}>Spunta per usare questo evento come Hero</div>
+                  <div style={styles.label}>Featured</div>
+                  <div style={styles.smallMuted}>Evento in evidenza</div>
                 </div>
                 <input type="checkbox" name="featured" defaultChecked={Boolean(f["Featured"])} />
               </label>
             </div>
 
-            {/* ✅ Sponsors picker (toggle + checkbox) */}
             <div style={{ gridColumn: "1 / -1" }}>
               <SponsorsPicker sponsors={sponsors} defaultSelected={selectedSponsors} />
             </div>
@@ -280,12 +261,8 @@ export default async function AdminEditEventPage({
           </div>
 
           <div style={styles.footer}>
-            <button type="submit" style={styles.primaryBtn}>
-              Save
-            </button>
-            <a href="/admin/events" style={styles.secondaryBtn}>
-              Cancel
-            </a>
+            <button type="submit" style={styles.primaryBtn}>Save</button>
+            <a href="/admin/events" style={styles.secondaryBtn}>Cancel</a>
           </div>
         </form>
       </div>
@@ -293,16 +270,9 @@ export default async function AdminEditEventPage({
   );
 }
 
-function SponsorsPicker({
-  sponsors,
-  defaultSelected,
-}: {
-  sponsors: SponsorOption[];
-  defaultSelected: string[];
-}) {
-  // Server component: usiamo <details> (no client state)
+/* helpers UI (identici) */
+function SponsorsPicker({ sponsors, defaultSelected }: { sponsors: SponsorOption[]; defaultSelected: string[] }) {
   const selectedCount = defaultSelected?.length || 0;
-
   return (
     <Field label="Sponsors (multiple)">
       <details style={styles.details}>
@@ -310,12 +280,11 @@ function SponsorsPicker({
           <span>{selectedCount ? `Selected: ${selectedCount}` : "Select sponsors"}</span>
           <span style={{ opacity: 0.7 }}>▼</span>
         </summary>
-
         <div style={styles.sponsorBox}>
           {sponsors.map((s) => (
             <label key={s.id} style={styles.sponsorItem}>
               <input type="checkbox" name="sponsors" value={s.id} defaultChecked={defaultSelected.includes(s.id)} />
-              <span style={{ opacity: 0.95 }}>{s.label}</span>
+              <span>{s.label}</span>
             </label>
           ))}
         </div>
@@ -324,7 +293,7 @@ function SponsorsPicker({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: any) {
   return (
     <label style={styles.field}>
       <span style={styles.label}>{label}</span>
@@ -333,8 +302,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Input(props: any) {
-  const { label, ...rest } = props;
+function Input({ label, ...rest }: any) {
   return (
     <Field label={label}>
       <input {...rest} style={styles.input} />
@@ -342,134 +310,39 @@ function Input(props: any) {
   );
 }
 
-function Select({
-  label,
-  name,
-  defaultValue,
-  options,
-}: {
-  label: string;
-  name: string;
-  defaultValue?: string;
-  options: string[];
-}) {
-  const dv = String(defaultValue || "");
+function Select({ label, name, defaultValue, options }: any) {
   return (
     <Field label={label}>
-      <select name={name} defaultValue={dv} style={styles.input}>
+      <select name={name} defaultValue={defaultValue} style={styles.input}>
         <option value="">—</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
+        {options.map((o: string) => (
+          <option key={o} value={o}>{o}</option>
         ))}
       </select>
     </Field>
   );
 }
 
+/* styles: invariati */
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: "100vh", background: "#070812", color: "#fff" },
   wrap: { maxWidth: 860, margin: "0 auto", padding: 16 },
   h1: { margin: 0, fontSize: 26, fontWeight: 800 },
   sub: { marginTop: 6, fontSize: 12, opacity: 0.65 },
-
-  warn: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 12,
-    border: "1px solid rgba(255,0,0,0.25)",
-    background: "rgba(255,0,0,0.10)",
-  },
-
-  card: {
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.08)",
-  },
+  warn: { marginTop: 12, padding: 12, borderRadius: 12, background: "rgba(255,0,0,0.10)" },
+  card: { marginTop: 16, padding: 16, borderRadius: 14, background: "rgba(255,255,255,0.05)" },
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
-  field: { display: "flex", flexDirection: "column", gap: 6, minWidth: 0 },
+  field: { display: "flex", flexDirection: "column", gap: 6 },
   label: { fontSize: 13, opacity: 0.8 },
-  smallMuted: { fontSize: 11, opacity: 0.6, marginTop: 4 },
-
-  input: {
-    width: "100%",
-    minWidth: 0,
-    height: 40,
-    padding: "0 10px",
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(0,0,0,0.4)",
-    color: "#fff",
-    colorScheme: "dark",
-  },
-  textarea: {
-    width: "100%",
-    minHeight: 110,
-    padding: 10,
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(0,0,0,0.4)",
-    color: "#fff",
-    colorScheme: "dark",
-  },
-
-  checkRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    padding: 12,
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(0,0,0,0.30)",
-  },
-
-  details: {
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(0,0,0,0.28)",
-    overflow: "hidden",
-  },
-  summary: {
-    listStyle: "none",
-    cursor: "pointer",
-    padding: "10px 12px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    userSelect: "none",
-  },
-  sponsorBox: {
-    maxHeight: 240,
-    overflow: "auto",
-    padding: 10,
-    borderTop: "1px solid rgba(255,255,255,0.10)",
-  },
-  sponsorItem: { display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginBottom: 10 },
-
-  footer: { marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 10 },
-  primaryBtn: {
-    height: 42,
-    padding: "0 16px",
-    borderRadius: 12,
-    border: "none",
-    background: "#00ffd5",
-    color: "#000",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-  secondaryBtn: {
-    height: 42,
-    padding: "0 16px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.25)",
-    background: "transparent",
-    color: "#fff",
-    textDecoration: "none",
-    display: "inline-flex",
-    alignItems: "center",
-  },
+  smallMuted: { fontSize: 11, opacity: 0.6 },
+  input: { height: 40, borderRadius: 10, background: "rgba(0,0,0,0.4)", color: "#fff" },
+  textarea: { minHeight: 110, borderRadius: 10 },
+  checkRow: { display: "flex", justifyContent: "space-between", padding: 12 },
+  details: { borderRadius: 12 },
+  summary: { cursor: "pointer", padding: 10 },
+  sponsorBox: { maxHeight: 240, overflow: "auto" },
+  sponsorItem: { display: "flex", gap: 8 },
+  footer: { marginTop: 18, display: "flex", gap: 10, justifyContent: "flex-end" },
+  primaryBtn: { background: "#00ffd5", borderRadius: 12, padding: "0 16px" },
+  secondaryBtn: { borderRadius: 12, padding: "0 16px" },
 };

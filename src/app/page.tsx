@@ -1,3 +1,4 @@
+
 export default function Home() {
   return (
     <main className="min-h-screen bg-black text-white">
@@ -35,7 +36,7 @@ export default function Home() {
           {/* PUBLIC */}
           <a
             className="rounded-2xl border border-white/15 bg-white/5 p-6 hover:bg-white/10 transition"
-            href="/moment"
+            href="/admin/moment2"
           >
             <div className="text-sm uppercase tracking-widest opacity-70">Sito pubblico</div>
             <div className="mt-2 text-2xl font-semibold">Apri “Moment”</div>
@@ -43,7 +44,7 @@ export default function Home() {
               Hero/video, eventi, esperienza “neon/dark”. Qui ci va il pubblico.
             </div>
             <div className="mt-5 inline-flex items-center gap-2 text-sm font-semibold">
-              Vai al sito <span aria-hidden>→</span>
+              Vai al sito Demo <span aria-hidden>→</span>
             </div>
           </a>
         </div>

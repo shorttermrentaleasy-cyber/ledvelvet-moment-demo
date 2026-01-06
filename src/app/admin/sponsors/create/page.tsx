@@ -1,9 +1,22 @@
 "use client";
 
+import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type MetaOption = { id: string; label: string };
+
+// TODO: incolla qui il link del Form/Interface Airtable che mostra SOLO Brand Name + Logo (Attachment)
+const AIRTABLE_LOGO_UPLOAD_URL = "https://airtable.com/appkpUBdMSN1oY4TI/pagRMCGUofGTlqNT3/form";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={styles.field}>
+      <div style={styles.label}>{label}</div>
+      {children}
+    </label>
+  );
+}
 
 export default function AdminCreateSponsorPage() {
   const router = useRouter();
@@ -28,7 +41,7 @@ export default function AdminCreateSponsorPage() {
 
   const canSubmit = useMemo(
     () => !!form.brandName.trim() && !!form.status.trim() && !loading,
-    [form, loading]
+    [form.brandName, form.status, loading]
   );
 
   useEffect(() => {
@@ -41,11 +54,11 @@ export default function AdminCreateSponsorPage() {
 
         if (!alive) return;
 
-        if (!r.ok || !data.ok) {
-          setError(data.error || "Errore caricamento meta sponsor");
+        if (!r.ok || !data?.ok) {
+          setError(data?.error || "Errore caricamento meta sponsor");
         } else {
-          setStatusOptions(data.status || []);
-          setCategoryOptions(data.category || []);
+          setStatusOptions(Array.isArray(data.status) ? data.status : []);
+          setCategoryOptions(Array.isArray(data.category) ? data.category : []);
         }
       } catch {
         if (alive) setError("Errore caricamento meta sponsor");
@@ -59,10 +72,9 @@ export default function AdminCreateSponsorPage() {
     };
   }, []);
 
-  function onChange(
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-  ) {
-    setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  function onChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
+    const { name, value } = e.target;
+    setForm((p) => ({ ...p, [name]: value }));
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -72,23 +84,40 @@ export default function AdminCreateSponsorPage() {
     setLoading(true);
     setError(null);
 
-    const r = await fetch("/api/admin/sponsors/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
+    try {
+      const r = await fetch("/api/admin/sponsors/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
 
-    const data = await r.json();
-    setLoading(false);
+      const data = await r.json();
 
-    if (!r.ok || !data.ok) {
-      setError(data.error || "Errore creazione sponsor");
-      return;
+      if (!r.ok || !data?.ok) {
+        setError(data?.error || "Errore creazione sponsor");
+        return;
+      }
+
+      router.replace("/admin/sponsors?refresh=1");
+      router.refresh();
+    } catch {
+      setError("Errore creazione sponsor");
+    } finally {
+      setLoading(false);
     }
-
-    router.replace("/admin/sponsors?refresh=1");
-    router.refresh();
   }
+
+  // Link “intelligente”: se hai brandName compilato, prova a precompilarlo nel Form Airtable.
+  // Nota: funziona solo se il campo nel form si chiama esattamente "Brand Name".
+  const uploadLogoLink = useMemo(() => {
+    if (!AIRTABLE_LOGO_UPLOAD_URL || AIRTABLE_LOGO_UPLOAD_URL.includes("PASTE_")) return AIRTABLE_LOGO_UPLOAD_URL;
+
+    const bn = form.brandName.trim();
+    if (!bn) return AIRTABLE_LOGO_UPLOAD_URL;
+
+    const sep = AIRTABLE_LOGO_UPLOAD_URL.includes("?") ? "&" : "?";
+    return `${AIRTABLE_LOGO_UPLOAD_URL}${sep}prefill_Brand%20Name=${encodeURIComponent(bn)}`;
+  }, [form.brandName]);
 
   return (
     <div style={styles.page}>
@@ -98,23 +127,53 @@ export default function AdminCreateSponsorPage() {
             <div style={styles.kicker}>LED VELVET • ADMIN</div>
             <h1 style={styles.h1}>Create Sponsor</h1>
           </div>
-          <button onClick={() => router.back()} style={styles.secondaryBtn}>
-            Back
-          </button>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button onClick={() => router.back()} style={styles.secondaryBtn} type="button">
+              Back
+            </button>
+          </div>
         </header>
 
         {error && <div style={styles.alert}>{error}</div>}
 
+        {/* BLOCCO LOGO: qui rimettiamo “Carica logo” senza toccare API */}
+        <div style={styles.logoBox}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={styles.logoTitle}>Logo upload (cliente)</div>
+              <div style={styles.logoHelp}>
+                Il cliente deve caricare <b>solo il logo</b> nel campo Attachment <b>Logo</b> su Airtable.
+                <br />
+                Qui sotto trovi il link rapido al Form/Interface Airtable.
+              </div>
+            </div>
+
+            <a
+              href={uploadLogoLink}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                ...styles.primaryBtn,
+                opacity: AIRTABLE_LOGO_UPLOAD_URL.includes("PASTE_") ? 0.55 : 1,
+                pointerEvents: AIRTABLE_LOGO_UPLOAD_URL.includes("PASTE_") ? "none" : "auto",
+              }}
+            >
+              Carica logo ↗
+            </a>
+          </div>
+
+          {AIRTABLE_LOGO_UPLOAD_URL.includes("PASTE_") ? (
+            <div style={styles.warn}>
+              ⚠️ Incolla il link del Form/Interface Airtable in <code>AIRTABLE_LOGO_UPLOAD_URL</code> in questo file.
+            </div>
+          ) : null}
+        </div>
+
         <form onSubmit={onSubmit} style={styles.card}>
           <div style={styles.grid}>
             <Field label="Brand Name *">
-              <input
-                name="brandName"
-                value={form.brandName}
-                onChange={onChange}
-                style={styles.input}
-                required
-              />
+              <input name="brandName" value={form.brandName} onChange={onChange} style={styles.input} required />
             </Field>
 
             <Field label="Status *">
@@ -136,13 +195,7 @@ export default function AdminCreateSponsorPage() {
             </Field>
 
             <Field label="Category">
-              <select
-                name="category"
-                value={form.category}
-                onChange={onChange}
-                style={styles.input}
-                disabled={loadingMeta}
-              >
+              <select name="category" value={form.category} onChange={onChange} style={styles.input} disabled={loadingMeta}>
                 <option value="">Optional</option>
                 {categoryOptions.map((o) => (
                   <option key={o.id} value={o.label}>
@@ -153,167 +206,155 @@ export default function AdminCreateSponsorPage() {
             </Field>
 
             <Field label="Website">
-              <input
-                name="website"
-                value={form.website}
-                onChange={onChange}
-                style={styles.input}
-              />
+              <input name="website" value={form.website} onChange={onChange} style={styles.input} />
             </Field>
 
-            <Field label="Logo URL">
-              <input
-                name="logoUrl"
-                value={form.logoUrl}
-                onChange={onChange}
-                style={styles.input}
-              />
+            {/* Logo URL: lo teniamo solo come fallback/legacy (NON è l’upload) */}
+            <Field label="Logo URL (optional / legacy)">
+              <input name="logoUrl" value={form.logoUrl} onChange={onChange} style={styles.input} placeholder="https://..." />
+              <div style={styles.microHelp}>
+                Nota: l’upload file vero avviene via Airtable (campo Attachment “Logo”). Qui incolla un URL solo se già disponibile.
+              </div>
             </Field>
 
             <Field label="Email">
-              <input
-                name="email"
-                value={form.email}
-                onChange={onChange}
-                style={styles.input}
-              />
+              <input name="email" value={form.email} onChange={onChange} style={styles.input} />
             </Field>
 
             <Field label="Phone">
-              <input
-                name="phone"
-                value={form.phone}
-                onChange={onChange}
-                style={styles.input}
-              />
+              <input name="phone" value={form.phone} onChange={onChange} style={styles.input} />
             </Field>
 
             <div style={{ gridColumn: "1 / -1" }}>
               <Field label="Notes">
-                <textarea
-                  name="notes"
-                  value={form.notes}
-                  onChange={onChange}
-                  style={styles.textarea}
-                />
+                <textarea name="notes" value={form.notes} onChange={onChange} style={styles.textarea} />
               </Field>
             </div>
           </div>
 
-          <div style={styles.footer}>
+          <div style={styles.actions}>
+            <button type="submit" style={{ ...styles.primaryBtn, opacity: canSubmit ? 1 : 0.6 }} disabled={!canSubmit}>
+              {loading ? "Creating…" : "Create"}
+            </button>
+
             <button
-              type="submit"
-              disabled={!canSubmit}
-              style={canSubmit ? styles.primaryBtn : styles.primaryBtnDisabled}
+              type="button"
+              style={styles.secondaryBtn}
+              onClick={() =>
+                setForm({
+                  brandName: "",
+                  category: "",
+                  website: "",
+                  logoUrl: "",
+                  email: "",
+                  phone: "",
+                  status: "",
+                  notes: "",
+                })
+              }
             >
-              {loading ? "Saving..." : "Create sponsor"}
+              Reset
             </button>
           </div>
         </form>
+
+        <div style={styles.footerNote}>
+          Regola: per i loghi, usare Airtable (Attachment “Logo”). La pagina Create/Edit non carica file.
+        </div>
       </div>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={styles.field}>
-      <span style={styles.label}>{label}</span>
-      {children}
-    </label>
-  );
-}
-
 const styles: Record<string, React.CSSProperties> = {
-  page: { minHeight: "100vh", background: "#070812", color: "#fff" },
-  wrap: { maxWidth: 720, margin: "0 auto", padding: 16 },
+  page: { minHeight: "100vh", background: "#0B0B0C", color: "#EDEDED" },
+  wrap: { maxWidth: 980, margin: "0 auto", padding: 20 },
+  header: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" },
+  kicker: { fontSize: 11, letterSpacing: "0.22em", opacity: 0.65 },
+  h1: { margin: "6px 0 0", fontSize: 28, fontWeight: 700 },
 
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
+  alert: {
+    background: "rgba(255, 80, 80, 0.12)",
+    border: "1px solid rgba(255, 80, 80, 0.35)",
+    color: "#ffb3b3",
+    borderRadius: 14,
+    padding: "10px 12px",
+    marginBottom: 12,
+    fontSize: 13,
   },
-  kicker: { fontSize: 12, opacity: 0.6 },
-  h1: { margin: 0 },
+
+  logoBox: {
+    background: "rgba(255,255,255,0.05)",
+    border: "1px solid rgba(255,255,255,0.10)",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+  },
+  logoTitle: { fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", opacity: 0.85 },
+  logoHelp: { marginTop: 6, fontSize: 13, opacity: 0.75, lineHeight: 1.4 },
+  warn: {
+    marginTop: 10,
+    fontSize: 12,
+    opacity: 0.85,
+    background: "rgba(255,200,80,0.08)",
+    border: "1px solid rgba(255,200,80,0.25)",
+    borderRadius: 12,
+    padding: "8px 10px",
+  },
 
   card: {
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 14,
     background: "rgba(255,255,255,0.05)",
+    border: "1px solid rgba(255,255,255,0.10)",
+    borderRadius: 16,
+    padding: 18,
   },
 
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr",
-    gap: 14,
-  },
-
-  field: { display: "flex", flexDirection: "column", gap: 6, minWidth: 0 },
-  label: { fontSize: 13, opacity: 0.8 },
-
+  grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+  field: { display: "block" },
+  label: { fontSize: 13, opacity: 0.85, marginBottom: 6 },
   input: {
     width: "100%",
-    minWidth: 0,
-    height: 40,
-    padding: "0 10px",
+    padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(0,0,0,0.4)",
-    color: "#fff",
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    color: "#EDEDED",
+    outline: "none",
   },
-
   textarea: {
     width: "100%",
-    minHeight: 100,
-    padding: 10,
+    minHeight: 110,
+    padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(0,0,0,0.4)",
-    color: "#fff",
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    color: "#EDEDED",
+    outline: "none",
+    resize: "vertical",
   },
+  microHelp: { marginTop: 6, fontSize: 12, opacity: 0.65 },
 
-  footer: {
-    marginTop: 20,
-    display: "flex",
-    justifyContent: "flex-end",
-  },
-
+  actions: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" },
   primaryBtn: {
-    height: 42,
-    padding: "0 16px",
+    padding: "10px 12px",
     borderRadius: 12,
-    border: "none",
-    background: "#00ffd5",
-    color: "#000",
+    background: "#FFFFFF",
+    border: "1px solid #FFFFFF",
+    color: "#0B0B0C",
+    fontSize: 14,
     fontWeight: 700,
+    textDecoration: "none",
+    cursor: "pointer",
+  },
+  secondaryBtn: {
+    padding: "10px 12px",
+    borderRadius: 12,
+    background: "rgba(255,255,255,0.10)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    color: "#EDEDED",
+    fontSize: 14,
     cursor: "pointer",
   },
 
-  primaryBtnDisabled: {
-    height: 42,
-    padding: "0 16px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(0,0,0,0.4)",
-    color: "rgba(255,255,255,0.4)",
-    cursor: "not-allowed",
-  },
-
-  secondaryBtn: {
-    height: 36,
-    padding: "0 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.3)",
-    background: "transparent",
-    color: "#fff",
-  },
-
-  alert: {
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 10,
-    background: "rgba(255,0,0,0.15)",
-  },
+  footerNote: { marginTop: 14, fontSize: 12, opacity: 0.6 },
 };

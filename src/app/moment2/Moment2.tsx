@@ -34,6 +34,7 @@ type EventItem = {
   teaserUrl?: string;
   aftermovieUrl?: string;
   featured?: boolean;
+  heroOnly?: boolean;
 
   heroTitle?: string;
   heroSubtitle?: string;
@@ -56,21 +57,51 @@ type SponsorForm = {
 
 type MetaOption = { id?: string; name: string; color?: string | null };
 
+type HeroPublic = {
+  title: string;
+  subtitle: string;
+  active: boolean;
+};
+
+const SOCIALS = {
+  instagram: "https://www.instagram.com/led_velvet/",
+  tiktok: "https://www.tiktok.com/@led_velvet",
+  telegram: "https://t.me/+BXlRkPYgops1ZWJk",
+};
+
 function normalizeSponsors(v: any): SponsorRef[] {
+  const looksLikeAirtableRecordId = (s: string) => /^rec[a-zA-Z0-9]{14}$/.test((s || "").trim());
+
   if (!v) return [];
-  if (Array.isArray(v)) {
-    if (v.length > 0 && typeof v[0] === "object" && v[0]) {
-      return v
-        .map((x: any) => ({
-          id: String(x.id || "").trim(),
-          label: String(x.label || x.name || x.brand || x.company || x.title || "").trim(),
+  if (!Array.isArray(v)) return [];
+  if (v.length === 0) return [];
+
+  // Case: array of objects (preferred). We only render human labels.
+  if (typeof v[0] === "object" && v[0]) {
+    return v
+      .map((x: any) => {
+        const id = String(x.id || "").trim();
+
+        const rawLabel = String(x.label || "").trim();
+        const fallbackLabel = String(x.name || x.brand || x.company || x.title || "").trim();
+
+        let label = rawLabel;
+        if (!label || looksLikeAirtableRecordId(label)) label = fallbackLabel;
+
+        // Final guard: never show Airtable record IDs as labels
+        if (!label || looksLikeAirtableRecordId(label)) return null;
+
+        return {
+          id: id || label,
+          label,
           logoUrl: x.logoUrl ? String(x.logoUrl).trim() : undefined,
           website: x.website ? String(x.website).trim() : undefined,
-        }))
-        .filter((s: any) => s.id && s.label);
-    }
-    return v.map((id: any) => ({ id: String(id).trim(), label: String(id).trim() })).filter((s: any) => s.id);
+        } as SponsorRef;
+      })
+      .filter((s: any): s is SponsorRef => !!s && !!s.id && !!s.label);
   }
+
+  // Case: array of strings (record IDs) -> never render
   return [];
 }
 
@@ -137,7 +168,7 @@ function getYouTubeId(urlRaw: string): string | null {
   }
 }
 
-function youTubeEmbedUrl(urlRaw: string, autoplayMuted = false): string | null {
+function youTubeEmbedUrl(urlRaw: string, autoplayMuted = true): string | null {
   const id = getYouTubeId(urlRaw);
   if (!id) return null;
 
@@ -193,10 +224,16 @@ export default function Moment2() {
 
   const brand = {
     logo: "/logo.png",
-    heroPoster: "/og.jpg",
+    heroPoster: "/og.png",
     heroVideoMp4: "/hero.mp4",
     heroVideoWebm: "",
   };
+
+  const [heroPublic, setHeroPublic] = useState<HeroPublic>({
+    title: "",
+    subtitle: "Ethereal clubbing in unconventional places",
+    active: true,
+  });
 
   const [user, setUser] = useState<{ email: string | null; level?: Level; kyc?: boolean }>({ email: null });
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -226,10 +263,10 @@ export default function Moment2() {
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // --- Ambient music player (SoundCloud) ---
-  const SOUNDCLOUD_PLAYLIST_URL = "https://soundcloud.com/lamberto-buti-26819492/sets/tecnoedor?si=f9fcdd541d894ed89d2f440c4a54a32e&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
+  const SOUNDCLOUD_PLAYLIST_URL =
+    "https://soundcloud.com/lamberto-buti-26819492/sets/tecnoedor?si=f9fcdd541d894ed89d2f440c4a54a32e&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
   const soundcloudEmbedSrc = useMemo(() => {
     const u = encodeURIComponent(SOUNDCLOUD_PLAYLIST_URL);
-    // SoundCloud player supports share URLs; user must click play (no autoplay).
     return `https://w.soundcloud.com/player/?url=${u}&auto_play=false&hide_related=true&show_comments=false&show_reposts=false&show_teaser=false&visual=false`;
   }, []);
   const [musicOpen, setMusicOpen] = useState(false);
@@ -238,6 +275,32 @@ export default function Moment2() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsErr, setEventsErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadHero() {
+      try {
+        const r = await fetch("/api/public/hero", { cache: "no-store" });
+        const j = await r.json();
+        if (!alive) return;
+
+        if (!r.ok || !j?.ok || !j?.hero) return;
+
+        const h = j.hero;
+        setHeroPublic({
+          title: String(h.title || ""),
+          subtitle: String(h.subtitle || "Ethereal clubbing in unconventional places"),
+          active: Boolean(h.active),
+        });
+      } catch {}
+    }
+
+    loadHero();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -273,13 +336,14 @@ export default function Moment2() {
               teaserUrl: e.teaserUrl || e["Teaser"] || "",
               aftermovieUrl: e.aftermovieUrl || e["Aftermovie"] || "",
               featured: Boolean(e.featured),
+              heroOnly: Boolean((e.heroOnly ?? e.HeroOnly ?? e["HeroOnly"]) as any),
 
               heroTitle: e.heroTitle || e["Hero Title"] || "",
-              heroSubtitle: e.heroSubtitle || e["Hero Subtitle"] || "",
+              heroSubtitle: e["Hero Subtitle"] || e.heroSubtitle || "",
 
               tag: (e.status || e.tag || "").toString(),
               sponsors: normalizeSponsors(e.sponsors),
-              posterSrc: e.posterSrc || e["Hero Image"] || "/og.jpg",
+              posterSrc: e.posterSrc || e["Hero Image"] || "/og.png",
               videoMp4: null,
             };
           })
@@ -452,31 +516,8 @@ export default function Moment2() {
     }
   }
 
-  const upcomingEvents = events.filter((e) => e.phase === "upcoming");
-  const pastEvents = events.filter((e) => e.phase === "past");
-
-  const nextUpcoming = useMemo(() => {
-    const list = [...upcomingEvents]
-      .filter((e) => e.date)
-      .sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
-    return list[0] || null;
-  }, [upcomingEvents]);
-
-  const featuredEvent = useMemo(() => {
-    const f = events.find((e) => e.featured);
-    return f || null;
-  }, [events]);
-
-  const heroEvent = featuredEvent || nextUpcoming;
-
-  const heroSubtitle = heroEvent?.heroSubtitle?.trim() || "Ethereal clubbing in unconventional places";
-  const heroTitle = heroEvent?.heroTitle?.trim() || "";
-
-  const heroYouTube = useMemo(() => {
-    if (HERO_MODE !== "event") return null;
-    const url = heroEvent?.teaserUrl || heroEvent?.aftermovieUrl || "";
-    return youTubeEmbedUrl(url, true);
-  }, [HERO_MODE, heroEvent]);
+  const upcomingEvents = events.filter((e) => e.phase === "upcoming" && !e.heroOnly);
+  const pastEvents = events.filter((e) => e.phase === "past" && !e.heroOnly);
 
   const pastByYear = useMemo(() => {
     const map: Record<string, EventItem[]> = {};
@@ -502,6 +543,15 @@ export default function Moment2() {
     return years;
   }, [pastByYear]);
 
+  const heroTitle = heroPublic.active ? heroPublic.title.trim() : "";
+  const heroSubtitle = heroPublic.active ? heroPublic.subtitle.trim() : "";
+
+  const heroEvent = null as any;
+  const heroYouTube = useMemo(() => {
+    if (HERO_MODE !== "event") return null;
+    return null;
+  }, [HERO_MODE]);
+
   const tier = user.level || (user.email ? "BASE" : undefined);
   const tierLabel = tier ? `SOCIO ${tier}` : "VISITATORE";
 
@@ -519,8 +569,8 @@ export default function Moment2() {
         ["--red-accent" as any]: palette.redAccent,
       }}
     >
-      {/* Sticky header */}
-      <div className="sticky top-0 z-50 border-b border-white/10 bg-[var(--surface)]/85 backdrop-blur">
+      {/* Sticky header: SOLIDO, sempre visibile */}
+      <div className="sticky top-0 z-50 border-b border-white/10 bg-[var(--surface)]">
         <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-xs tracking-wide">
           <div className="flex items-center gap-2 text-[var(--muted)]">
             <span className="uppercase">Cart reserved for</span>
@@ -555,10 +605,18 @@ export default function Moment2() {
           </div>
 
           <nav className="hidden md:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
-            <a href="#home" className="hover:text-[var(--text)]">Home</a>
-            <a href="#eventi" className="hover:text-[var(--text)]">Upcoming</a>
-            <a href="#past" className="hover:text-[var(--text)]">Past</a>
-            <a href="#sponsor" className="hover:text-[var(--text)]">Sponsor</a>
+            <a href="#home" className="hover:text-[var(--text)]">
+              Home
+            </a>
+            <a href="#eventi" className="hover:text-[var(--text)]">
+              Upcoming
+            </a>
+            <a href="#past" className="hover:text-[var(--text)]">
+              Past
+            </a>
+            <a href="#sponsor" className="hover:text-[var(--text)]">
+              Sponsor
+            </a>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -595,15 +653,23 @@ export default function Moment2() {
 
         <div className="md:hidden border-t border-white/10">
           <div className="max-w-6xl mx-auto px-4 py-2 flex gap-5 overflow-x-auto text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
-            <a href="#home" className="shrink-0 hover:text-[var(--text)]">Home</a>
-            <a href="#eventi" className="shrink-0 hover:text-[var(--text)]">Upcoming</a>
-            <a href="#past" className="shrink-0 hover:text-[var(--text)]">Past</a>
-            <a href="#sponsor" className="shrink-0 hover:text-[var(--text)]">Sponsor</a>
+            <a href="#home" className="shrink-0 hover:text-[var(--text)]">
+              Home
+            </a>
+            <a href="#eventi" className="shrink-0 hover:text-[var(--text)]">
+              Upcoming
+            </a>
+            <a href="#past" className="shrink-0 hover:text-[var(--text)]">
+              Past
+            </a>
+            <a href="#sponsor" className="shrink-0 hover:text-[var(--text)]">
+              Sponsor
+            </a>
           </div>
         </div>
       </div>
 
-      {/* HERO FULLSCREEN */}
+      {/* HERO (NERO) */}
       <section id="home" className="relative h-[100svh] w-full bg-black">
         <div className="absolute inset-0">
           {HERO_MODE === "mp4" ? (
@@ -624,19 +690,14 @@ export default function Moment2() {
             <iframe
               className="absolute inset-0 z-30 h-full w-full"
               src={heroYouTube}
-              title={heroEvent?.name ? `LedVelvet – ${heroEvent.name}` : "LedVelvet"}
+              title="LedVelvet"
               loading="lazy"
               allow="autoplay, accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
               referrerPolicy="strict-origin-when-cross-origin"
             />
           ) : heroEvent ? (
-            <img
-              src={heroEvent.posterSrc || brand.heroPoster}
-              alt={heroEvent.name || "LedVelvet"}
-              className="absolute inset-0 z-20 h-full w-full object-cover"
-              loading="eager"
-            />
+            <img src={brand.heroPoster} alt="LedVelvet" className="absolute inset-0 z-20 h-full w-full object-cover" loading="eager" />
           ) : (
             <video
               ref={heroVideoRef}
@@ -647,6 +708,11 @@ export default function Moment2() {
               muted={muted}
               playsInline
               preload="metadata"
+              onEnded={(e) => {
+                const v = e.currentTarget;
+                v.currentTime = 0;
+                v.play().catch(() => {});
+              }}
             >
               <source src={brand.heroVideoMp4} type="video/mp4" />
               {brand.heroVideoWebm ? <source src={brand.heroVideoWebm} type="video/webm" /> : null}
@@ -663,27 +729,22 @@ export default function Moment2() {
 
         <div className="absolute inset-0 z-50 flex items-center justify-center text-center px-6">
           <div className="w-full max-w-none">
-           
-		 <img
+            <img
               src={brand.logo}
               alt="LedVelvet"
               className="mx-auto w-36 h-36 sm:w-40 sm:h-40 md:w-48 md:h-48 lg:w-56 lg:h-56 object-contain opacity-70 drop-shadow-[0_10px_30px_rgba(0,0,0,0.65)]"
             />
 
-           {heroTitle ? (
-  <h1
-    className="mt-3 mx-auto text-center font-semibold tracking-tight md:whitespace-nowrap"
-    style={{
-      maxWidth: "75vw",
-      fontSize: "clamp(2rem, 5.5vw, 4.5rem)",
-      lineHeight: 1.05,
-    }}
-  >
-    {heroTitle}
-  </h1>
-) : null}
+            {heroTitle ? (
+              <h1
+                className="mt-3 mx-auto text-center font-semibold tracking-tight md:whitespace-nowrap"
+                style={{ maxWidth: "75vw", fontSize: "clamp(2rem, 5.5vw, 4.5rem)", lineHeight: 1.05 }}
+              >
+                {heroTitle}
+              </h1>
+            ) : null}
 
-           <p className="mt-4 text-white/75 text-base md:text-lg">{heroSubtitle}</p>
+            {heroSubtitle ? <p className="mt-4 text-white/75 text-base md:text-lg">{heroSubtitle}</p> : null}
 
             <div className="mt-7 flex flex-wrap gap-3 justify-center">
               <a href="#eventi" className="px-7 py-3 bg-[var(--red-accent)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90">
@@ -693,24 +754,12 @@ export default function Moment2() {
                 Past recap
               </a>
             </div>
-
-            {heroEvent?.name ? (
-              <div className="mt-6 text-xs text-white/55 tracking-[0.18em] uppercase">
-                {heroEvent.name}
-                {heroEvent.city ? ` · ${heroEvent.city}` : ""}
-                {heroEvent.date ? ` · ${fmtDateIT(heroEvent.date)}` : ""}
-              </div>
-            ) : null}
           </div>
         </div>
 
         {HERO_MODE === "mp4" ? (
-          <div className="absolute left-3 right-3 bottom-3 z-50 bg-black/35 backdrop-blur px-3 py-2 flex items-center justify-end gap-2">
-            <button
-              className="px-3 py-1.5 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase"
-              onClick={toggleMute}
-              type="button"
-            >
+          <div className="absolute left-3 right-3 bottom-3 z-50 bg-black/45 px-3 py-2 flex items-center justify-end gap-2 border border-white/10">
+            <button className="px-3 py-1.5 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase" onClick={toggleMute} type="button">
               {muted ? "Unmute" : "Mute"}
             </button>
             <button
@@ -723,28 +772,26 @@ export default function Moment2() {
           </div>
         ) : null}
 
-        {fsErr ? (
-          <div className="absolute left-3 right-3 bottom-3 z-50 bg-black/60 backdrop-blur px-3 py-2 text-xs text-white/80">{fsErr}</div>
-        ) : null}
+        {fsErr ? <div className="absolute left-3 right-3 bottom-3 z-50 bg-black/60 px-3 py-2 text-xs text-white/80">{fsErr}</div> : null}
       </section>
 
       <Marquee text="Next Event · LedVelvet · Immersive Experience · Music · Atmosphere ·" />
 
-      {/* UPCOMING */}
-      <section id="eventi" className="py-16 bg-[var(--bg)]">
+      {/* UPCOMING (ROSSO) */}
+      <section id="eventi" className="py-16 bg-[var(--red-dark)]">
         <div className="w-full px-[6%]">
-          <div className="text-[11px] tracking-[0.26em] uppercase text-white/70">Next</div>
-          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Upcoming</h2>
+          <div className="text-[11px] tracking-[0.26em] uppercase text-white/80">Next</div>
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2 text-white">Upcoming</h2>
 
-          {eventsLoading && <div className="mt-6 text-sm text-white/60">Carico eventi...</div>}
-          {eventsErr && <div className="mt-6 text-sm text-red-200">Errore: {eventsErr}</div>}
+          {eventsLoading && <div className="mt-6 text-sm text-white/80">Carico eventi...</div>}
+          {eventsErr && <div className="mt-6 text-sm text-red-100">Errore: {eventsErr}</div>}
 
           <div className="grid lg:grid-cols-2 gap-6 mt-8">
             {upcomingEvents.map((e) => {
               const tag = (e.tag || "LISTE & TICKETS").toUpperCase();
               const soldOut = tag.includes("SOLD");
               return (
-                <article key={e.id} className="bg-black/30 overflow-hidden">
+                <article key={e.id} className="bg-black/25 overflow-hidden border border-white/10">
                   <div className="relative aspect-[16/9] bg-black">
                     {(() => {
                       const yt = youTubeEmbedUrl(e.teaserUrl || "");
@@ -768,10 +815,10 @@ export default function Moment2() {
 
                   <div className="p-6">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs tracking-[0.22em] uppercase text-white/60">{tag}</div>
+                      <div className="text-xs tracking-[0.22em] uppercase text-white/75">{tag}</div>
 
                       {soldOut ? (
-                        <span className="text-xs text-white/40">Sold out</span>
+                        <span className="text-xs text-white/60">Sold out</span>
                       ) : e.ticketUrl ? (
                         <a
                           href={e.ticketUrl}
@@ -782,19 +829,18 @@ export default function Moment2() {
                           Book
                         </a>
                       ) : (
-                        <span className="text-xs text-white/40">Ticket soon</span>
+                        <span className="text-xs text-white/60">Ticket soon</span>
                       )}
                     </div>
 
-                    <h3 className="text-xl font-semibold mt-3">{e.name}</h3>
-                    <div className="mt-2 text-sm text-white/65">
+                    <h3 className="text-xl font-semibold mt-3 text-white">{e.name}</h3>
+                    <div className="mt-2 text-sm text-white/80">
                       {e.city} • {fmtDateIT(e.date)}
                     </div>
 
-                    {/* Sponsors */}
                     {e.sponsors && e.sponsors.length > 0 ? (
                       <div className="mt-4">
-                        <div className="text-[10px] tracking-[0.26em] uppercase text-white/60">Sponsors</div>
+                        <div className="text-[10px] tracking-[0.26em] uppercase text-white/75">Sponsors</div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {e.sponsors.map((s) => {
                             const Wrapper: any = s.website ? "a" : "span";
@@ -804,8 +850,8 @@ export default function Moment2() {
                                 key={s.id}
                                 {...wrapperProps}
                                 className={cn(
-                                  "inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/25 bg-black/35 text-[11px] text-white/85",
-                                  s.website && "hover:bg-white/10 hover:border-white/35"
+                                  "inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/25 bg-black/35 text-[11px] text-white/90",
+                                  s.website && "hover:bg-white/10 hover:border-white/40"
                                 )}
                                 title={s.website || s.id}
                               >
@@ -833,8 +879,8 @@ export default function Moment2() {
 
       <Marquee text="Past Events · Aftermovies · LedVelvet ·" />
 
-      {/* PAST */}
-      <section id="past" className="py-16 bg-[var(--red-dark)]">
+      {/* PAST (NERO) */}
+      <section id="past" className="py-16 bg-[var(--bg)]">
         <div className="w-full px-[6%]">
           <div className="text-[11px] tracking-[0.26em] uppercase text-white/70">Recap</div>
           <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2 text-white">Past Events</h2>
@@ -846,9 +892,15 @@ export default function Moment2() {
             {pastYears.length === 0 ? (
               <div className="text-sm text-white/70">Nessun past event ancora.</div>
             ) : (
-              pastYears.map((year, idx) => (
-                <details key={year} open={idx === 0} className="bg-black/10">
-                  <summary className="cursor-pointer select-none px-6 py-4 flex items-center justify-between gap-4">
+              pastYears.map((year) => (
+                <details key={year} className="lv-details border border-white/12 bg-white/5">
+                  <summary
+                    className="
+                      lv-summary
+                      cursor-pointer select-none px-6 py-4 flex items-center justify-between gap-4
+                      text-red-300 hover:text-red-100 transition-colors
+                    "
+                  >
                     <div className="flex items-center gap-3">
                       <div className="text-xs tracking-[0.22em] uppercase text-white/70">Year</div>
                       <div className="text-lg font-semibold text-white">{year}</div>
@@ -856,15 +908,16 @@ export default function Moment2() {
                         {(pastByYear[year]?.length || 0)} event{(pastByYear[year]?.length || 0) === 1 ? "" : "s"}
                       </div>
                     </div>
-                    <div className="text-xs text-white/60">Toggle</div>
+
+                    <div className="lv-open text-xs tracking-[0.18em] uppercase">OPEN</div>
                   </summary>
 
-                  <div className="px-6 pb-6">
+                  <div className="lv-content px-6 pb-6">
                     <div className="grid lg:grid-cols-2 gap-6">
                       {(pastByYear[year] || []).map((e) => {
                         const yt = youTubeEmbedUrl(e.aftermovieUrl || "");
                         return (
-                          <article key={e.id} className="bg-black/20 overflow-hidden">
+                          <article key={e.id} className="bg-black/30 overflow-hidden border border-white/10">
                             <div className="relative aspect-[16/9] bg-black">
                               {yt ? (
                                 <iframe
@@ -904,7 +957,6 @@ export default function Moment2() {
                                 {e.city} • {fmtDateIT(e.date)}
                               </div>
 
-                              {/* Sponsors */}
                               {e.sponsors && e.sponsors.length > 0 ? (
                                 <div className="mt-4">
                                   <div className="text-[10px] tracking-[0.26em] uppercase text-white/70">Sponsors</div>
@@ -947,30 +999,85 @@ export default function Moment2() {
             )}
           </div>
         </div>
+
+        <style suppressHydrationWarning>{`
+          #past details > summary::-webkit-details-marker { display:none; }
+          #past details > summary { list-style:none; }
+
+          #past .lv-details { border-radius: 0px; }
+
+          #past .lv-summary {
+            position: relative;
+            background: rgba(0,0,0,0.18);
+            border-bottom: 1px solid rgba(255,255,255,0.10);
+          }
+          #past .lv-summary::before {
+            content: "";
+            position: absolute;
+            left: 18px;
+            right: 18px;
+            top: 0;
+            height: 1px;
+            background: linear-gradient(90deg,
+              rgba(255,255,255,0.00),
+              rgba(255,45,45,0.55),
+              rgba(255,255,255,0.00)
+            );
+            opacity: 0.85;
+          }
+
+          #past details[open] .lv-summary {
+            color: #ff2b2b;
+            background: rgba(0,0,0,0.28);
+            border-bottom-color: rgba(255,255,255,0.14);
+          }
+          #past details[open] .lv-open {
+            color: #ff2b2b;
+            letter-spacing: 0.22em;
+          }
+
+          #past .lv-open { color: rgba(255,255,255,0.72); }
+
+          #past .lv-content {
+            overflow: hidden;
+            max-height: 0px;
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: max-height 420ms ease, opacity 240ms ease, transform 240ms ease;
+          }
+          #past details[open] .lv-content {
+            max-height: 3000px;
+            opacity: 1;
+            transform: translateY(0px);
+          }
+        `}</style>
       </section>
 
-      {/* ✅ SPONSOR REQUEST */}
-      <section id="sponsor" className="py-16 bg-[var(--bg)]">
+      {/* Marquee tra Past (nero) e Sponsor (rosso) */}
+      <Marquee text="Sponsor · Partnerships · LedVelvet ·" />
+
+      {/* SPONSOR REQUEST (ROSSO) - FORM IDENTICA */}
+      <section id="sponsor" className="py-16 bg-[var(--red-dark)]">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="text-[11px] tracking-[0.26em] uppercase text-white/70">Partnership</div>
-          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">Sponsor Request</h2>
-          <p className="mt-4 text-sm md:text-base text-white/70 max-w-2xl">
+          <div className="text-[11px] tracking-[0.26em] uppercase text-white/80">Partnership</div>
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2 text-white">Sponsor Request</h2>
+          <p className="mt-4 text-sm md:text-base text-white/80 max-w-2xl">
             Vuoi sponsorizzare un evento LedVelvet? Compila la richiesta: ti rispondiamo con proposte e disponibilità.
           </p>
 
           <div className="mt-8 grid md:grid-cols-2 gap-6">
             <div className="bg-white/5 border border-white/10 p-6">
-              <div className="text-xs tracking-[0.22em] uppercase text-white/60">Company</div>
+              <div className="text-xs tracking-[0.22em] uppercase text-white/70">Company</div>
 
-              <label className="block mt-4 text-xs text-white/70">Brand / Azienda *</label>
+              <label className="block mt-4 text-xs text-white/80">Brand / Azienda *</label>
               <input
                 value={sponsor.brand}
                 onChange={(e) => setSponsor((s) => ({ ...s, brand: e.target.value }))}
                 className="mt-2 w-full bg-black/30 border border-white/15 px-3 py-2 text-sm text-white outline-none focus:border-white/30"
-                placeholder="Es. Naive Concept Store"
+                placeholder="Brand Azienda"
               />
 
-              <label className="block mt-4 text-xs text-white/70">Referente *</label>
+              <label className="block mt-4 text-xs text-white/80">Referente *</label>
               <input
                 value={sponsor.name}
                 onChange={(e) => setSponsor((s) => ({ ...s, name: e.target.value }))}
@@ -978,7 +1085,7 @@ export default function Moment2() {
                 placeholder="Nome e Cognome"
               />
 
-              <label className="block mt-4 text-xs text-white/70">Email *</label>
+              <label className="block mt-4 text-xs text-white/80">Email *</label>
               <input
                 value={sponsor.email}
                 onChange={(e) => setSponsor((s) => ({ ...s, email: e.target.value }))}
@@ -986,7 +1093,7 @@ export default function Moment2() {
                 placeholder="email@azienda.com"
               />
 
-              <label className="block mt-4 text-xs text-white/70">Telefono</label>
+              <label className="block mt-4 text-xs text-white/80">Telefono</label>
               <input
                 value={sponsor.phone}
                 onChange={(e) => setSponsor((s) => ({ ...s, phone: e.target.value }))}
@@ -996,9 +1103,9 @@ export default function Moment2() {
             </div>
 
             <div className="bg-white/5 border border-white/10 p-6">
-              <div className="text-xs tracking-[0.22em] uppercase text-white/60">Details</div>
+              <div className="text-xs tracking-[0.22em] uppercase text-white/70">Details</div>
 
-              <label className="block mt-4 text-xs text-white/70">Budget</label>
+              <label className="block mt-4 text-xs text-white/80">Budget</label>
               <input
                 value={sponsor.budget}
                 onChange={(e) => setSponsor((s) => ({ ...s, budget: e.target.value }))}
@@ -1006,7 +1113,7 @@ export default function Moment2() {
                 placeholder="Es. 500€ / 1000€ / 2000€"
               />
 
-              <label className="block mt-4 text-xs text-white/70">Interest type</label>
+              <label className="block mt-4 text-xs text-white/80">Interest type</label>
               <select
                 value={sponsor.interestType}
                 onChange={(e) => setSponsor((s) => ({ ...s, interestType: e.target.value }))}
@@ -1020,7 +1127,7 @@ export default function Moment2() {
                 ))}
               </select>
 
-              <label className="block mt-4 text-xs text-white/70">Messaggio</label>
+              <label className="block mt-4 text-xs text-white/80">Messaggio</label>
               <textarea
                 value={sponsor.note}
                 onChange={(e) => setSponsor((s) => ({ ...s, note: e.target.value }))}
@@ -1064,89 +1171,22 @@ export default function Moment2() {
         </div>
       </section>
 
-      {/* Ambient music (SoundCloud) */}
-      <div className="fixed bottom-4 right-4 z-[60]">
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setMusicOpen((v) => {
-                const next = !v;
-                if (next) setMusicMinimized(false);
-                return next;
-              });
-            }}
-            className={cn(
-              "px-4 py-2 rounded-full border text-xs tracking-[0.18em] uppercase",
-              musicOpen
-                ? "bg-[var(--red-accent)] text-black border-transparent hover:opacity-90"
-                : "border-white/20 text-white hover:bg-white/10"
-            )}
-            title="Ambient music (SoundCloud)"
-          >
-            {musicOpen ? "Ambient ON" : "Ambient"}
-          </button>
-        </div>
-
-        {musicOpen ? (
-          <div
-            className={cn(
-              "mt-2 w-[340px] max-w-[92vw] bg-black/70 backdrop-blur border border-white/15",
-              musicMinimized ? "h-12 overflow-hidden" : "h-auto"
-            )}
-          >
-            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-              <div className="text-[10px] tracking-[0.26em] uppercase text-white/70">
-                SoundCloud Playlist
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMusicMinimized((v) => !v)}
-                  className="px-2 py-1 text-[10px] tracking-[0.18em] uppercase border border-white/15 text-white/80 hover:bg-white/10"
-                  title={musicMinimized ? "Expand" : "Minimize"}
-                >
-                  {musicMinimized ? "Open" : "Min"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMusicOpen(false)}
-                  className="px-2 py-1 text-[10px] tracking-[0.18em] uppercase border border-white/15 text-white/80 hover:bg-white/10"
-                  title="Close"
-                >
-                  X
-                </button>
-              </div>
-            </div>
-
-            <div className="p-2">
-              <iframe
-                title="LedVelvet SoundCloud"
-                width="100%"
-                height="125"
-                scrolling="no"
-                frameBorder="no"
-                allow="autoplay"
-                src={soundcloudEmbedSrc}
-              />
-              <div className="mt-1 text-[10px] text-white/55">
-                Click play to start. Audio won&apos;t autoplay.
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </div>
-
       {/* Footer */}
       <footer className="border-t border-white/10 py-10 bg-[var(--bg)]">
         <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <p className="text-xs tracking-[0.22em] uppercase text-white/60">
-            © {new Date().getFullYear()} LedVelvet APS • Privacy • Cookie • Termini
+            © <span suppressHydrationWarning>{new Date().getFullYear()}</span> LedVelvet APS • Privacy • Cookie • Termini
           </p>
           <div className="flex gap-4 text-xs tracking-[0.22em] uppercase text-white/60">
-            <a className="hover:text-white" href="#">Instagram</a>
-            <a className="hover:text-white" href="#">TikTok</a>
-            <a className="hover:text-white" href="#">Press Kit</a>
+            <a className="hover:text-white" href={SOCIALS.instagram} target="_blank" rel="noreferrer">
+              Instagram
+            </a>
+            <a className="hover:text-white" href={SOCIALS.tiktok} target="_blank" rel="noreferrer">
+              TikTok
+            </a>
+            <a className="hover:text-white" href={SOCIALS.telegram} target="_blank" rel="noreferrer">
+              Telegram
+            </a>
           </div>
         </div>
       </footer>

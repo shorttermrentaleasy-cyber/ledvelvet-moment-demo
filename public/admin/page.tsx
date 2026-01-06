@@ -37,7 +37,6 @@ export default async function AdminHomePage() {
         </header>
 
         <div style={styles.grid}>
-          <Card title="Hero" desc="Titolo, sottotitolo e stato Hero" href="/admin/hero" />
           <Card title="Events" desc="Crea e modifica eventi" href="/admin/events" />
           <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
 
