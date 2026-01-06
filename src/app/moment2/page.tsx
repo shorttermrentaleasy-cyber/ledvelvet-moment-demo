@@ -669,6 +669,71 @@ export default function Moment2() {
         </div>
       </div>
 
+      {/* ✅ SoundCloud utility (ripristinata, chirurgica) */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] w-[min(92vw,520px)]">
+        {!musicOpen ? (
+          <button
+            type="button"
+            onClick={() => {
+              setMusicOpen(true);
+              setMusicMinimized(false);
+            }}
+            className="w-full px-4 py-3 bg-black/70 border border-white/15 text-white/90 text-xs tracking-[0.22em] uppercase hover:bg-black/80"
+          >
+            Ambient Music · Open
+          </button>
+        ) : (
+          <div className="border border-white/15 bg-black/70">
+            <div className="px-3 py-2 flex items-center justify-between gap-2">
+              <div className="text-[11px] tracking-[0.22em] uppercase text-white/80">
+                Ambient Music (SoundCloud)
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMusicMinimized((v) => !v)}
+                  className="px-3 py-1 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/85"
+                >
+                  {musicMinimized ? "Expand" : "Minimize"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMusicOpen(false);
+                    setMusicMinimized(true);
+                  }}
+                  className="px-3 py-1 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/85"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div
+  		className="border-t border-white/10 bg-black/40 overflow-hidden"
+  		style={{
+    			maxHeight: musicMinimized ? 0 : 140,
+    			opacity: musicMinimized ? 0 : 1,
+    			transition: "max-height 220ms ease, opacity 160ms ease",
+    			pointerEvents: musicMinimized ? "none" : "auto",
+  		}}
+>
+  	<iframe
+   		 key={soundcloudEmbedSrc}
+   		 src={soundcloudEmbedSrc}
+    		title="LedVelvet Ambient Music"
+    		width="100%"
+    		height="110"
+    		allow="autoplay"
+  		loading="lazy"
+    	style={{ border: 0, display: "block" }}
+  	/>
+</div>
+          </div>
+        )}
+      </div>
+
       {/* HERO (NERO) */}
       <section id="home" className="relative h-[100svh] w-full bg-black">
         <div className="absolute inset-0">
