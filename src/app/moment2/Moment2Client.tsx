@@ -307,16 +307,32 @@ const [deepDiveOpen, setDeepDiveOpen] = useState<{
   }, []);
   const [musicOpen, setMusicOpen] = useState(false);
   const [musicMinimized, setMusicMinimized] = useState(true);
-
+  const [eventsReloadTick, setEventsReloadTick] = useState(0);
   const [events, setEvents] = useState<EventItem[]>([]);
+  
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsErr, setEventsErr] = useState<string | null>(null);
+useEffect(() => {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === "lv_events_updated_at") {
+     
+ try {
+        sessionStorage.removeItem("lv_public_events_v2");
+      } catch {}
+      setEventsReloadTick((t) => t + 1);
+    }
+  };
 
-  useEffect(() => {
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
+}, []);
+
+    useEffect(() => {
     let alive = true;
 
     async function loadHero() {
-      try {
+    
+  try {
         const r = await fetch("/api/public/hero", { cache: "no-store" });
         const j = await r.json();
         if (!alive) return;
@@ -330,13 +346,15 @@ const [deepDiveOpen, setDeepDiveOpen] = useState<{
           active: Boolean(h.active),
         });
       } catch {}
+
+
     }
 
     loadHero();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [eventsReloadTick]);
 
   useEffect(() => {
     let alive = true;
@@ -345,17 +363,20 @@ const [deepDiveOpen, setDeepDiveOpen] = useState<{
       setEventsLoading(true);
       setEventsErr(null);
 	// ✅ ADD THIS: session cache (avoid reload after back)
-	try {
-  	const cached = sessionStorage.getItem("lv_public_events_v2");
-  	if (cached) {
-   	 const parsed = JSON.parse(cached);
-    	if (Array.isArray(parsed) && parsed.length) {
-     	 setEvents(parsed);
-     	 setEventsLoading(false);
-      	return; // stop: no refetch when coming back from /about
-    	}
+try {
+  const cached = sessionStorage.getItem("lv_public_events_v2");
+  if (cached) {
+    const parsed = JSON.parse(cached);
+    if (Array.isArray(parsed) && parsed.length) {
+      setEvents(parsed);
+      setEventsLoading(false);
+      if (eventsReloadTick === 0) return;
+    }
   }
 } catch {}
+
+	
+
       try {
         const r = await fetch("/api/public/events?limit=100", { cache: "no-store" });
         const j = await r.json();
@@ -424,7 +445,7 @@ const [deepDiveOpen, setDeepDiveOpen] = useState<{
     return () => {
       alive = false;
     };
-  }, []);
+  }, [eventsReloadTick]);
 
   useEffect(() => {
     let alive = true;

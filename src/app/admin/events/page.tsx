@@ -5,6 +5,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import AdminTopbarClient from "../AdminTopbarClient";
 import EventsDeleteButtonClient from "./EventsDeleteButtonClient";
 import EventsDuplicateButtonClient from "./EventsDuplicateButtonClient";
+import RefreshStampClient from "./RefreshStampClient";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,7 @@ export default async function AdminEventsPage({
     return (
       <main style={pageDark}>
         <AdminTopbarClient backHref="/admin" />
+	<RefreshStampClient />
         <p style={{ marginTop: 20 }}>Missing Airtable env</p>
       </main>
     );
