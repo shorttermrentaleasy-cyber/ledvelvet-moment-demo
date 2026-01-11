@@ -179,8 +179,18 @@ export async function GET(req: Request) {
         heroSubtitle: asString(f["Hero Subtitle"] || f["heroSubtitle"]),
         heroOnly: Boolean(f["HeroOnly"] ?? f["heroOnly"]),
         notes: asString(f["Notes"] || f["notes"]),
-        sponsors,
-        phase: asString(f["phase"] || f["Phase"] || (asString(f["status"] || f["Status"]).toLowerCase().includes("past") ? "past" : "past")),
+	deepdive_slug: Array.isArray(f["deepdive_slug"] || f["DeepDive Slug"])
+  	? (f["deepdive_slug"] || f["DeepDive Slug"])
+  	: (asString(f["deepdive_slug"] || f["DeepDive Slug"]) ? [asString(f["deepdive_slug"] || f["DeepDive Slug"])] : []),
+	sponsors,
+        phase: asString(
+  	f["phase"] ||
+  	f["Phase"] ||
+  	(asString(f["status"] || f["Status"]).toLowerCase().includes("past")
+    	? "past"
+    	: "upcoming")
+),
+
       };
     });
 

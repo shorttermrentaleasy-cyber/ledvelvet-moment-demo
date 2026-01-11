@@ -1,44 +1,29 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type AirtableRec = { id: string; fields: Record<string, any> };
+type AirtableRecord<T> = { id: string; fields: T };
 
-function json(ok: boolean, data: any, status = 200) {
-  return NextResponse.json(ok ? { ok: true, ...data } : { ok: false, ...data }, { status });
+type HeroFields = {
+  Title?: string;
+  Subtitle?: string;
+  Active?: boolean;
+
+  videoUrl?: string;
+  posterUrl?: string;
+  imageUrl?: string;
+};
+
+function envOrThrow(key: string) {
+  const v = process.env[key];
+  if (!v) throw new Error(`Missing env: ${key}`);
+  return v;
 }
 
-async function requireAdmin() {
-  const session = await getServerSession(authOptions);
-  const email = (session?.user?.email || "").toLowerCase().trim();
-  if (!email) return { ok: false, error: "Unauthorized" };
-
-  const allowed = (process.env.ADMIN_EMAILS || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!allowed.includes(email)) return { ok: false, error: "AccessDenied" };
-  return { ok: true, email };
-}
-
-function getEnv() {
-  const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
-  const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
-  const AIRTABLE_TABLE_HERO = process.env.AIRTABLE_TABLE_HERO || "HERO";
-
-  if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) {
-    return { ok: false as const, error: "Missing Airtable env (AIRTABLE_TOKEN/AIRTABLE_BASE_ID)" };
-  }
-
-  return { ok: true as const, AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_HERO };
-}
-
-async function airtableFetch(url: string, token: string, init?: RequestInit) {
-  const r = await fetch(url, {
+async function airtableFetch<T>(path: string, init?: RequestInit) {
+  const token = envOrThrow("AIRTABLE_TOKEN");
+  const res = await fetch(`https://api.airtable.com/v0/${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -47,69 +32,92 @@ async function airtableFetch(url: string, token: string, init?: RequestInit) {
     },
     cache: "no-store",
   });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((json as any)?.error?.message || `Airtable error (${res.status})`);
+  return json as T;
+}
 
-  const j = await r.json().catch(() => ({}));
-  return { r, j };
+const s = (v: any) => (v == null ? "" : String(v)).trim();
+
+function jsonNoStore(body: any, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store, max-age=0" },
+  });
+}
+
+async function getHeroRecord() {
+  const baseId = envOrThrow("AIRTABLE_BASE_ID");
+  const heroTable = process.env.AIRTABLE_HERO_TABLE || "HERO";
+
+  // prende il primo record (se hai 1 solo record hero, va benissimo)
+  const data = await airtableFetch<{ records: AirtableRecord<HeroFields>[] }>(
+    `${baseId}/${encodeURIComponent(heroTable)}?pageSize=1`
+  );
+
+  const rec = data.records?.[0];
+  if (!rec) throw new Error("Hero record not found");
+  return { baseId, heroTable, rec };
 }
 
 export async function GET() {
-  const auth = await requireAdmin();
-  if (!auth.ok) return json(false, { error: auth.error }, auth.error === "AccessDenied" ? 403 : 401);
-
-  const env = getEnv();
-  if (!env.ok) return json(false, { error: env.error }, 500);
-
-  const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_HERO } = env;
-
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
-    AIRTABLE_TABLE_HERO
-  )}?pageSize=1`;
-
-  const { r, j } = await airtableFetch(url, AIRTABLE_TOKEN);
-  if (!r.ok) return json(false, { error: j?.error?.message || "Airtable error" }, 500);
-
-  const rec: AirtableRec | undefined = (j.records || [])[0];
-  if (!rec) return json(false, { error: "No HERO record found" }, 404);
-
-  return json(true, { hero: rec }, 200);
+  try {
+    const { rec } = await getHeroRecord();
+    return jsonNoStore(
+      {
+        ok: true,
+        hero: {
+          id: rec.id,
+          fields: rec.fields,
+        },
+      },
+      200
+    );
+  } catch (e: any) {
+    return jsonNoStore({ ok: false, error: e?.message || "Unexpected error" }, 500);
+  }
 }
 
-export async function PATCH(req: Request) {
-  const auth = await requireAdmin();
-  if (!auth.ok) return json(false, { error: auth.error }, auth.error === "AccessDenied" ? 403 : 401);
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({}));
 
-  const env = getEnv();
-  if (!env.ok) return json(false, { error: env.error }, 500);
+    const id = s(body?.id);
+    if (!id) return jsonNoStore({ ok: false, error: "Missing id" }, 400);
 
-  const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_HERO } = env;
+    const fields: HeroFields = {
+      Title: s(body?.title),
+      Subtitle: s(body?.subtitle),
+      Active: Boolean(body?.active),
 
-  const body = await req.json().catch(() => ({}));
-  const id = (body?.id || "").toString().trim();
-  if (!id) return json(false, { error: "Missing hero id" }, 400);
+      // ✅ NEW saved fields
+      videoUrl: s(body?.videoUrl),
+      posterUrl: s(body?.posterUrl),
+      imageUrl: s(body?.imageUrl),
+    };
 
-  const title = (body?.title ?? "").toString();
-  const subtitle = (body?.subtitle ?? "").toString();
-  const active = !!body?.active;
+    const baseId = envOrThrow("AIRTABLE_BASE_ID");
+    const heroTable = process.env.AIRTABLE_HERO_TABLE || "HERO";
 
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
-    AIRTABLE_TABLE_HERO
-  )}/${id}`;
+    const updated = await airtableFetch<AirtableRecord<HeroFields>>(
+      `${baseId}/${encodeURIComponent(heroTable)}/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ fields }),
+      }
+    );
 
-  const payload = {
-    fields: {
-      // ATTENZIONE: questi nomi devono combaciare coi campi Airtable
-      Title: title,
-      Subtitle: subtitle,
-      Active: active,
-    },
-  };
-
-  const { r, j } = await airtableFetch(url, AIRTABLE_TOKEN, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
-
-  if (!r.ok) return json(false, { error: j?.error?.message || "Airtable error" }, 500);
-
-  return json(true, { hero: j }, 200);
+    return jsonNoStore(
+      {
+        ok: true,
+        hero: {
+          id: updated.id,
+          fields: updated.fields,
+        },
+      },
+      200
+    );
+  } catch (e: any) {
+    return jsonNoStore({ ok: false, error: e?.message || "Unexpected error" }, 500);
+  }
 }

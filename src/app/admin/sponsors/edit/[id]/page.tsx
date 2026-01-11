@@ -298,22 +298,28 @@ export default function AdminSponsorEditPage({ params }: { params: { id: string 
                       />
                     </div>
 
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <a href={form.logoUrl} target="_blank" rel="noreferrer" style={btn}>
-                        Apri logo ↗
-                      </a>
-                      <button
-                        type="button"
-                        style={btn}
-                        onClick={() => {
-                          navigator.clipboard?.writeText(form.logoUrl || "");
-                          setOkMsg("Link copiato ✅");
-                          setTimeout(() => setOkMsg(null), 1200);
-                        }}
-                      >
-                        Copia link
-                      </button>
-                    </div>
+    	<div style={{ display: "flex", gap: 8 }}>
+  	<a
+  href="https://airtable.com/appkpUBdMSN1oY4TI/pagAsODqmbpUNUtb4"
+  target="_blank"
+  rel="noreferrer"
+  style={{
+    padding: "6px 10px",
+    fontSize: 12,
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(0,0,0,0.25)",
+    color: "#fff",
+    textDecoration: "none",
+    cursor: "pointer",
+  }}
+>
+  Gestisci il Logo
+</a>
+
+	</div>
+
+
                   </div>
                 ) : (
                   <div style={{ opacity: 0.75, fontSize: 13 }}>

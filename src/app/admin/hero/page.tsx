@@ -10,6 +10,10 @@ type HeroRec = {
   title: string;
   subtitle: string;
   active: boolean;
+
+  videoUrl: string;
+  posterUrl: string;
+  imageUrl: string;
 };
 
 function asBool(v: any): boolean {
@@ -24,6 +28,12 @@ function pickField(fields: any, keys: string[]) {
   return undefined;
 }
 
+function asString(v: any): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  return String(v);
+}
+
 export default function AdminHeroPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,6 +46,9 @@ export default function AdminHeroPage() {
     title: "",
     subtitle: "",
     active: false,
+    videoUrl: "",
+    posterUrl: "",
+    imageUrl: "",
   });
 
   const canSubmit = useMemo(() => !loading && !saving && !!hero.id, [loading, saving, hero.id]);
@@ -53,19 +66,25 @@ export default function AdminHeroPage() {
         if (!r.ok || j?.ok === false) throw new Error(j?.error || "Errore caricamento HERO");
 
         const rec = j.hero ?? j.data ?? j;
-
-        // compat: accetta sia {id,title,subtitle,active} che {id,fields:{...}}
         const fields = rec.fields ?? rec;
 
         const title = pickField(fields, ["Title", "title", "HERO Title", "Hero Title"]) ?? "";
         const subtitle = pickField(fields, ["Subtitle", "subtitle", "HERO Subtitle", "Hero Subtitle"]) ?? "";
         const active = asBool(pickField(fields, ["Active", "active", "IsActive", "isActive"]) ?? false);
 
+        // ✅ exact Airtable field names (as you said)
+        const videoUrl = pickField(fields, ["videoUrl"]) ?? "";
+        const posterUrl = pickField(fields, ["posterUrl"]) ?? "";
+        const imageUrl = pickField(fields, ["imageUrl"]) ?? "";
+
         setHero({
           id: rec.id ?? fields.id ?? "",
           title: String(title ?? ""),
           subtitle: String(subtitle ?? ""),
           active,
+          videoUrl: asString(videoUrl),
+          posterUrl: asString(posterUrl),
+          imageUrl: asString(imageUrl),
         });
       } catch (e: any) {
         setError(e?.message || "Errore");
@@ -85,11 +104,15 @@ export default function AdminHeroPage() {
       setError(null);
       setOkMsg(null);
 
+      // ✅ NOW we send also the 3 link fields
       const payload = {
         id: hero.id,
         title: hero.title || "",
         subtitle: hero.subtitle || "",
         active: !!hero.active,
+        videoUrl: hero.videoUrl || "",
+        posterUrl: hero.posterUrl || "",
+        imageUrl: hero.imageUrl || "",
       };
 
       const r = await fetch("/api/admin/hero", {
@@ -108,11 +131,18 @@ export default function AdminHeroPage() {
       const subtitle = pickField(fields, ["Subtitle", "subtitle", "HERO Subtitle", "Hero Subtitle"]) ?? hero.subtitle;
       const active = asBool(pickField(fields, ["Active", "active", "IsActive", "isActive"]) ?? hero.active);
 
+      const videoUrl = pickField(fields, ["videoUrl"]) ?? hero.videoUrl;
+      const posterUrl = pickField(fields, ["posterUrl"]) ?? hero.posterUrl;
+      const imageUrl = pickField(fields, ["imageUrl"]) ?? hero.imageUrl;
+
       setHero((h) => ({
         ...h,
         title: String(title ?? ""),
         subtitle: String(subtitle ?? ""),
         active,
+        videoUrl: asString(videoUrl),
+        posterUrl: asString(posterUrl),
+        imageUrl: asString(imageUrl),
       }));
 
       setOkMsg("Salvato ✅");
@@ -149,6 +179,16 @@ export default function AdminHeroPage() {
     opacity: canSubmit ? 1 : 0.6,
     cursor: canSubmit ? "pointer" : "not-allowed",
   };
+  const btnMini: CSSProperties = {
+    padding: "8px 10px",
+    borderRadius: 12,
+    background: "rgba(255,255,255,0.10)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    color: "#EDEDED",
+    textDecoration: "none",
+    fontSize: 13,
+    whiteSpace: "nowrap",
+  };
   const input: CSSProperties = {
     width: "100%",
     padding: "10px 12px",
@@ -176,6 +216,65 @@ export default function AdminHeroPage() {
 
           {!loading && (
             <form onSubmit={onSubmit} style={grid}>
+              {/* Media fields (editable now, saved via PATCH) */}
+              <div style={panel}>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ fontSize: 13, opacity: 0.85 }}>Media (campi link su Airtable)</div>
+
+                  <div>
+                    <label style={label}>videoUrl</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <input
+                        style={input}
+                        value={hero.videoUrl}
+                        onChange={(e) => setHero((h) => ({ ...h, videoUrl: e.target.value }))}
+                      />
+                      {hero.videoUrl ? (
+                        <a href={hero.videoUrl} target="_blank" rel="noreferrer" style={btnMini}>
+                          Open ↗
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={label}>posterUrl</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <input
+                        style={input}
+                        value={hero.posterUrl}
+                        onChange={(e) => setHero((h) => ({ ...h, posterUrl: e.target.value }))}
+                      />
+                      {hero.posterUrl ? (
+                        <a href={hero.posterUrl} target="_blank" rel="noreferrer" style={btnMini}>
+                          Open ↗
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={label}>imageUrl</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <input
+                        style={input}
+                        value={hero.imageUrl}
+                        onChange={(e) => setHero((h) => ({ ...h, imageUrl: e.target.value }))}
+                      />
+                      {hero.imageUrl ? (
+                        <a href={hero.imageUrl} target="_blank" rel="noreferrer" style={btnMini}>
+                          Open ↗
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 12, opacity: 0.6 }}>
+                    Nota: questi tre campi vengono ora salvati anche dall’admin (PATCH).
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label style={label}>Title</label>
                 <input

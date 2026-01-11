@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 type MetaOption = { id: string; label: string };
 
 // TODO: incolla qui il link del Form/Interface Airtable che mostra SOLO Brand Name + Logo (Attachment)
-const AIRTABLE_LOGO_UPLOAD_URL = "https://airtable.com/appkpUBdMSN1oY4TI/pagRMCGUofGTlqNT3/form";
+const AIRTABLE_LOGO_UPLOAD_URL = "https://airtable.com/appkpUBdMSN1oY4TI/pagAsODqmbpUNUtb4";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

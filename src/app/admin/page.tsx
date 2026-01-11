@@ -39,6 +39,10 @@ export default async function AdminHomePage() {
         <div style={styles.grid}>
           <Card title="Hero" desc="Titolo, sottotitolo e stato Hero" href="/admin/hero" />
           <Card title="Events" desc="Crea e modifica eventi" href="/admin/events" />
+
+          {/* ✅ PATCH MINIMA: aggiunta DeepDive */}
+          <Card title="DeepDive" desc="Experience / contenuti evento" href="/admin/deepdive" />
+
           <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
 
           <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" disabled />
