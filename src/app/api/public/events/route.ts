@@ -6,7 +6,18 @@ export const dynamic = "force-dynamic";
 type AirtableRecord = { id: string; fields: Record<string, any> };
 
 function jsonError(message: string, status = 500, extra?: any) {
-  return NextResponse.json({ ok: false, error: message, extra }, { status });
+  
+return NextResponse.json(
+  { ok: false, error: message, extra },
+  {
+    status,
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+    },
+  }
+);
+
+
 }
 
 function asString(v: any): string {
@@ -193,8 +204,15 @@ export async function GET(req: Request) {
 
       };
     });
-
-    return NextResponse.json({ ok: true, events }, { status: 200 });
+	return NextResponse.json(
+  	{ ok: true, events },
+  	{
+    	status: 200,
+    	headers: {
+      "Cache-Control": "no-store, max-age=0",
+    	},
+  	}
+	);
   } catch (e: any) {
     return jsonError(e?.message || "Unexpected error", 500);
   }

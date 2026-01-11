@@ -154,16 +154,16 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) redirect(`/admin/events/edit?id=${id}`);
 
     const sponsorsSelected = formData.getAll("sponsors").map(String);
-
-    const hero = String(formData.get("heroImageUrl") || "").trim();
-    const teaser = String(formData.get("teaserUrl") || "").trim();
-    const after = String(formData.get("aftermovieUrl") || "").trim();
-
-    if (!isHttpUrl(hero) || !isHttpUrl(teaser) || !isHttpUrl(after)) {
-      redirect(`/admin/events/edit?id=${id}`);
-    }
-
-    const fields: Record<string, any> = {
+	const hero = String(formData.get("heroImageUrl") || "").trim();
+	const teaser = String(formData.get("teaserUrl") || "").trim();
+	const after = String(formData.get("aftermovieUrl") || "").trim();
+	// ✅ valida SOLO se non vuoto
+	
+if ((hero && !isHttpUrl(hero)) || (teaser && !isHttpUrl(teaser)) || (after && !isHttpUrl(after))) {
+  	redirect(`/admin/events/edit?id=${id}`);
+	}
+    
+const fields: Record<string, any> = {
       "Event Name": String(formData.get("eventName") || "").trim(),
       date: normalizeDate(formData.get("date")),
       City: String(formData.get("city") || "").trim() || undefined,
@@ -176,11 +176,11 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
       Featured: formData.get("featured") === "on",
     };
 
-    if (hero) fields["Hero Image"] = [{ url: hero }];
-    fields["Teaser"] = teaser || "";
-    fields["Aftermovie"] = after || "";
+  	if (hero) fields["Hero Image"] = [{ url: hero }];
 
-    Object.keys(fields).forEach((k) => fields[k] === undefined && delete fields[k]);
+	fields["Teaser"] = teaser ? teaser : null;
+	fields["Aftermovie"] = after ? after : null;
+
 
     const r = await fetch(
       `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_EVENTS)}/${id}`,
@@ -335,8 +335,28 @@ const styles: Record<string, React.CSSProperties> = {
   field: { display: "flex", flexDirection: "column", gap: 6 },
   label: { fontSize: 13, opacity: 0.8 },
   smallMuted: { fontSize: 11, opacity: 0.6 },
-  input: { height: 40, borderRadius: 10, background: "rgba(0,0,0,0.4)", color: "#fff" },
-  textarea: { minHeight: 110, borderRadius: 10 },
+input: {
+  height: 40,
+  borderRadius: 10,
+  background: "rgba(0,0,0,0.4)",
+  color: "#fff",
+  border: "1px solid rgba(255,255,255,0.18)",
+  padding: "0 12px",
+  outline: "none",
+},
+
+  
+textarea: {
+  minHeight: 110,
+  borderRadius: 10,
+  background: "rgba(0,0,0,0.4)",
+  color: "#fff",
+  border: "1px solid rgba(255,255,255,0.18)",
+  padding: "10px 12px",
+  outline: "none",
+},
+
+  
   checkRow: { display: "flex", justifyContent: "space-between", padding: 12 },
   details: { borderRadius: 12 },
   summary: { cursor: "pointer", padding: 10 },
