@@ -182,7 +182,7 @@ export async function GET(req: Request) {
         status: asString(f["status"] || f["Status"]),
         ticketPlatform: asString(f["Ticket Platform"] || f["ticketPlatform"]),
         ticketUrl: asString(f["Ticket Url"] || f["ticketUrl"]),
-        posterSrc: asString(f["Hero Image"] || f["posterSrc"]),
+        posterSrc: urlField(f["Hero Image"]) || asString(f["posterSrc"]),
         teaserUrl: asString(f["Teaser"] || f["teaserUrl"]),
         aftermovieUrl: asString(f["Aftermovie"] || f["aftermovieUrl"]),
         featured: Boolean(f["featured"]),

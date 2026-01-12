@@ -370,7 +370,7 @@ try {
     if (Array.isArray(parsed) && parsed.length) {
       setEvents(parsed);
       setEventsLoading(false);
-      if (eventsReloadTick === 0) return;
+ 
     }
   }
 } catch {}

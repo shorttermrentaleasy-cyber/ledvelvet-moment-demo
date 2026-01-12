@@ -4,11 +4,39 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import AdminTopbarClient from "../../AdminTopbarClient";
 
+const HERO_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
+
 export const dynamic = "force-dynamic";
 
 function unauthorized() {
   redirect("/admin/login");
 }
+
+
+function normalizeDriveImageUrl(input: string): string {
+  const s = String(input || "").trim();
+  if (!s) return "";
+
+  // Already a direct "uc" link
+  if (s.includes("drive.google.com/uc?") && s.includes("id=")) return s;
+
+  // Try extract file id from common Google Drive share URLs
+  // 1) /file/d/<ID>/view
+  const m1 = s.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (m1?.[1]) return `https://drive.google.com/uc?export=view&id=${m1[1]}`;
+
+  // 2) open?id=<ID>
+  const m2 = s.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  if (m2?.[1]) return `https://drive.google.com/uc?export=view&id=${m2[1]}`;
+
+  // 3) uc?id=<ID> (various)
+  const m3 = s.match(/drive\.google\.com\/uc\?(?:.*&)?id=([a-zA-Z0-9_-]+)/);
+  if (m3?.[1]) return `https://drive.google.com/uc?export=view&id=${m3[1]}`;
+
+  // Not a drive link we recognize -> keep as-is (could be a normal https image)
+  return s;
+}
+
 
 function isHttpUrl(v: string) {
   if (!v) return true;
@@ -154,7 +182,8 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) redirect(`/admin/events/edit?id=${id}`);
 
     const sponsorsSelected = formData.getAll("sponsors").map(String);
-	const hero = String(formData.get("heroImageUrl") || "").trim();
+	const heroRaw = String(formData.get("heroImageUrl") || "").trim();
+        const hero = normalizeDriveImageUrl(heroRaw);
 	const teaser = String(formData.get("teaserUrl") || "").trim();
 	const after = String(formData.get("aftermovieUrl") || "").trim();
 	// ✅ valida SOLO se non vuoto
@@ -162,22 +191,28 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
 if ((hero && !isHttpUrl(hero)) || (teaser && !isHttpUrl(teaser)) || (after && !isHttpUrl(after))) {
   	redirect(`/admin/events/edit?id=${id}`);
 	}
-    
+const ticketPlatform = String(formData.get("ticketPlatform") || "").trim();
+const ticketUrl = String(formData.get("ticketUrl") || "").trim();
+const city = String(formData.get("city") || "").trim();
+const venue = String(formData.get("venue") || "").trim();
+const status = String(formData.get("status") || "").trim();
+const notes = String(formData.get("notes") || "").trim();
+
 const fields: Record<string, any> = {
       "Event Name": String(formData.get("eventName") || "").trim(),
       date: normalizeDate(formData.get("date")),
-      City: String(formData.get("city") || "").trim() || undefined,
-      Venue: String(formData.get("venue") || "").trim() || undefined,
-      Status: String(formData.get("status") || "").trim() || undefined,
-      "Ticket Platform": String(formData.get("ticketPlatform") || "").trim() || undefined,
-      "Ticket Url": String(formData.get("ticketUrl") || "").trim() || undefined,
-      Notes: String(formData.get("notes") || "").trim() || undefined,
+      City: city || null,
+      Venue: venue || null,
+      Status: status || null,
+      "Ticket Platform": ticketPlatform || null,
+      "Ticket Url": ticketUrl || null,
+      Notes: notes || null,
       Sponsors: sponsorsSelected.length ? sponsorsSelected : [],
       Featured: formData.get("featured") === "on",
     };
 
   	if (hero) fields["Hero Image"] = [{ url: hero }];
-
+	if (!hero) fields["Hero Image"] = null;
 	fields["Teaser"] = teaser ? teaser : null;
 	fields["Aftermovie"] = after ? after : null;
 
@@ -235,7 +270,26 @@ const fields: Record<string, any> = {
 
             <Input label="Ticket URL" name="ticketUrl" defaultValue={f["Ticket Url"]} />
 
-            <Input label="Hero Image URL" name="heroImageUrl" defaultValue={heroImg} />
+           <Field label="Hero Google Drive URL (o direct image URL)">
+  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+    <input
+      name="heroImageUrl"
+      defaultValue={heroImg}
+      style={{ ...styles.input, flex: 1 }}
+    />
+    <a
+      href={HERO_DRIVE_FOLDER_URL}
+      target="_blank"
+      rel="noreferrer"
+      style={styles.driveBtn}
+      title="Apri la cartella Drive dove caricare le immagini Hero"
+    >
+      Apri Drive
+    </a>
+  </div>
+</Field>
+
+
             <Input label="Teaser URL (YouTube)" name="teaserUrl" defaultValue={teaserUrl} />
             <Input label="Aftermovie URL (YouTube)" name="aftermovieUrl" defaultValue={aftermovieUrl} />
 
@@ -354,6 +408,19 @@ textarea: {
   border: "1px solid rgba(255,255,255,0.18)",
   padding: "10px 12px",
   outline: "none",
+},
+
+driveBtn: {
+  height: 40,
+  padding: "0 14px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,255,209,0.55)",
+  background: "rgba(0,0,0,0.22)",
+  color: "rgba(255,255,255,0.92)",
+  textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  whiteSpace: "nowrap",
 },
 
   

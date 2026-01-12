@@ -191,6 +191,7 @@ export default async function AdminEventsPage({
   return (
     <main style={pageDark}>
       <AdminTopbarClient backHref="/admin" />
+	<RefreshStampClient />
 
       <div style={headerRow}>
         <h1 style={{ margin: 0 }}>Events</h1>
