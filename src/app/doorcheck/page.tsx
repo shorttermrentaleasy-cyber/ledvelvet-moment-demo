@@ -1,12 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { BrowserMultiFormatReader } from "@zxing/browser";
 
-/**
- * MVP PIN ingresso
- * (hardcoded apposta – lo renderemo gestibile da admin più avanti)
- */
 const DOOR_PIN = "1979";
+const LS_KEY = "doorcheck_pin_ok";
 
 type DoorcheckResponse =
   | {
@@ -24,6 +22,21 @@ type DoorcheckResponse =
     }
   | { ok: false; error: string };
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isProbablyNotFoundErr(e: unknown) {
+  const msg = String((e as any)?.message || e || "");
+  return /notfound/i.test(msg) || /detect the code/i.test(msg);
+}
+
+function isSecureContextOk() {
+  if (typeof window === "undefined") return true;
+  const h = window.location.hostname;
+  return window.isSecureContext || h === "localhost" || h === "127.0.0.1";
+}
+
 export default function DoorCheckPage() {
   const [eventId, setEventId] = useState("");
   const [deviceId, setDeviceId] = useState("ipad-ingresso-1");
@@ -31,40 +44,84 @@ export default function DoorCheckPage() {
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState<DoorcheckResponse | null>(null);
 
-  // PIN state
   const [pin, setPin] = useState("");
-  const [pinOk, setPinOk] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("doorcheck_pin_ok") === "1";
-  });
+  const [pinOk, setPinOk] = useState(false);
 
-  const ok = useMemo(() => (res && "ok" in res ? res.ok : false), [res]);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanErr, setScanErr] = useState<string | null>(null);
+  const [autoSubmitOnScan, setAutoSubmitOnScan] = useState(true);
+  const [scanStarting, setScanStarting] = useState(false);
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+
   const allowed = useMemo(
     () => (res && "allowed" in res ? res.allowed : false),
     [res]
   );
 
+  const stopScanner = () => {
+    try {
+      (readerRef.current as any)?.reset?.();
+    } catch {}
+
+    const video = videoRef.current;
+    if (video) {
+      try {
+        const tracks =
+          (video.srcObject as MediaStream | null)?.getTracks?.() || [];
+        tracks.forEach((t) => t.stop());
+      } catch {}
+      try {
+        video.srcObject = null;
+      } catch {}
+    }
+
+    setScanOpen(false);
+    setScanErr(null);
+    setScanStarting(false);
+  };
+
+  useEffect(() => {
+    try {
+      setPinOk(localStorage.getItem(LS_KEY) === "1");
+    } catch {
+      setPinOk(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => stopScanner();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function checkPin() {
     if (pin.trim() === DOOR_PIN) {
-      localStorage.setItem("doorcheck_pin_ok", "1");
+      try {
+        localStorage.setItem(LS_KEY, "1");
+      } catch {}
       setPinOk(true);
+      setPin("");
     } else {
       alert("PIN errato");
     }
   }
 
   function resetPin() {
-    localStorage.removeItem("doorcheck_pin_ok");
+    try {
+      localStorage.removeItem(LS_KEY);
+    } catch {}
     setPin("");
     setPinOk(false);
     setRes(null);
     setQr("");
+    stopScanner();
   }
 
-  async function doCheck() {
+  async function doCheck(forcedQr?: string) {
     const eid = eventId.trim();
     const did = deviceId.trim();
-    const code = qr.trim();
+    const code = (forcedQr ?? qr).trim();
 
     if (!eid || !code) {
       setRes({ ok: false, error: "Compila event_id e QR/Barcode." });
@@ -89,14 +146,123 @@ export default function DoorCheckPage() {
       const data = (await r.json()) as DoorcheckResponse;
       setRes(data);
 
-      // UX MVP: se accesso OK, puliamo il campo per lo scan successivo
-      if (data && "allowed" in data && data.allowed) {
-        setQr("");
-      }
+      if (data && "allowed" in data && data.allowed) setQr("");
     } catch (e: any) {
       setRes({ ok: false, error: e?.message || "Errore rete" });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function startScanner() {
+    if (scanStarting) return;
+
+    setScanErr(null);
+    setScanStarting(true);
+
+    if (!isSecureContextOk()) {
+      setScanErr(
+        "Camera non disponibile: serve HTTPS (consigliato testare su Vercel)."
+      );
+      setScanStarting(false);
+      return;
+    }
+
+    stopScanner();
+    setScanOpen(true);
+
+    // aspetta che <video> venga montato
+    await sleep(60);
+    await sleep(60);
+
+    const video = videoRef.current;
+    if (!video) {
+      setScanErr("Video non pronto (ref nullo). Riprova.");
+      setScanStarting(false);
+      setScanOpen(false);
+      return;
+    }
+
+    if (!readerRef.current) {
+      readerRef.current = new BrowserMultiFormatReader();
+    }
+
+    try {
+      const constraints: MediaStreamConstraints = {
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      // iOS: playsInline + muted + play() dopo gesto utente
+      video.setAttribute("playsinline", "true");
+      video.muted = true;
+      video.srcObject = stream;
+
+      try {
+        await video.play();
+      } catch (e: any) {
+        setScanErr(
+          e?.message ||
+            "Impossibile avviare il video (iOS: verifica permessi e HTTPS)."
+        );
+        setScanStarting(false);
+        return;
+      }
+
+      const reader = readerRef.current as any;
+
+      reader.decodeFromVideoElementContinuously(
+        video,
+        (result: any, err: any) => {
+          if (result) {
+            const text = String(result.getText?.() ?? "").trim();
+            if (!text) return;
+
+            // stop subito (evita doppie letture)
+            try {
+              (readerRef.current as any)?.reset?.();
+            } catch {}
+            try {
+              const tracks =
+                (video.srcObject as MediaStream | null)?.getTracks?.() || [];
+              tracks.forEach((t) => t.stop());
+            } catch {}
+            try {
+              video.srcObject = null;
+            } catch {}
+
+            setScanOpen(false);
+            setScanErr(null);
+            setScanStarting(false);
+
+            setQr(text);
+
+            if (autoSubmitOnScan) {
+              setTimeout(() => doCheck(text), 50);
+            }
+            return;
+          }
+
+          if (err) {
+            // NotFound è normale mentre cerca
+            if (isProbablyNotFoundErr(err)) return;
+            // altri errori li mostriamo
+            setScanErr(String(err?.message || err || "Errore scanner"));
+          }
+        }
+      );
+
+      setScanStarting(false);
+    } catch (e: any) {
+      setScanErr(
+        e?.message ||
+          "Permesso camera negato o camera non disponibile (iOS spesso richiede HTTPS)."
+      );
+      setScanStarting(false);
+      setScanOpen(false);
+      stopScanner();
     }
   }
 
@@ -115,7 +281,6 @@ export default function DoorCheckPage() {
           </span>
         </header>
 
-        {/* ===== PIN ACCESSO STAFF ===== */}
         {!pinOk && (
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <h2 className="text-lg font-semibold">Accesso staff</h2>
@@ -130,6 +295,10 @@ export default function DoorCheckPage() {
                 onChange={(e) => setPin(e.target.value)}
                 placeholder="PIN ingresso"
                 className="rounded-xl border border-white/10 bg-black/40 px-4 py-2 text-sm outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") checkPin();
+                }}
+                autoFocus
               />
               <button
                 onClick={checkPin}
@@ -141,7 +310,6 @@ export default function DoorCheckPage() {
           </section>
         )}
 
-        {/* ===== DOORCHECK UI ===== */}
         {pinOk && (
           <>
             <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
@@ -167,6 +335,58 @@ export default function DoorCheckPage() {
                 </label>
               </div>
 
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={startScanner}
+                  disabled={scanStarting}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+                >
+                  {scanStarting ? "📷 Avvio camera..." : "📷 Scan (camera)"}
+                </button>
+
+                {scanOpen ? (
+                  <button
+                    type="button"
+                    onClick={stopScanner}
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                  >
+                    ✕ Chiudi scanner
+                  </button>
+                ) : null}
+
+                <label className="flex items-center gap-2 text-xs text-white/60 select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoSubmitOnScan}
+                    onChange={(e) => setAutoSubmitOnScan(e.target.checked)}
+                  />
+                  auto-check dopo scan
+                </label>
+
+                {scanErr ? (
+                  <span className="text-xs text-red-300">{scanErr}</span>
+                ) : null}
+              </div>
+
+              {scanOpen ? (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-xs text-white/60 mb-2">
+                    Inquadra il QR/Barcode
+                  </div>
+                  <video
+                    ref={videoRef}
+                    className="w-full rounded-xl border border-white/10 bg-black"
+                    playsInline
+                    muted
+                  />
+                  <div className="mt-2 text-[11px] text-white/40">
+                    iOS: consigliato test su dominio HTTPS (Vercel). In locale può
+                    essere instabile.
+                  </div>
+                </div>
+              ) : null}
+
               <label className="block mt-4">
                 <div className="text-xs text-white/60 mb-1">QR / Barcode</div>
                 <input
@@ -179,14 +399,11 @@ export default function DoorCheckPage() {
                   className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-base outline-none focus:border-white/30 font-mono"
                   autoFocus
                 />
-                <div className="mt-2 text-xs text-white/40">
-                  Scanner “tastiera” supportato.
-                </div>
               </label>
 
               <div className="mt-4 flex items-center gap-3">
                 <button
-                  onClick={doCheck}
+                  onClick={() => doCheck()}
                   disabled={loading}
                   className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold disabled:opacity-50"
                 >
@@ -194,6 +411,7 @@ export default function DoorCheckPage() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     setRes(null);
                     setQr("");
@@ -202,10 +420,17 @@ export default function DoorCheckPage() {
                 >
                   Reset scan
                 </button>
+
+                <button
+                  type="button"
+                  onClick={resetPin}
+                  className="ml-auto text-xs text-white/40 underline"
+                >
+                  Reset PIN
+                </button>
               </div>
             </section>
 
-            {/* ===== RISULTATO ===== */}
             <section className="mt-4">
               {!res ? (
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
@@ -224,11 +449,12 @@ export default function DoorCheckPage() {
                   </div>
                   <div className="mt-2 text-sm font-mono">
                     reason: {res.reason}
+                    {res.method ? ` · method: ${res.method}` : ""}
                   </div>
                   {res.member && (
                     <div className="mt-3 text-sm">
                       {res.member.first_name} {res.member.last_name}{" "}
-                      {res.member.legacy && "(legacy)"}
+                      {res.member.legacy ? "(legacy)" : null}
                     </div>
                   )}
                 </div>
@@ -241,13 +467,6 @@ export default function DoorCheckPage() {
                 </div>
               )}
             </section>
-
-            <button
-              onClick={resetPin}
-              className="mt-6 text-xs text-white/40 underline"
-            >
-              Reset PIN
-            </button>
           </>
         )}
       </div>
