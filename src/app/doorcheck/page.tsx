@@ -28,13 +28,63 @@ function sleep(ms: number) {
 
 function isProbablyNotFoundErr(e: unknown) {
   const msg = String((e as any)?.message || e || "");
+  // ZXing spesso usa "NotFoundException" come testo, oppure frasi simili.
   return /notfound/i.test(msg) || /detect the code/i.test(msg);
 }
 
 function isSecureContextOk() {
   if (typeof window === "undefined") return true;
   const h = window.location.hostname;
+  // iOS: in pratica serve HTTPS. In locale può essere instabile.
   return window.isSecureContext || h === "localhost" || h === "127.0.0.1";
+}
+
+async function waitForVideoReady(video: HTMLVideoElement, timeoutMs = 2500) {
+  const start = Date.now();
+
+  // 1) loadedmetadata
+  if (!video.videoWidth) {
+    await new Promise<void>((resolve) => {
+      const onMeta = () => {
+        video.removeEventListener("loadedmetadata", onMeta);
+        resolve();
+      };
+      video.addEventListener("loadedmetadata", onMeta, { once: true });
+      // fallback timeout
+      setTimeout(() => {
+        video.removeEventListener("loadedmetadata", onMeta);
+        resolve();
+      }, Math.min(timeoutMs, 900));
+    });
+  }
+
+  // 2) try play with small retries (Safari iOS sometimes needs a moment)
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // play() può lanciare DOMException su iOS se non pronto
+      await video.play();
+      break;
+    } catch {
+      await sleep(120);
+    }
+  }
+
+  // 3) wait for "playing" or "canplay"
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      video.removeEventListener("playing", finish);
+      video.removeEventListener("canplay", finish);
+      resolve();
+    };
+
+    video.addEventListener("playing", finish, { once: true });
+    video.addEventListener("canplay", finish, { once: true });
+
+    setTimeout(() => finish(), Math.min(timeoutMs, 900));
+  });
 }
 
 export default function DoorCheckPage() {
@@ -54,6 +104,7 @@ export default function DoorCheckPage() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const scanningRef = useRef(false);
 
   const allowed = useMemo(
     () => (res && "allowed" in res ? res.allowed : false),
@@ -61,7 +112,10 @@ export default function DoorCheckPage() {
   );
 
   const stopScanner = () => {
+    scanningRef.current = false;
+
     try {
+      // reset() esiste ma i typings possono non includerlo -> cast any
       (readerRef.current as any)?.reset?.();
     } catch {}
 
@@ -145,7 +199,6 @@ export default function DoorCheckPage() {
 
       const data = (await r.json()) as DoorcheckResponse;
       setRes(data);
-
       if (data && "allowed" in data && data.allowed) setQr("");
     } catch (e: any) {
       setRes({ ok: false, error: e?.message || "Errore rete" });
@@ -162,18 +215,18 @@ export default function DoorCheckPage() {
 
     if (!isSecureContextOk()) {
       setScanErr(
-        "Camera non disponibile: serve HTTPS (consigliato testare su Vercel)."
+        "Camera non disponibile: su iPhone/iPad serve HTTPS. Testa su Vercel."
       );
       setScanStarting(false);
       return;
     }
 
-    stopScanner();
+    // NON chiamare stopScanner() prima di aprire: su iOS può creare flash/chiusura.
+    scanningRef.current = false;
     setScanOpen(true);
 
-    // aspetta che <video> venga montato
-    await sleep(60);
-    await sleep(60);
+    // aspetta mount <video>
+    await sleep(80);
 
     const video = videoRef.current;
     if (!video) {
@@ -188,75 +241,118 @@ export default function DoorCheckPage() {
     }
 
     try {
+      // iOS: meglio settare proprietà/attributi prima di stream
+      video.setAttribute("playsinline", "true");
+      video.playsInline = true;
+      video.muted = true;
+      video.autoplay = true;
+
       const constraints: MediaStreamConstraints = {
-        video: { facingMode: { ideal: "environment" } },
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
 
-      // iOS: playsInline + muted + play() dopo gesto utente
-      video.setAttribute("playsinline", "true");
-      video.muted = true;
+      // attende davvero che Safari stia riproducendo (importantissimo su iOS)
+      await waitForVideoReady(video, 2800);
 
-
-video.srcObject = stream;
-
-// iOS: serve play() ESPLICITO dopo gesture
-await video.play();
-
-// aspetta che Safari abbia davvero un frame
-await sleep(120);
-
-const reader = readerRef.current as any;
-
-reader.decodeFromVideoElementContinuously(
-  video,
-  (result: any, err: any) => {
-    if (result) {
-      const text = String(result.getText?.() ?? "").trim();
-      if (!text) return;
-
-      // STOP TUTTO (ordine importante)
-      try {
-        (readerRef.current as any)?.reset?.();
-      } catch {}
-
-      try {
-        const tracks =
-          (video.srcObject as MediaStream | null)?.getTracks?.() || [];
-        tracks.forEach((t) => t.stop());
-      } catch {}
-
-      try {
-        video.srcObject = null;
-      } catch {}
-
-      setScanOpen(false);
+      const reader = readerRef.current as any;
+      scanningRef.current = true;
       setScanStarting(false);
-      setScanErr(null);
-      setQr(text);
 
-      if (autoSubmitOnScan) {
-        setTimeout(() => doCheck(text), 50);
+      // Avvio decoder (fallback se la funzione non esiste nella build)
+      const startDecode =
+        reader.decodeFromVideoElementContinuously ||
+        reader.decodeFromVideoElement ||
+        null;
+
+      if (!startDecode) {
+        setScanErr("ZXing: funzione decoder non disponibile.");
+        stopScanner();
+        return;
       }
-    }
 
-    if (err && !isProbablyNotFoundErr(err)) {
-      setScanErr(String(err?.message || err));
-    }
-  }
-);
+      // Continuously: callback ripetuta (preferito)
+      if (reader.decodeFromVideoElementContinuously) {
+        reader.decodeFromVideoElementContinuously(
+          video,
+          (result: any, err: any) => {
+            if (!scanningRef.current) return;
 
-setScanStarting(false);
+            if (result) {
+              const text = String(result.getText?.() ?? "").trim();
+              if (!text) return;
 
+              // stop ordinato
+              scanningRef.current = false;
+              try {
+                (readerRef.current as any)?.reset?.();
+              } catch {}
 
+              try {
+                const tracks =
+                  (video.srcObject as MediaStream | null)?.getTracks?.() || [];
+                tracks.forEach((t) => t.stop());
+              } catch {}
+
+              try {
+                video.srcObject = null;
+              } catch {}
+
+              setScanOpen(false);
+              setScanErr(null);
+              setQr(text);
+
+              if (autoSubmitOnScan && eventId.trim()) {
+                setTimeout(() => doCheck(text), 50);
+              }
+              return;
+            }
+
+            if (err && !isProbablyNotFoundErr(err)) {
+              setScanErr(String(err?.message || err));
+            }
+          }
+        );
+      } else {
+        // Fallback: prova decodeFromVideoElement (non continuously)
+        // Qui NON blocchiamo UI: lasciamo camera aperta e l’operatore può inserire a mano se serve.
+        reader
+          .decodeFromVideoElement(video)
+          .then((result: any) => {
+            const text = String(result?.getText?.() ?? "").trim();
+            if (!text) return;
+
+            setQr(text);
+            setScanOpen(false);
+            setScanErr(null);
+
+            if (autoSubmitOnScan && eventId.trim()) {
+              setTimeout(() => doCheck(text), 50);
+            }
+          })
+          .catch((e: any) => {
+            if (!isProbablyNotFoundErr(e)) {
+              setScanErr(String(e?.message || e));
+            }
+          })
+          .finally(() => {
+            setScanStarting(false);
+          });
+      }
     } catch (e: any) {
       setScanErr(
         e?.message ||
-          "Permesso camera negato o camera non disponibile (iOS spesso richiede HTTPS)."
+          "Permesso camera negato o camera non disponibile (su iOS serve HTTPS)."
       );
       setScanStarting(false);
+      // lascia scanOpen = true solo se vuoi mostrare riquadro nero; qui chiudiamo
       setScanOpen(false);
       stopScanner();
     }
@@ -375,10 +471,13 @@ setScanStarting(false);
                     className="w-full rounded-xl border border-white/10 bg-black"
                     playsInline
                     muted
+                    autoPlay
                   />
                   <div className="mt-2 text-[11px] text-white/40">
-                    iOS: consigliato test su dominio HTTPS (Vercel). In locale può
-                    essere instabile.
+                    iPhone/iPad: serve HTTPS. In locale può “flashare” o non mostrare video.
+                  </div>
+                  <div className="mt-1 text-[11px] text-white/40">
+                    Nota: lo scan può funzionare anche senza event_id; il check invece richiede event_id.
                   </div>
                 </div>
               ) : null}
