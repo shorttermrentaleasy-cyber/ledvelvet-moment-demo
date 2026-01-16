@@ -198,63 +198,59 @@ export default function DoorCheckPage() {
       // iOS: playsInline + muted + play() dopo gesto utente
       video.setAttribute("playsinline", "true");
       video.muted = true;
-      video.srcObject = stream;
+
+
+video.srcObject = stream;
+
+// iOS: serve play() ESPLICITO dopo gesture
+await video.play();
+
+// aspetta che Safari abbia davvero un frame
+await sleep(120);
+
+const reader = readerRef.current as any;
+
+reader.decodeFromVideoElementContinuously(
+  video,
+  (result: any, err: any) => {
+    if (result) {
+      const text = String(result.getText?.() ?? "").trim();
+      if (!text) return;
+
+      // STOP TUTTO (ordine importante)
+      try {
+        (readerRef.current as any)?.reset?.();
+      } catch {}
 
       try {
-        await video.play();
-      } catch (e: any) {
-        setScanErr(
-          e?.message ||
-            "Impossibile avviare il video (iOS: verifica permessi e HTTPS)."
-        );
-        setScanStarting(false);
-        return;
-      }
+        const tracks =
+          (video.srcObject as MediaStream | null)?.getTracks?.() || [];
+        tracks.forEach((t) => t.stop());
+      } catch {}
 
-      const reader = readerRef.current as any;
+      try {
+        video.srcObject = null;
+      } catch {}
 
-      reader.decodeFromVideoElementContinuously(
-        video,
-        (result: any, err: any) => {
-          if (result) {
-            const text = String(result.getText?.() ?? "").trim();
-            if (!text) return;
-
-            // stop subito (evita doppie letture)
-            try {
-              (readerRef.current as any)?.reset?.();
-            } catch {}
-            try {
-              const tracks =
-                (video.srcObject as MediaStream | null)?.getTracks?.() || [];
-              tracks.forEach((t) => t.stop());
-            } catch {}
-            try {
-              video.srcObject = null;
-            } catch {}
-
-            setScanOpen(false);
-            setScanErr(null);
-            setScanStarting(false);
-
-            setQr(text);
-
-            if (autoSubmitOnScan) {
-              setTimeout(() => doCheck(text), 50);
-            }
-            return;
-          }
-
-          if (err) {
-            // NotFound è normale mentre cerca
-            if (isProbablyNotFoundErr(err)) return;
-            // altri errori li mostriamo
-            setScanErr(String(err?.message || err || "Errore scanner"));
-          }
-        }
-      );
-
+      setScanOpen(false);
       setScanStarting(false);
+      setScanErr(null);
+      setQr(text);
+
+      if (autoSubmitOnScan) {
+        setTimeout(() => doCheck(text), 50);
+      }
+    }
+
+    if (err && !isProbablyNotFoundErr(err)) {
+      setScanErr(String(err?.message || err));
+    }
+  }
+);
+
+setScanStarting(false);
+
+
     } catch (e: any) {
       setScanErr(
         e?.message ||
