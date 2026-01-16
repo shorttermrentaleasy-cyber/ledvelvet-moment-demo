@@ -6,18 +6,15 @@ export const dynamic = "force-dynamic";
 type AirtableRecord = { id: string; fields: Record<string, any> };
 
 function jsonError(message: string, status = 500, extra?: any) {
-  
-return NextResponse.json(
-  { ok: false, error: message, extra },
-  {
-    status,
-    headers: {
-      "Cache-Control": "no-store, max-age=0",
-    },
-  }
-);
-
-
+  return NextResponse.json(
+    { ok: false, error: message, extra },
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    }
+  );
 }
 
 function asString(v: any): string {
@@ -86,7 +83,6 @@ async function fetchSponsorsDetails(opts: {
     for (const rec of records) {
       const f = rec.fields || {};
 
-      // ✅ FIX: use the real field name in Airtable ("Brand Name")
       const labelRaw =
         asString(f["Brand Name"]) ||
         asString(f["Brand"]) ||
@@ -94,7 +90,6 @@ async function fetchSponsorsDetails(opts: {
         asString(f["Company"]) ||
         asString(f["Title"]);
 
-      // Never expose Airtable record IDs as labels
       const label = labelRaw;
 
       const logoUrl = urlField(f["Logo"] || f["logo"] || f["logoUrl"]);
@@ -106,6 +101,66 @@ async function fetchSponsorsDetails(opts: {
         ...(logoUrl ? { logoUrl } : {}),
         ...(website ? { website } : {}),
       };
+    }
+  }
+
+  return map;
+}
+
+type DeepdivePubMap = Record<string, boolean>;
+
+async function fetchDeepdivePublishedBySlug(opts: {
+  token: string;
+  baseId: string;
+  deepdiveTable: string;
+  slugs: string[];
+}): Promise<DeepdivePubMap> {
+  const { token, baseId, deepdiveTable, slugs } = opts;
+  const map: DeepdivePubMap = {};
+
+  const clean = slugs.map((s) => asString(s)).filter(Boolean);
+  if (clean.length === 0) return map;
+
+  const batches = chunk(Array.from(new Set(clean)), 50);
+
+  for (const batch of batches) {
+    // Try common field names for slug: "slug" or "Slug"
+    const parts = batch.flatMap((s) => {
+      const safe = s.replace(/'/g, "\\'");
+      return [`{slug}='${safe}'`, `{Slug}='${safe}'`];
+    });
+    const filter = `OR(${parts.join(",")})`;
+
+    const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(
+      deepdiveTable
+    )}?filterByFormula=${encodeURIComponent(filter)}`;
+
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      throw new Error(`Airtable deepdive fetch failed (${r.status}): ${txt}`);
+    }
+
+    const j = await r.json();
+    const records: AirtableRecord[] = Array.isArray(j?.records) ? j.records : [];
+
+    for (const rec of records) {
+      const f = rec.fields || {};
+      const slug = asString(f["slug"] ?? f["Slug"]);
+      if (!slug) continue;
+
+      const pub =
+        Boolean(f["is_published"]) ||
+        Boolean(f["published"]) ||
+        Boolean(f["Published"]) ||
+        Boolean(f["Is Published"]) ||
+        Boolean(f["isPublished"]);
+
+      map[slug] = pub;
     }
   }
 
@@ -161,6 +216,26 @@ export async function GET(req: Request) {
       sponsorIds: allSponsorIds,
     });
 
+    // gather deepdive slugs across events
+    const allDeepdiveSlugs: string[] = [];
+    for (const rec of records) {
+      const f = rec.fields || {};
+      const v = f["deepdive_slug"] || f["DeepDive Slug"] || f["DeepDiveSlug"] || f["DEEP_DIVE_SLUG"];
+      if (typeof v === "string" && v.trim()) allDeepdiveSlugs.push(v.trim());
+      if (Array.isArray(v)) {
+        for (const s of v) if (typeof s === "string" && s.trim()) allDeepdiveSlugs.push(s.trim());
+      }
+    }
+
+    const DEEPDIVE_TABLE = process.env.AIRTABLE_DEEPDIVE_TABLE || process.env.AIRTABLE_DEEPDIVES_TABLE || "DEEPDIVE";
+
+    const deepdivePublishedBySlug = await fetchDeepdivePublishedBySlug({
+      token: AIRTABLE_TOKEN,
+      baseId: AIRTABLE_BASE_ID,
+      deepdiveTable: DEEPDIVE_TABLE,
+      slugs: allDeepdiveSlugs,
+    });
+
     const events = records.map((rec) => {
       const f = rec.fields || {};
 
@@ -169,7 +244,6 @@ export async function GET(req: Request) {
       const sponsors = sponsorsLinked
         .map((id) => sponsorDetails[id])
         .filter(Boolean)
-        // IMPORTANT: filter out items with empty label (so we never show rec ids)
         .filter((s) => !!s.label);
 
       return {
@@ -190,29 +264,41 @@ export async function GET(req: Request) {
         heroSubtitle: asString(f["Hero Subtitle"] || f["heroSubtitle"]),
         heroOnly: Boolean(f["HeroOnly"] ?? f["heroOnly"]),
         notes: asString(f["Notes"] || f["notes"]),
-	deepdive_slug: Array.isArray(f["deepdive_slug"] || f["DeepDive Slug"])
-  	? (f["deepdive_slug"] || f["DeepDive Slug"])
-  	: (asString(f["deepdive_slug"] || f["DeepDive Slug"]) ? [asString(f["deepdive_slug"] || f["DeepDive Slug"])] : []),
-	sponsors,
-        phase: asString(
-  	f["phase"] ||
-  	f["Phase"] ||
-  	(asString(f["status"] || f["Status"]).toLowerCase().includes("past")
-    	? "past"
-    	: "upcoming")
-),
+        deepdive_slug: Array.isArray(f["deepdive_slug"] || f["DeepDive Slug"])
+          ? (f["deepdive_slug"] || f["DeepDive Slug"])
+          : asString(f["deepdive_slug"] || f["DeepDive Slug"])
+          ? [asString(f["deepdive_slug"] || f["DeepDive Slug"])]
+          : [],
 
+        // derived from DeepDive table (source of truth)
+        deepdivePublished: (() => {
+          const arr = Array.isArray(f["deepdive_slug"] || f["DeepDive Slug"])
+            ? (f["deepdive_slug"] || f["DeepDive Slug"])
+            : asString(f["deepdive_slug"] || f["DeepDive Slug"])
+            ? [asString(f["deepdive_slug"] || f["DeepDive Slug"])]
+            : [];
+          const slug = arr && arr[0] ? asString(arr[0]) : "";
+          return slug ? Boolean(deepdivePublishedBySlug[slug]) : false;
+        })(),
+
+        sponsors,
+        phase: asString(
+          f["phase"] ||
+            f["Phase"] ||
+            (asString(f["status"] || f["Status"]).toLowerCase().includes("past") ? "past" : "upcoming")
+        ),
       };
     });
-	return NextResponse.json(
-  	{ ok: true, events },
-  	{
-    	status: 200,
-    	headers: {
-      "Cache-Control": "no-store, max-age=0",
-    	},
-  	}
-	);
+
+    return NextResponse.json(
+      { ok: true, events },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
+    );
   } catch (e: any) {
     return jsonError(e?.message || "Unexpected error", 500);
   }

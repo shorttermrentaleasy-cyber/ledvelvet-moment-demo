@@ -145,8 +145,8 @@ export default function AdminDeepDiveEditPage() {
 
         const res = await fetch(`/api/admin/deepdive/${encodeURIComponent(String(slug))}`, { cache: "no-store" });
         const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.ok) throw new Error(json?.error || "Cannot load deepdive");
-
+        if (!res.ok || !json?.ok) throw new Error(json?.error || "Save Failed");
+        localStorage.setItem("lv_events_updated_at", String(Date.now()));
         if (!alive) return;
         setData(json.deepdive as DeepDiveEdit);
         setForm(json.deepdive);

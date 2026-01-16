@@ -2,51 +2,161 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+type AirtableAttachment = {
+  url?: string;
+  filename?: string;
+  type?: string;
+};
+
 type DeepDive = {
   slug: string;
 
-  title_override: string;
-  subtitle: string;
+  title_override?: any;
+  subtitle?: any;
 
-  hero_media_type: "image" | "youtube" | "mp4";
-  hero_image_url: string;
-  hero_youtube_url: string;
-  hero_mp4_url: string;
+  hero_media_type?: any; // "image" | "youtube" | "mp4"
+  hero_image_url?: any;
+  hero_youtube_url?: any;
+  hero_mp4_url?: any;
 
-  concept: string;
-  place_story?: string;
+  concept?: any;
+  place_story?: any;
 
-  atmosphere_sound: string[];
-  atmosphere_light: string[];
-  atmosphere_energy: string[];
+  atmosphere_sound?: any;
+  atmosphere_light?: any;
+  atmosphere_energy?: any;
 
-  gallery_urls: string[];
+  gallery_urls?: any;
 
-  lineup_text: string;
-  invite_text: string;
+  lineup_text?: any;
+  invite_text?: any;
 
-  // mp3 attachment (url)
-  music_mood_url?: string;
+  music_mood_url?: any;
 };
 
-function ytEmbed(url: string) {
-  const u = (url || "").trim();
-  if (!u) return "";
-  let id = "";
-  if (u.includes("watch?v=")) id = u.split("watch?v=")[1]?.split("&")[0] || "";
-  else if (u.includes("youtu.be/")) id = u.split("youtu.be/")[1]?.split("?")[0] || "";
-  else if (u.includes("youtube.com/shorts/")) id = u.split("youtube.com/shorts/")[1]?.split("?")[0] || "";
-  if (!id) return "";
-  return `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`;
+function getYouTubeId(urlRaw: string): string | null {
+  const url = (urlRaw || "").trim();
+  if (!url) return null;
+
+  try {
+    if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
+
+    const u = new URL(url);
+
+    if (u.hostname.includes("youtu.be")) {
+      const id = u.pathname.split("/").filter(Boolean)[0];
+      return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    }
+
+    const v = u.searchParams.get("v");
+    if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+
+    const parts = u.pathname.split("/").filter(Boolean);
+    const i = parts.findIndex((p) => p === "embed" || p === "shorts");
+    if (i >= 0 && parts[i + 1] && /^[a-zA-Z0-9_-]{11}$/.test(parts[i + 1])) return parts[i + 1];
+
+    const token = parts.find((p) => /^[a-zA-Z0-9_-]{11}$/.test(p));
+    return token || null;
+  } catch {
+    return null;
+  }
 }
 
-function Pill({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone: "sound" | "light" | "energy";
-}) {
+function ytEmbed(url: string) {
+  const id = getYouTubeId(url);
+  if (!id) return "";
+  // privacy-friendly
+  return `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`;
+}
+
+function asString(v: any): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number" || typeof v === "boolean") return String(v).trim();
+  if (Array.isArray(v)) return asString(v[0]);
+  if (typeof v === "object") {
+    // single select Airtable spesso {name:"..."} o {value:"..."}
+    return asString(v.name ?? v.value ?? v.slug ?? v.url ?? v.id);
+  }
+  return String(v).trim();
+}
+
+function asUrl(v: any): string {
+  // stringa URL
+  const s = asString(v);
+  if (s && /^https?:\/\//i.test(s)) return s;
+
+  // attachment singolo o array attachment
+  if (Array.isArray(v)) {
+    const first = v.find(Boolean);
+    return asUrl(first);
+  }
+  if (v && typeof v === "object") {
+    const u = asString((v as AirtableAttachment).url);
+    if (u && /^https?:\/\//i.test(u)) return u;
+  }
+  return s; // potrebbe essere path relativo
+}
+
+function asUrlArray(v: any): string[] {
+  if (!v) return [];
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return [];
+    // se qualcuno ha incollato URL separati da newline/virgola
+    if (s.includes("\n") || s.includes(",")) {
+      return s
+        .split(/[\n,]/g)
+        .map((x) => x.trim())
+        .filter(Boolean);
+    }
+    return [s];
+  }
+
+  if (Array.isArray(v)) {
+    return v
+      .map((x) => asUrl(x))
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof v === "object") {
+    // single attachment object
+    const u = asUrl(v);
+    return u ? [u] : [];
+  }
+
+  return [];
+}
+
+function asStringArray(v: any): string[] {
+  if (!v) return [];
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return [];
+    // supporta "a, b, c" o newline
+    if (s.includes("\n") || s.includes(",")) {
+      return s
+        .split(/[\n,]/g)
+        .map((x) => x.trim())
+        .filter(Boolean);
+    }
+    return [s];
+  }
+  if (Array.isArray(v)) {
+    return v
+      .map((x) => asString(x))
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+  if (typeof v === "object") {
+    const s = asString(v);
+    return s ? [s] : [];
+  }
+  return [];
+}
+
+function Pill({ children, tone }: { children: React.ReactNode; tone: "sound" | "light" | "energy" }) {
   const cls =
     tone === "sound"
       ? "border-[var(--red-acc)]/50 bg-[var(--red-acc)]/12 text-white"
@@ -67,15 +177,7 @@ function Pill({
   );
 }
 
-function SectionCard({
-  label,
-  title,
-  children,
-}: {
-  label: string;
-  title?: string;
-  children: React.ReactNode;
-}) {
+function SectionCard({ label, title, children }: { label: string; title?: string; children: React.ReactNode }) {
   return (
     <article className="rounded-2xl border border-white/10 bg-white/5 p-6">
       <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">{label}</div>
@@ -102,11 +204,9 @@ export default function DeepDiveOverlay({
   const [err, setErr] = useState<string | null>(null);
   const [data, setData] = useState<DeepDive | null>(null);
 
-  // Mood audio
   const moodAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isMoodPlaying, setIsMoodPlaying] = useState(false);
 
-  // where we came from (keeps experience param)
   const [returnTo, setReturnTo] = useState<string>("");
 
   const stopMood = useCallback(() => {
@@ -131,7 +231,7 @@ export default function DeepDiveOverlay({
     el.play()
       .then(() => setIsMoodPlaying(true))
       .catch(() => {
-        // autoplay policies or errors: fail silently
+        // autoplay policies: silent
       });
   }, [isMoodPlaying, stopMood]);
 
@@ -179,16 +279,25 @@ export default function DeepDiveOverlay({
     return `/society?from=${encodeURIComponent(returnTo)}`;
   }, [returnTo]);
 
+  function slugToString(v: any): string {
+    if (!v) return "";
+    if (typeof v === "string") return v.trim();
+    if (Array.isArray(v)) return slugToString(v[0]);
+    if (typeof v === "object") return slugToString(v.slug ?? v.value ?? v.name ?? v.id);
+    return String(v).trim();
+  }
+
   // load deepdive
   useEffect(() => {
-    if (!open || !slug) return;
+    const slugStr = slugToString(slug);
+    if (!open || !slugStr) return;
 
     let alive = true;
     setLoading(true);
     setErr(null);
     setData(null);
 
-    fetch(`/api/public/deepdive?slug=${encodeURIComponent(slug)}`, { cache: "no-store" })
+    fetch(`/api/public/deepdive?slug=${encodeURIComponent(slugStr)}`, { cache: "no-store" })
       .then(async (r) => {
         const j = await r.json();
         if (!alive) return;
@@ -209,46 +318,49 @@ export default function DeepDiveOverlay({
     };
   }, [open, slug]);
 
-  // stop mood when slug changes
+  // stop mood when slug changes / close
   useEffect(() => {
     if (!open) return;
     stopMood();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, open]);
+  }, [slug, open, stopMood]);
 
-  const title = useMemo(() => (data?.title_override ? data.title_override : "Led Velvet Event"), [data]);
+  const title = useMemo(() => {
+    const t = asString(data?.title_override);
+    return t ? t : "Led Velvet Event";
+  }, [data]);
 
-  const subtitle = data?.subtitle || "";
-  const heroType = data?.hero_media_type || "image";
-  const heroYouTube = ytEmbed(data?.hero_youtube_url || "");
-  const heroMp4 = (data?.hero_mp4_url || "").trim();
-  const heroImg = (data?.hero_image_url || "").trim();
+  const subtitle = asString(data?.subtitle);
 
-  const moodTrackUrl = (data?.music_mood_url || "").trim();
+  const heroTypeRaw = asString(data?.hero_media_type).toLowerCase();
+  const heroType: "image" | "youtube" | "mp4" =
+    heroTypeRaw === "youtube" ? "youtube" : heroTypeRaw === "mp4" ? "mp4" : "image";
 
-  const sound = data?.atmosphere_sound || [];
-  const light = data?.atmosphere_light || [];
-  const energy = data?.atmosphere_energy || [];
-  const showAtmos = sound.length || light.length || energy.length;
+  const heroYouTube = ytEmbed(asString(data?.hero_youtube_url));
+  const heroMp4 = asUrl(data?.hero_mp4_url);
+  const heroImg = asUrl(data?.hero_image_url);
 
-  const gallery = data?.gallery_urls || [];
+  const moodTrackUrl = asUrl(data?.music_mood_url);
 
-  const concept = data?.concept || "";
-  const placeStory = data?.place_story || "";
-  const lineup = data?.lineup_text || "";
-  const invite = data?.invite_text || "";
+  const sound = asStringArray(data?.atmosphere_sound);
+  const light = asStringArray(data?.atmosphere_light);
+  const energy = asStringArray(data?.atmosphere_energy);
+  const showAtmos = !!(sound.length || light.length || energy.length);
+
+  const gallery = asUrlArray(data?.gallery_urls);
+
+  const concept = asString(data?.concept);
+  const placeStory = asString(data?.place_story);
+  const lineup = asString(data?.lineup_text);
+  const invite = asString(data?.invite_text);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[999]">
-      {/* backdrop */}
+    <div className="fixed inset-0 z-[999]" style={{ ["--red-acc" as any]: "#930b0c" }}>
       <div className="absolute inset-0 bg-black/85" onClick={handleClose} aria-hidden="true" />
 
-      {/* panel */}
       <div className="absolute inset-0 flex justify-center">
         <div className="relative w-full max-w-5xl h-full bg-[#0B0B0C]">
-          {/* header sticky */}
           <div className="sticky top-0 z-10 border-b border-[var(--red-acc)]/30 bg-[#0B0B0C]">
             <div className="px-6 py-4 flex items-center justify-between gap-4">
               <div className="min-w-0">
@@ -280,7 +392,6 @@ export default function DeepDiveOverlay({
             </div>
           </div>
 
-          {/* body */}
           <div className="h-[calc(100%-60px)] overflow-y-auto">
             <div className="px-6 py-8">
               {loading ? (
@@ -292,11 +403,8 @@ export default function DeepDiveOverlay({
                   <div>
                     <h1 className="text-4xl md:text-5xl font-semibold leading-tight">{title}</h1>
 
-                    {subtitle ? (
-                      <p className="mt-4 max-w-xl text-base md:text-lg text-white/80 whitespace-pre-line">{subtitle}</p>
-                    ) : null}
+                    {subtitle ? <p className="mt-4 max-w-xl text-base md:text-lg text-white/80 whitespace-pre-line">{subtitle}</p> : null}
 
-                    {/* CTA row */}
                     <div className="mt-6 flex flex-wrap gap-3">
                       <a
                         href={lvPeopleHref}
@@ -317,7 +425,6 @@ export default function DeepDiveOverlay({
                       ) : null}
                     </div>
 
-                    {/* Mood Sound */}
                     {moodTrackUrl ? (
                       <div className="mt-6 flex flex-wrap items-center gap-3">
                         <button
@@ -334,7 +441,6 @@ export default function DeepDiveOverlay({
                       </div>
                     ) : null}
 
-                    {/* Atmosphere (color-coded) */}
                     {showAtmos ? (
                       <div className="mt-8">
                         <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Atmosphere</div>
@@ -381,7 +487,6 @@ export default function DeepDiveOverlay({
                     ) : null}
                   </div>
 
-                  {/* hero media */}
                   <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
                     {heroType === "youtube" && heroYouTube ? (
                       <iframe
@@ -390,6 +495,7 @@ export default function DeepDiveOverlay({
                         title="Hero video"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
+                        referrerPolicy="strict-origin-when-cross-origin"
                       />
                     ) : heroType === "mp4" && heroMp4 ? (
                       <video className="w-full aspect-video object-cover" src={heroMp4} autoPlay muted loop playsInline />
@@ -402,13 +508,10 @@ export default function DeepDiveOverlay({
                 </div>
               ) : null}
 
-              {/* content sections */}
               {data ? (
                 <section className="mt-10 grid gap-8">
                   {concept ? <SectionCard label="Concept">{concept}</SectionCard> : null}
-
                   {placeStory ? <SectionCard label="Luogo">{placeStory}</SectionCard> : null}
-
                   {lineup ? <SectionCard label="Line-up">{lineup}</SectionCard> : null}
 
                   {gallery?.length ? (
@@ -429,7 +532,6 @@ export default function DeepDiveOverlay({
                   ) : null}
 
                   {invite ? <SectionCard label="Invito">{invite}</SectionCard> : null}
-
                   <div className="h-16" />
                 </section>
               ) : null}

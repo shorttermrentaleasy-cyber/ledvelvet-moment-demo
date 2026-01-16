@@ -45,7 +45,7 @@ type EventItem = {
   heroTitle?: string;
   heroSubtitle?: string;
   deepdiveSlug?: string;
-
+  deepdivePublished?: boolean;
   tag?: string;
   sponsors?: SponsorRef[];
   posterSrc: string;
@@ -131,7 +131,8 @@ function normalizePhone(raw: string) {
   if (digits.length < 6) return "";
   return cleaned;
 }
-
+const firstStr = (v: any) =>
+  Array.isArray(v) ? String(v[0] ?? "").trim() : String(v ?? "").trim();
 function fmtDateIT(v: string) {
   if (!v) return "";
   const d = new Date(v);
@@ -312,20 +313,36 @@ const [deepDiveOpen, setDeepDiveOpen] = useState<{
   
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsErr, setEventsErr] = useState<string | null>(null);
+
 useEffect(() => {
   const onStorage = (e: StorageEvent) => {
-    if (e.key === "lv_events_updated_at") {
-     
- try {
+    if (
+      e.key === "lv_events_updated_at" ||
+      e.key === "lv_deepdive_updated_at"
+    ) {
+      try {
         sessionStorage.removeItem("lv_public_events_v2");
       } catch {}
       setEventsReloadTick((t) => t + 1);
     }
   };
 
+  const onFocus = () => {
+    try {
+      sessionStorage.removeItem("lv_public_events_v2");
+    } catch {}
+    setEventsReloadTick((t) => t + 1);
+  };
+
   window.addEventListener("storage", onStorage);
-  return () => window.removeEventListener("storage", onStorage);
+  window.addEventListener("focus", onFocus);
+
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener("focus", onFocus);
+  };
 }, []);
+
 
     useEffect(() => {
     let alive = true;
@@ -410,13 +427,10 @@ try {
               heroTitle: e.heroTitle || e["Hero Title"] || "",
               heroSubtitle: e["Hero Subtitle"] || e.heroSubtitle || "",
 	      deepdiveSlug:
-  		Array.isArray(e.deepdive_slug)
-   		 ? e.deepdive_slug[0]
-   		 : Array.isArray(e.DeepDiveSlug)
-  		  ? e.DeepDiveSlug[0]
- 		   : Array.isArray(e.DEEP_DIVE_SLUG)
-  		  ? e.DEEP_DIVE_SLUG[0]
- 		   : e.deepdive_slug || e.DeepDiveSlug || "",
+  			firstStr(e.deepdive_slug) ||
+  			firstStr(e.DeepDiveSlug) ||
+  			firstStr(e.DEEP_DIVE_SLUG),
+			deepdivePublished: Boolean(e.deepdivePublished),
               tag: (e.status || e.tag || "").toString(),
               sponsors: normalizeSponsors(e.sponsors),
               posterSrc: e.posterSrc || e["Hero Image"] || "/og.png",
@@ -427,6 +441,14 @@ try {
           .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
         setEvents(norm);
+console.log(
+  "deepdive check",
+  norm.slice(0, 5).map(e => ({
+    slug: e.deepdiveSlug,
+    published: (e as any).deepdivePublished
+  }))
+);
+
 	// ✅ ADD THIS: save cache
 	try {
   	sessionStorage.setItem("lv_public_events_v2", JSON.stringify(norm));
@@ -701,15 +723,16 @@ try {
           </nav>
 
           <div className="flex items-center gap-2">
-            {!user.email ? (
-              <button
-                onClick={() => setUser({ email: "demo@ledvelvet.it", level: "BASE" })}
-                className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
-                type="button"
-              >
-                Accedi (demo)
-              </button>
-            ) : (
+            
+{!user.email ? (
+  <a
+    href="/lvpeople"
+    className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
+  >
+    Accedi
+  </a>
+) : (
+
               <div className="flex items-center gap-2">
                 <select
                   className="bg-transparent rounded-full px-3 py-2 text-xs tracking-[0.18em] uppercase border border-white/15 text-[var(--text)]"
@@ -967,7 +990,7 @@ try {
   			<div className="text-xs tracking-[0.22em] uppercase text-white/75">{tag}</div>
 
  	<div className="flex items-center gap-2">
-    	{e.deepdiveSlug ? (
+    	{e.deepdiveSlug && e.deepdivePublished ? (
    	<button
   	onClick={() => {
                     if (!e.deepdiveSlug) return;
@@ -1115,7 +1138,7 @@ try {
   			</div>
 
   			<div className="flex items-center gap-2">
-    			{e.deepdiveSlug ? (
+    			{e.deepdiveSlug && e.deepdivePublished ? (
 			<button
   			onClick={() => {
                     if (!e.deepdiveSlug) return;

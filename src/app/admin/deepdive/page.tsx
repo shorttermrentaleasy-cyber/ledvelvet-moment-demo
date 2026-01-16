@@ -97,6 +97,13 @@ export default function AdminDeepDiveListPage() {
 
           <div className="flex items-center gap-2">
             <Link
+              href="/admin/deepdive/create"
+              className="px-4 py-2 rounded-full bg-white text-black text-xs tracking-[0.18em] uppercase font-semibold"
+            >
+              + Create
+            </Link>
+
+            <Link
               href="/admin"
               className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
             >
