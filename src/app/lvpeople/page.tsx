@@ -1,10 +1,10 @@
 import MemberQrCard from "./MemberQrCard";
+import LVPeopleActions from "./LVPeopleActions";
 import React from "react";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
-import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +85,11 @@ export default async function LVPeopleHomePage() {
           <p className="mt-4 text-red-300">
             Errore lettura socio da Supabase: {memberErr.message}
           </p>
+          <p className="mt-2 text-white/70 text-sm">
+            Controlla che esistano le tabelle LV People in Supabase e che le env
+            vars SUPABASE_URL / SUPABASE_SERVICE_ROLE siano impostate su Vercel e
+            in locale.
+          </p>
         </div>
       </main>
     );
@@ -94,7 +99,16 @@ export default async function LVPeopleHomePage() {
     return (
       <main className="min-h-screen bg-black text-white p-6">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-2xl font-semibold">LV People</h1>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold">LV People</h1>
+              <p className="mt-1 text-white/70 text-sm">
+                Area socio (MVP) – tessera e storico accessi.
+              </p>
+            </div>
+            <LVPeopleActions />
+          </div>
+
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <p className="text-white/80">
               Non risulto registrato come socio LV People per questa email:
@@ -139,7 +153,6 @@ export default async function LVPeopleHomePage() {
   return (
     <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-3xl mx-auto">
-        {/* HEADER */}
         <header className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">LV People</h1>
@@ -148,19 +161,7 @@ export default async function LVPeopleHomePage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Link
-              href="/moment2"
-              className="px-3 py-1.5 rounded-full border border-white/15 text-xs uppercase tracking-[0.18em] hover:border-white/30 hover:bg-white/10"
-            >
-              Back
-            </Link>
-            <Link
-              href="/moment2"
-              className="px-3 py-1.5 rounded-full border border-white/15 text-xs uppercase tracking-[0.18em] hover:border-white/30 hover:bg-white/10"
-            >
-              Quit
-            </Link>
+          <div className="flex items-center gap-3">
             <span
               className={`px-3 py-1 rounded-full text-xs font-semibold border ${
                 status === "ATTIVO"
@@ -173,10 +174,11 @@ export default async function LVPeopleHomePage() {
             >
               {status}
             </span>
+
+            <LVPeopleActions />
           </div>
         </header>
 
-        {/* CONTENUTO */}
         <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
           <h2 className="text-lg font-semibold">La mia tessera</h2>
 
@@ -186,11 +188,13 @@ export default async function LVPeopleHomePage() {
               <div className="mt-1 text-base font-semibold">
                 {member.first_name} {member.last_name}
               </div>
-              <div className="mt-2 text-sm text-white/70">
-                Email: {member.email || "—"}
+              <div className="mt-2 text-sm text-white/70 break-words">
+                <span className="text-white/50">Email:</span>{" "}
+                {member.email || "—"}
               </div>
-              <div className="mt-1 text-sm text-white/70">
-                Telefono: {member.phone || "—"}
+              <div className="mt-1 text-sm text-white/70 break-words">
+                <span className="text-white/50">Telefono:</span>{" "}
+                {member.phone || "—"}
               </div>
             </div>
 
@@ -202,24 +206,44 @@ export default async function LVPeopleHomePage() {
                   Errore lettura tessera: {cardErr.message}
                 </p>
               ) : !card ? (
-                <p className="mt-2 text-sm text-white/70">
-                  Nessuna tessera associata.
-                </p>
+                <div className="mt-2 text-sm text-white/70">
+                  Nessuna tessera associata a questo socio.
+                  <div className="mt-2 text-xs text-white/50">
+                    (MVP: la tessera viene creata in fase import / onboarding.)
+                  </div>
+                </div>
               ) : card.revoked ? (
-                <p className="mt-2 text-sm text-red-300">Tessera revocata</p>
+                <div className="mt-2">
+                  <div className="text-sm text-red-200 font-semibold">
+                    Tessera revocata
+                  </div>
+                  <div className="mt-2 font-mono text-sm text-white/70 break-all">
+                    {card.qr_secret}
+                  </div>
+                </div>
               ) : (
                 <>
                   <MemberQrCard value={card.qr_secret} revoked={card.revoked} />
-                  <div className="mt-2 font-mono text-sm break-all">
-                    {card.qr_secret}
+
+                  <div className="mt-2">
+                    <div className="font-mono text-sm text-white break-all">
+                      {card.qr_secret}
+                    </div>
+                    <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-white/60">
+                      QR pronto: mostra questo codice/QR all’ingresso.
+                    </div>
                   </div>
                 </>
               )}
 
-              {!msErr && (
+              {msErr ? (
+                <p className="mt-3 text-xs text-red-300">
+                  Errore lettura membership: {msErr.message}
+                </p>
+              ) : (
                 <p className="mt-3 text-xs text-white/50">
                   {member.legacy
-                    ? "Sei socio legacy."
+                    ? "Sei socio legacy (fase transitoria)."
                     : hasActiveMembership
                     ? "Membership attiva."
                     : "Nessuna membership attiva."}
@@ -228,14 +252,27 @@ export default async function LVPeopleHomePage() {
             </div>
           </div>
 
-          <div className="mt-6">
-            <Link
+          <div className="mt-6 flex items-center gap-3">
+            <a
               href="/lvpeople/accessi"
-              className="inline-flex rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold hover:opacity-90"
+              className="inline-flex items-center justify-center rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold hover:opacity-90 transition"
             >
               Vedi storico accessi
-            </Link>
+            </a>
+
+            <span className="text-xs text-white/50">
+              Lo storico accessi è visibile solo a te e allo staff autorizzato.
+            </span>
           </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
+          <h2 className="text-lg font-semibold">Nota</h2>
+          <p className="mt-2 text-sm text-white/70">
+            Questo MVP usa l’email della sessione per trovare il socio in
+            Supabase. In futuro potremo separare login admin vs login soci senza
+            buttare via nulla.
+          </p>
         </section>
       </div>
     </main>

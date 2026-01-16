@@ -13,10 +13,18 @@ export default function AdminLoginPage() {
       <div style={styles.bgGlowB} />
 
       <div style={styles.card}>
-        <div style={styles.kicker}>LED VELVET • ADMIN</div>
+        {/* Top bar: kicker + Home */}
+        <div style={styles.topRow}>
+          <div style={styles.kicker}>LED VELVET • ADMIN</div>
+          <a href="/moment2" style={styles.homeLink}>
+            HOME
+          </a>
+        </div>
+
         <h1 style={styles.h1}>Login</h1>
         <p style={styles.sub}>
-          Inserisci la tua email admin.  
+          Inserisci la tua email admin.
+          <br />
           Riceverai un link di accesso sicuro.
         </p>
 
@@ -96,12 +104,35 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
     backdropFilter: "blur(12px)",
   },
+
+  topRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 10,
+  },
   kicker: {
     fontSize: 12,
     letterSpacing: 2,
     opacity: 0.7,
-    marginBottom: 6,
+    marginBottom: 0,
+    whiteSpace: "nowrap",
   },
+  homeLink: {
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    opacity: 0.75,
+    color: "rgba(255,255,255,0.92)",
+    textDecoration: "none",
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.04)",
+    padding: "8px 12px",
+    borderRadius: 999,
+    lineHeight: 1,
+  },
+
   h1: {
     fontSize: 28,
     margin: 0,
