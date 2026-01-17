@@ -22,6 +22,14 @@ type DoorcheckResponse =
     }
   | { ok: false; error: string };
 
+type PublicEvent = {
+  id: string;
+  name: string;
+  start_at?: string | null;
+  city?: string | null;
+  venue?: string | null;
+};
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -37,8 +45,25 @@ function isProbablyNotFoundErr(e: unknown) {
   return /notfound/i.test(msg) || /no multi/i.test(msg) || /detect the code/i.test(msg);
 }
 
+function fmtEventLabel(e: PublicEvent) {
+  const bits: string[] = [];
+  if (e.start_at) {
+    try {
+      bits.push(new Date(e.start_at).toLocaleString("it-IT"));
+    } catch {}
+  }
+  if (e.city) bits.push(e.city);
+  if (e.venue) bits.push(e.venue);
+  return bits.length ? `${e.name} · ${bits.join(" · ")}` : e.name;
+}
+
 export default function DoorCheckPage() {
   const [eventId, setEventId] = useState("");
+  const [selectedEventId, setSelectedEventId] = useState(""); // per dropdown
+  const [events, setEvents] = useState<PublicEvent[]>([]);
+  const [eventsErr, setEventsErr] = useState<string | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
   const [deviceId, setDeviceId] = useState("ipad-ingresso-1");
   const [qr, setQr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -84,7 +109,7 @@ export default function DoorCheckPage() {
     setScanStarting(false);
   };
 
-  // blocca scroll pagina quando scanner aperto (così non perdi il QR)
+  // blocca scroll quando scanner aperto
   useEffect(() => {
     if (!scanOpen) return;
     const prev = document.body.style.overflow;
@@ -107,6 +132,54 @@ export default function DoorCheckPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // carica eventi quando pinOk
+  useEffect(() => {
+    if (!pinOk) return;
+
+    let cancelled = false;
+
+    (async () => {
+      setEventsLoading(true);
+      setEventsErr(null);
+      try {
+        const r = await fetch("/api/public/events", { cache: "no-store" });
+        const j = await r.json();
+
+        // ✅ supporta 2 formati comuni: {events:[...]} oppure [...]
+        const list = Array.isArray(j) ? j : Array.isArray(j?.events) ? j.events : [];
+
+        // Normalizza: id/name
+        const mapped: PublicEvent[] = (list || [])
+          .map((x: any) => ({
+            id: String(x.id || x.event_id || ""),
+            name: String(x.name || x.title || "Evento"),
+            start_at: x.start_at || x.starts_at || x.date || null,
+            city: x.city || null,
+            venue: x.venue || x.location || null,
+          }))
+          .filter((x: PublicEvent) => !!x.id);
+
+        if (!cancelled) {
+          setEvents(mapped);
+          // se non c’è selezione, pre-seleziona il primo e copia in eventId
+          if (!selectedEventId && mapped.length) {
+            setSelectedEventId(mapped[0].id);
+            setEventId(mapped[0].id);
+          }
+        }
+      } catch (e: any) {
+        if (!cancelled) setEventsErr(e?.message || "Errore caricamento eventi");
+      } finally {
+        if (!cancelled) setEventsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinOk]);
+
   function checkPin() {
     if (pin.trim() === DOOR_PIN) {
       try {
@@ -127,6 +200,8 @@ export default function DoorCheckPage() {
     setPinOk(false);
     setRes(null);
     setQr("");
+    setSelectedEventId("");
+    setEventId("");
     stopScanner();
   }
 
@@ -135,9 +210,8 @@ export default function DoorCheckPage() {
     const did = deviceId.trim();
     const code = (forcedQr ?? qr).trim();
 
-    // check richiede event_id
     if (!eid || !code) {
-      setRes({ ok: false, error: "Compila event_id e QR/Barcode." });
+      setRes({ ok: false, error: "Seleziona un evento e scansiona/incolla il codice." });
       return;
     }
 
@@ -173,18 +247,14 @@ export default function DoorCheckPage() {
     setScanStarting(true);
 
     if (!isSecureContextOk()) {
-      setScanErr(
-        "Camera non disponibile: su iPhone/iPad serve HTTPS. Testa su Vercel."
-      );
+      setScanErr("Camera non disponibile: su iPhone/iPad serve HTTPS (Vercel).");
       setScanStarting(false);
       return;
     }
 
-    // chiudi eventuale precedente
     stopScanner();
     setScanOpen(true);
 
-    // aspetta mount <video>
     await sleep(120);
 
     const video = videoRef.current;
@@ -198,7 +268,6 @@ export default function DoorCheckPage() {
     if (!readerRef.current) readerRef.current = new BrowserMultiFormatReader();
 
     try {
-      // iOS friendly
       video.setAttribute("playsinline", "true");
       video.playsInline = true;
       video.muted = true;
@@ -213,7 +282,6 @@ export default function DoorCheckPage() {
         },
       };
 
-      // ✅ API stabile: decodeFromConstraints richiede callback (e su iOS è affidabile)
       controlsRef.current = await readerRef.current.decodeFromConstraints(
         constraints,
         video,
@@ -224,7 +292,7 @@ export default function DoorCheckPage() {
 
             setQr(text);
 
-            // auto-submit solo se event_id è già compilato
+            // auto submit solo se eventId presente
             if (autoSubmitOnScan && eventId.trim()) {
               stopScanner();
               setTimeout(() => doCheck(text), 80);
@@ -294,14 +362,54 @@ export default function DoorCheckPage() {
         {pinOk && (
           <>
             <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* ✅ Dropdown eventi */}
+              <label className="block">
+                <div className="text-xs text-white/60 mb-1">Evento</div>
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedEventId(id);
+                    setEventId(id); // qui è la chiave: eventId = UUID scelto
+                    setRes(null);
+                  }}
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-sm outline-none focus:border-white/30"
+                >
+                  {!eventsLoading && events.length === 0 ? (
+                    <option value="">
+                      Nessun evento disponibile (o API non risponde)
+                    </option>
+                  ) : null}
+
+                  {eventsLoading ? (
+                    <option value="">Caricamento eventi...</option>
+                  ) : (
+                    events.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        {fmtEventLabel(ev)}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <div className="mt-2 text-[11px] text-white/40">
+                  {eventsErr ? (
+                    <span className="text-red-300">{eventsErr}</span>
+                  ) : (
+                    <>
+                      Selezionando un evento, l’UUID viene usato per il check-in.
+                    </>
+                  )}
+                </div>
+              </label>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="block">
-                  <div className="text-xs text-white/60 mb-1">event_id</div>
+                  <div className="text-xs text-white/60 mb-1">event_id (auto)</div>
                   <input
                     value={eventId}
                     onChange={(e) => setEventId(e.target.value)}
                     placeholder="UUID evento"
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30"
+                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30 font-mono"
                   />
                 </label>
 
@@ -345,18 +453,12 @@ export default function DoorCheckPage() {
                   auto-check dopo scan
                 </label>
 
-                {scanErr ? (
-                  <span className="text-xs text-red-300">{scanErr}</span>
-                ) : null}
+                {scanErr ? <span className="text-xs text-red-300">{scanErr}</span> : null}
               </div>
 
               {scanOpen ? (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
-                  <div className="text-xs text-white/60 mb-2">
-                    Inquadra il QR/Barcode
-                  </div>
-
-                  {/* Scanner box compatto: niente scroll per arrivare ai bottoni */}
+                  <div className="text-xs text-white/60 mb-2">Inquadra il QR/Barcode</div>
                   <div className="rounded-xl border border-white/10 bg-black overflow-hidden">
                     <video
                       ref={videoRef}
@@ -364,15 +466,11 @@ export default function DoorCheckPage() {
                       muted
                       autoPlay
                       className="w-full"
-                      style={{
-                        height: "38vh",
-                        objectFit: "cover",
-                      }}
+                      style={{ height: "38vh", objectFit: "cover" }}
                     />
                   </div>
-
                   <div className="mt-2 text-[11px] text-white/40">
-                    Lo scan riempie il campo QR anche senza event_id. Il Check richiede event_id.
+                    iPhone/iPad: serve HTTPS (Vercel). In locale può essere instabile.
                   </div>
                 </div>
               ) : null}
@@ -389,9 +487,6 @@ export default function DoorCheckPage() {
                   className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-base outline-none focus:border-white/30 font-mono"
                   autoFocus
                 />
-                <div className="mt-2 text-[11px] text-white/40">
-                  Lo scanner legge il testo nel QR: per LV People è il <b>qr_secret</b> (hex), per Wally è il <b>barcode</b> numerico.
-                </div>
               </label>
 
               <div className="mt-4 flex items-center gap-3">
