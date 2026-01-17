@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
 
 const DOOR_PIN = "1979";
 const LS_KEY = "doorcheck_pin_ok";
@@ -26,65 +26,15 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function isProbablyNotFoundErr(e: unknown) {
-  const msg = String((e as any)?.message || e || "");
-  // ZXing spesso usa "NotFoundException" come testo, oppure frasi simili.
-  return /notfound/i.test(msg) || /detect the code/i.test(msg);
-}
-
 function isSecureContextOk() {
   if (typeof window === "undefined") return true;
   const h = window.location.hostname;
-  // iOS: in pratica serve HTTPS. In locale può essere instabile.
   return window.isSecureContext || h === "localhost" || h === "127.0.0.1";
 }
 
-async function waitForVideoReady(video: HTMLVideoElement, timeoutMs = 2500) {
-  const start = Date.now();
-
-  // 1) loadedmetadata
-  if (!video.videoWidth) {
-    await new Promise<void>((resolve) => {
-      const onMeta = () => {
-        video.removeEventListener("loadedmetadata", onMeta);
-        resolve();
-      };
-      video.addEventListener("loadedmetadata", onMeta, { once: true });
-      // fallback timeout
-      setTimeout(() => {
-        video.removeEventListener("loadedmetadata", onMeta);
-        resolve();
-      }, Math.min(timeoutMs, 900));
-    });
-  }
-
-  // 2) try play with small retries (Safari iOS sometimes needs a moment)
-  while (Date.now() - start < timeoutMs) {
-    try {
-      // play() può lanciare DOMException su iOS se non pronto
-      await video.play();
-      break;
-    } catch {
-      await sleep(120);
-    }
-  }
-
-  // 3) wait for "playing" or "canplay"
-  await new Promise<void>((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      video.removeEventListener("playing", finish);
-      video.removeEventListener("canplay", finish);
-      resolve();
-    };
-
-    video.addEventListener("playing", finish, { once: true });
-    video.addEventListener("canplay", finish, { once: true });
-
-    setTimeout(() => finish(), Math.min(timeoutMs, 900));
-  });
+function isProbablyNotFoundErr(e: unknown) {
+  const msg = String((e as any)?.message || e || "");
+  return /notfound/i.test(msg) || /no multi/i.test(msg) || /detect the code/i.test(msg);
 }
 
 export default function DoorCheckPage() {
@@ -104,7 +54,7 @@ export default function DoorCheckPage() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
-  const scanningRef = useRef(false);
+  const controlsRef = useRef<IScannerControls | null>(null);
 
   const allowed = useMemo(
     () => (res && "allowed" in res ? res.allowed : false),
@@ -112,18 +62,15 @@ export default function DoorCheckPage() {
   );
 
   const stopScanner = () => {
-    scanningRef.current = false;
-
     try {
-      // reset() esiste ma i typings possono non includerlo -> cast any
-      (readerRef.current as any)?.reset?.();
+      controlsRef.current?.stop();
     } catch {}
+    controlsRef.current = null;
 
     const video = videoRef.current;
     if (video) {
       try {
-        const tracks =
-          (video.srcObject as MediaStream | null)?.getTracks?.() || [];
+        const tracks = (video.srcObject as MediaStream | null)?.getTracks?.() || [];
         tracks.forEach((t) => t.stop());
       } catch {}
       try {
@@ -135,6 +82,16 @@ export default function DoorCheckPage() {
     setScanErr(null);
     setScanStarting(false);
   };
+
+  // blocca scroll pagina quando scanner aperto (così non perdi il QR)
+  useEffect(() => {
+    if (!scanOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [scanOpen]);
 
   useEffect(() => {
     try {
@@ -177,6 +134,7 @@ export default function DoorCheckPage() {
     const did = deviceId.trim();
     const code = (forcedQr ?? qr).trim();
 
+    // check richiede event_id
     if (!eid || !code) {
       setRes({ ok: false, error: "Compila event_id e QR/Barcode." });
       return;
@@ -214,145 +172,80 @@ export default function DoorCheckPage() {
     setScanStarting(true);
 
     if (!isSecureContextOk()) {
-      setScanErr(
-        "Camera non disponibile: su iPhone/iPad serve HTTPS. Testa su Vercel."
-      );
+      setScanErr("Camera non disponibile: su iPhone/iPad serve HTTPS. Testa su Vercel.");
       setScanStarting(false);
       return;
     }
 
-    // NON chiamare stopScanner() prima di aprire: su iOS può creare flash/chiusura.
-    scanningRef.current = false;
+    // chiudi eventuale precedente
+    stopScanner();
     setScanOpen(true);
 
     // aspetta mount <video>
-    await sleep(80);
+    await sleep(120);
 
     const video = videoRef.current;
     if (!video) {
-      setScanErr("Video non pronto (ref nullo). Riprova.");
+      setScanErr("Video non pronto. Riprova.");
       setScanStarting(false);
       setScanOpen(false);
       return;
     }
 
-    if (!readerRef.current) {
-      readerRef.current = new BrowserMultiFormatReader();
-    }
+    if (!readerRef.current) readerRef.current = new BrowserMultiFormatReader();
 
     try {
-      // iOS: meglio settare proprietà/attributi prima di stream
+      // iOS friendly
       video.setAttribute("playsinline", "true");
       video.playsInline = true;
       video.muted = true;
       video.autoplay = true;
 
       const constraints: MediaStreamConstraints = {
+        audio: false,
         video: {
           facingMode: { ideal: "environment" },
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
-        audio: false,
       };
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      video.srcObject = stream;
+      // ✅ API stabile: decodeFromConstraints richiede callback (e su iOS è affidabile)
+      controlsRef.current = await readerRef.current.decodeFromConstraints(
+        constraints,
+        video,
+        (result, err) => {
+          if (result) {
+            const text = result.getText()?.trim();
+            if (!text) return;
 
-      // attende davvero che Safari stia riproducendo (importantissimo su iOS)
-      await waitForVideoReady(video, 2800);
+            // aggiorna campo
+            setQr(text);
 
-      const reader = readerRef.current as any;
-      scanningRef.current = true;
-      setScanStarting(false);
-
-      // Avvio decoder (fallback se la funzione non esiste nella build)
-      const startDecode =
-        reader.decodeFromVideoElementContinuously ||
-        reader.decodeFromVideoElement ||
-        null;
-
-      if (!startDecode) {
-        setScanErr("ZXing: funzione decoder non disponibile.");
-        stopScanner();
-        return;
-      }
-
-      // Continuously: callback ripetuta (preferito)
-      if (reader.decodeFromVideoElementContinuously) {
-        reader.decodeFromVideoElementContinuously(
-          video,
-          (result: any, err: any) => {
-            if (!scanningRef.current) return;
-
-            if (result) {
-              const text = String(result.getText?.() ?? "").trim();
-              if (!text) return;
-
-              // stop ordinato
-              scanningRef.current = false;
-              try {
-                (readerRef.current as any)?.reset?.();
-              } catch {}
-
-              try {
-                const tracks =
-                  (video.srcObject as MediaStream | null)?.getTracks?.() || [];
-                tracks.forEach((t) => t.stop());
-              } catch {}
-
-              try {
-                video.srcObject = null;
-              } catch {}
-
-              setScanOpen(false);
-              setScanErr(null);
-              setQr(text);
-
-              if (autoSubmitOnScan && eventId.trim()) {
-                setTimeout(() => doCheck(text), 50);
-              }
+            // se vuoi auto-submit ma manca event_id, NON chiudiamo: ti lasciamo compilare
+            if (autoSubmitOnScan && eventId.trim()) {
+              stopScanner();
+              // piccolo delay per evitare doppie letture
+              setTimeout(() => doCheck(text), 80);
               return;
             }
 
-            if (err && !isProbablyNotFoundErr(err)) {
-              setScanErr(String(err?.message || err));
-            }
+            // se non auto-submit (o eventId vuoto), lasciamo la camera aperta.
+            // puoi chiuderla tu e fare Check.
+            return;
           }
-        );
-      } else {
-        // Fallback: prova decodeFromVideoElement (non continuously)
-        // Qui NON blocchiamo UI: lasciamo camera aperta e l’operatore può inserire a mano se serve.
-        reader
-          .decodeFromVideoElement(video)
-          .then((result: any) => {
-            const text = String(result?.getText?.() ?? "").trim();
-            if (!text) return;
 
-            setQr(text);
-            setScanOpen(false);
-            setScanErr(null);
-
-            if (autoSubmitOnScan && eventId.trim()) {
-              setTimeout(() => doCheck(text), 50);
-            }
-          })
-          .catch((e: any) => {
-            if (!isProbablyNotFoundErr(e)) {
-              setScanErr(String(e?.message || e));
-            }
-          })
-          .finally(() => {
-            setScanStarting(false);
-          });
-      }
-    } catch (e: any) {
-      setScanErr(
-        e?.message ||
-          "Permesso camera negato o camera non disponibile (su iOS serve HTTPS)."
+          // ignora gli "errori" continui di non-trovato
+          if (err && !isProbablyNotFoundErr(err)) {
+            setScanErr(String((err as any)?.message || err));
+          }
+        }
       );
+
       setScanStarting(false);
-      // lascia scanOpen = true solo se vuoi mostrare riquadro nero; qui chiudiamo
+    } catch (e: any) {
+      setScanErr(e?.message || "Permesso camera negato o camera non disponibile.");
+      setScanStarting(false);
       setScanOpen(false);
       stopScanner();
     }
@@ -456,28 +349,30 @@ export default function DoorCheckPage() {
                   auto-check dopo scan
                 </label>
 
-                {scanErr ? (
-                  <span className="text-xs text-red-300">{scanErr}</span>
-                ) : null}
+                {scanErr ? <span className="text-xs text-red-300">{scanErr}</span> : null}
               </div>
 
               {scanOpen ? (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
-                  <div className="text-xs text-white/60 mb-2">
-                    Inquadra il QR/Barcode
+                  <div className="text-xs text-white/60 mb-2">Inquadra il QR/Barcode</div>
+
+                  {/* Scanner box compatto: niente scroll per arrivare ai bottoni */}
+                  <div className="rounded-xl border border-white/10 bg-black overflow-hidden">
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      autoPlay
+                      className="w-full"
+                      style={{
+                        height: "38vh", // 👈 più piccolo, visibile con i bottoni
+                        objectFit: "cover",
+                      }}
+                    />
                   </div>
-                  <video
-                    ref={videoRef}
-                    className="w-full rounded-xl border border-white/10 bg-black"
-                    playsInline
-                    muted
-                    autoPlay
-                  />
+
                   <div className="mt-2 text-[11px] text-white/40">
-                    iPhone/iPad: serve HTTPS. In locale può “flashare” o non mostrare video.
-                  </div>
-                  <div className="mt-1 text-[11px] text-white/40">
-                    Nota: lo scan può funzionare anche senza event_id; il check invece richiede event_id.
+                    Nota: lo scan riempie il campo QR anche senza event_id. Il Check richiede event_id.
                   </div>
                 </div>
               ) : null}
@@ -494,6 +389,9 @@ export default function DoorCheckPage() {
                   className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-base outline-none focus:border-white/30 font-mono"
                   autoFocus
                 />
+                <div className="mt-2 text-[11px] text-white/40">
+                  Lo scanner legge il testo nel QR: per LV People è il tuo <b>qr_secret</b> (hex), per Wally è il <b>barcode</b> numerico.
+                </div>
               </label>
 
               <div className="mt-4 flex items-center gap-3">
@@ -546,19 +444,17 @@ export default function DoorCheckPage() {
                     reason: {res.reason}
                     {res.method ? ` · method: ${res.method}` : ""}
                   </div>
-                  {res.member && (
+                  {res.member ? (
                     <div className="mt-3 text-sm">
                       {res.member.first_name} {res.member.last_name}{" "}
                       {res.member.legacy ? "(legacy)" : null}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
                   <div className="text-lg font-semibold">Errore</div>
-                  <div className="mt-2 text-sm font-mono">
-                    {(res as any).error}
-                  </div>
+                  <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
                 </div>
               )}
             </section>
