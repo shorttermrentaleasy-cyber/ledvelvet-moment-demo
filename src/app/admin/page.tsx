@@ -45,7 +45,12 @@ export default async function AdminHomePage() {
 
           <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
 
-          <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" disabled />
+          {/* ✅ PATCH MINIMA: DoorCheck accesso rapido */}
+          <Card title="DoorCheck" desc="Scanner accessi staff" href="/doorcheck" />
+
+          {/* ✅ PATCH MINIMA: abilita sezione già esistente */}
+          <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" />
+
           <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
         </div>
 
