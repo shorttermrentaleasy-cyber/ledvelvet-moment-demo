@@ -7,7 +7,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import DeepDiveOverlay from "./DeepDiveOverlay";
 
-
 type Level = "BASE" | "VIP" | "FOUNDER";
 
 type Product = {
@@ -131,8 +130,7 @@ function normalizePhone(raw: string) {
   if (digits.length < 6) return "";
   return cleaned;
 }
-const firstStr = (v: any) =>
-  Array.isArray(v) ? String(v[0] ?? "").trim() : String(v ?? "").trim();
+const firstStr = (v: any) => (Array.isArray(v) ? String(v[0] ?? "").trim() : String(v ?? "").trim());
 function fmtDateIT(v: string) {
   if (!v) return "";
   const d = new Date(v);
@@ -245,19 +243,17 @@ export default function Moment2() {
   const cityQ = sp.get("city") || "";
   const dateLabelQ = sp.get("dateLabel") || "";
 
-
   const [heroPublic, setHeroPublic] = useState<HeroPublic>({
     title: "",
     subtitle: "",
     active: true,
   });
-const [deepDiveOpen, setDeepDiveOpen] = useState<{
-  slug?: string;
-  ticketUrl?: string;
-  city?: string;
-  dateLabel?: string;
-} | null>(null);
-
+  const [deepDiveOpen, setDeepDiveOpen] = useState<{
+    slug?: string;
+    ticketUrl?: string;
+    city?: string;
+    dateLabel?: string;
+  } | null>(null);
 
   // Keep overlay state in sync with ?experience=... in the URL
   useEffect(() => {
@@ -267,10 +263,6 @@ const [deepDiveOpen, setDeepDiveOpen] = useState<{
       setDeepDiveOpen(null);
     }
   }, [experienceSlug]);
-
-
-
-
 
   const [user, setUser] = useState<{ email: string | null; level?: Level; kyc?: boolean }>({ email: null });
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -299,57 +291,140 @@ const [deepDiveOpen, setDeepDiveOpen] = useState<{
   const [fsErr, setFsErr] = useState<string | null>(null);
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // --- Ambient music player (SoundCloud) ---
-  const SOUNDCLOUD_PLAYLIST_URL =
-    "https://soundcloud.com/ledvelvet/sets/antica-moenia-vol-2?utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing";
-  const soundcloudEmbedSrc = useMemo(() => {
-    const u = encodeURIComponent(SOUNDCLOUD_PLAYLIST_URL);
-    return `https://w.soundcloud.com/player/?url=${u}&auto_play=false&hide_related=true&show_comments=false&show_reposts=false&show_teaser=false&visual=false`;
-  }, []);
+  // --- Ambient music player (Airtable MP3 via /api/public/playlist) ---
+  type AmbientTrack = {
+    id: string;
+    title: string;
+    artist?: string;
+    audio_url: string;
+    cover_url?: string;
+    sort?: number;
+  };
+
   const [musicOpen, setMusicOpen] = useState(false);
   const [musicMinimized, setMusicMinimized] = useState(true);
+  const [ambientTracks, setAmbientTracks] = useState<AmbientTrack[]>([]);
+  const [ambientIdx, setAmbientIdx] = useState(0);
+  const [ambientPlaying, setAmbientPlaying] = useState(false);
+  const ambientAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const ambientCurrent = ambientTracks[ambientIdx] || null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const r = await fetch("/api/public/playlist", { cache: "no-store" });
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.toLowerCase().includes("application/json")) throw new Error("playlist_non_json");
+
+        const j = await r.json();
+        if (!j?.ok) throw new Error(j?.error || "playlist_failed");
+        const list: AmbientTrack[] = Array.isArray(j?.tracks) ? j.tracks : [];
+
+        if (!cancelled) {
+          setAmbientTracks(list);
+          setAmbientIdx(0);
+        }
+      } catch {
+        if (!cancelled) setAmbientTracks([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const a = ambientAudioRef.current;
+    if (!a) return;
+
+    if (ambientCurrent?.audio_url) {
+      // update source and reset playing state (iOS safe)
+      a.src = ambientCurrent.audio_url;
+      try {
+        a.load();
+      } catch {}
+    }
+    setAmbientPlaying(false);
+  }, [ambientCurrent?.audio_url]);
+
+  function ambientPlay() {
+    const a = ambientAudioRef.current;
+    if (!a || !ambientCurrent?.audio_url) return;
+    a.play()
+      .then(() => setAmbientPlaying(true))
+      .catch(() => {
+        // iOS may block if not triggered by user gesture
+        setAmbientPlaying(false);
+      });
+  }
+
+  function ambientPause() {
+    const a = ambientAudioRef.current;
+    if (!a) return;
+    a.pause();
+    setAmbientPlaying(false);
+  }
+
+  function ambientToggle() {
+    if (ambientPlaying) ambientPause();
+    else ambientPlay();
+  }
+
+  function ambientNext() {
+    if (!ambientTracks.length) return;
+    const next = ambientIdx + 1 < ambientTracks.length ? ambientIdx + 1 : 0;
+    setAmbientIdx(next);
+    setAmbientPlaying(false);
+  }
+
+  function ambientPrev() {
+    if (!ambientTracks.length) return;
+    const prev = ambientIdx - 1 >= 0 ? ambientIdx - 1 : ambientTracks.length - 1;
+    setAmbientIdx(prev);
+    setAmbientPlaying(false);
+  }
+
   const [eventsReloadTick, setEventsReloadTick] = useState(0);
   const [events, setEvents] = useState<EventItem[]>([]);
-  
+
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsErr, setEventsErr] = useState<string | null>(null);
 
-useEffect(() => {
-  const onStorage = (e: StorageEvent) => {
-    if (
-      e.key === "lv_events_updated_at" ||
-      e.key === "lv_deepdive_updated_at"
-    ) {
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "lv_events_updated_at" || e.key === "lv_deepdive_updated_at") {
+        try {
+          sessionStorage.removeItem("lv_public_events_v2");
+        } catch {}
+        setEventsReloadTick((t) => t + 1);
+      }
+    };
+
+    const onFocus = () => {
       try {
         sessionStorage.removeItem("lv_public_events_v2");
       } catch {}
       setEventsReloadTick((t) => t + 1);
-    }
-  };
+    };
 
-  const onFocus = () => {
-    try {
-      sessionStorage.removeItem("lv_public_events_v2");
-    } catch {}
-    setEventsReloadTick((t) => t + 1);
-  };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
 
-  window.addEventListener("storage", onStorage);
-  window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
-  return () => {
-    window.removeEventListener("storage", onStorage);
-    window.removeEventListener("focus", onFocus);
-  };
-}, []);
-
-
-    useEffect(() => {
+  useEffect(() => {
     let alive = true;
 
     async function loadHero() {
-    
-  try {
+      try {
         const r = await fetch("/api/public/hero", { cache: "no-store" });
         const j = await r.json();
         if (!alive) return;
@@ -363,8 +438,6 @@ useEffect(() => {
           active: Boolean(h.active),
         });
       } catch {}
-
-
     }
 
     loadHero();
@@ -379,20 +452,17 @@ useEffect(() => {
     async function loadEvents() {
       setEventsLoading(true);
       setEventsErr(null);
-	// ✅ ADD THIS: session cache (avoid reload after back)
-try {
-  const cached = sessionStorage.getItem("lv_public_events_v2");
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length) {
-      setEvents(parsed);
-      setEventsLoading(false);
- 
-    }
-  }
-} catch {}
-
-	
+      // ✅ ADD THIS: session cache (avoid reload after back)
+      try {
+        const cached = sessionStorage.getItem("lv_public_events_v2");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length) {
+            setEvents(parsed);
+            setEventsLoading(false);
+          }
+        }
+      } catch {}
 
       try {
         const r = await fetch("/api/public/events?limit=100", { cache: "no-store" });
@@ -426,11 +496,8 @@ try {
 
               heroTitle: e.heroTitle || e["Hero Title"] || "",
               heroSubtitle: e["Hero Subtitle"] || e.heroSubtitle || "",
-	      deepdiveSlug:
-  			firstStr(e.deepdive_slug) ||
-  			firstStr(e.DeepDiveSlug) ||
-  			firstStr(e.DEEP_DIVE_SLUG),
-			deepdivePublished: Boolean(e.deepdivePublished),
+              deepdiveSlug: firstStr(e.deepdive_slug) || firstStr(e.DeepDiveSlug) || firstStr(e.DEEP_DIVE_SLUG),
+              deepdivePublished: Boolean(e.deepdivePublished),
               tag: (e.status || e.tag || "").toString(),
               sponsors: normalizeSponsors(e.sponsors),
               posterSrc: e.posterSrc || e["Hero Image"] || "/og.png",
@@ -441,18 +508,18 @@ try {
           .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
         setEvents(norm);
-console.log(
-  "deepdive check",
-  norm.slice(0, 5).map(e => ({
-    slug: e.deepdiveSlug,
-    published: (e as any).deepdivePublished
-  }))
-);
+        console.log(
+          "deepdive check",
+          norm.slice(0, 5).map((e) => ({
+            slug: e.deepdiveSlug,
+            published: (e as any).deepdivePublished,
+          }))
+        );
 
-	// ✅ ADD THIS: save cache
-	try {
-  	sessionStorage.setItem("lv_public_events_v2", JSON.stringify(norm));
-	} catch {}
+        // ✅ ADD THIS: save cache
+        try {
+          sessionStorage.setItem("lv_public_events_v2", JSON.stringify(norm));
+        } catch {}
       } catch (e: any) {
         if (!alive) return;
         setEventsErr(e?.message || "Errore caricamento eventi");
@@ -719,20 +786,20 @@ console.log(
             <a href="#sponsor" className="hover:text-[var(--text)]">
               Sponsor
             </a>
-	<a href="/about" className="hover:text-[var(--text)]">About</a>
+            <a href="/about" className="hover:text-[var(--text)]">
+              About
+            </a>
           </nav>
 
           <div className="flex items-center gap-2">
-            
-{!user.email ? (
-  <a
-    href="/lvpeople"
-    className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
-  >
-    Accedi
-  </a>
-) : (
-
+            {!user.email ? (
+              <a
+                href="/lvpeople"
+                className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
+              >
+                Accedi
+              </a>
+            ) : (
               <div className="flex items-center gap-2">
                 <select
                   className="bg-transparent rounded-full px-3 py-2 text-xs tracking-[0.18em] uppercase border border-white/15 text-[var(--text)]"
@@ -769,78 +836,126 @@ console.log(
             <a href="#sponsor" className="shrink-0 hover:text-[var(--text)]">
               Sponsor
             </a>
-	<a href="/about" className="shrink-0 hover:text-[var(--text)]">About</a>
+            <a href="/about" className="shrink-0 hover:text-[var(--text)]">
+              About
+            </a>
           </div>
         </div>
       </div>
 
-      {/* ✅ SoundCloud utility (ripristinata, chirurgica) */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] w-[min(92vw,520px)]">
-        {!musicOpen ? (
+{/* Ambient music player (Airtable MP3) */}
+{ambientTracks.length > 0 ? (
+  <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] w-[min(92vw,560px)]">
+    <style>{`
+      .lv-audio::-webkit-media-controls-panel {
+        background-color: rgba(0,0,0,0.55);
+      }
+      .lv-audio::-webkit-media-controls-enclosure {
+        border-radius: 14px;
+        background-color: rgba(0,0,0,0.55);
+      }
+      .lv-audio::-webkit-media-controls-timeline,
+      .lv-audio::-webkit-media-controls-volume-slider {
+        filter: brightness(1.35) contrast(1.25);
+      }
+      .lv-audio::-webkit-media-controls-play-button,
+      .lv-audio::-webkit-media-controls-mute-button,
+      .lv-audio::-webkit-media-controls-current-time-display,
+      .lv-audio::-webkit-media-controls-time-remaining-display {
+        filter: brightness(1.25);
+      }
+    `}</style>
+
+    <div className="border border-white/15 bg-black/75 backdrop-blur-md rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+      {/* Header */}
+      <div className="px-4 py-3 flex items-center justify-between gap-3 border-b border-white/10">
+        <div className="min-w-0">
+          <div className="text-[10px] tracking-[0.32em] uppercase text-white/70">
+            Ambient Music
+          </div>
+          <div className="mt-1 text-[12px] text-white/90 truncate">
+            {ambientCurrent?.title || "—"}
+            {ambientCurrent?.artist ? (
+              <span className="text-white/55"> · {ambientCurrent.artist}</span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={ambientPrev}
+            className="h-9 w-10 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+          >
+            ◀
+          </button>
+
+          <button
+            type="button"
+            onClick={ambientToggle}
+            className="h-9 px-4 rounded-full border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/90"
+          >
+            Play / Pause
+          </button>
+
+          <button
+            type="button"
+            onClick={ambientNext}
+            className="h-9 w-10 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+          >
+            ▶
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMusicMinimized(v => !v)}
+            className="h-9 px-3 rounded-full border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/80"
+          >
+            {musicMinimized ? "Open" : "Min"}
+          </button>
+
           <button
             type="button"
             onClick={() => {
-              setMusicOpen(true);
-              setMusicMinimized(false);
+              setMusicMinimized(true);
+              ambientPause();
             }}
-            className="w-full px-4 py-3 bg-black/70 border border-white/15 text-white/90 text-xs tracking-[0.22em] uppercase hover:bg-black/80"
+            className="h-9 px-3 rounded-full border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/80"
           >
-            Ambient Music · Open
+            Close
           </button>
-        ) : (
-          <div className="border border-white/15 bg-black/70">
-            <div className="px-3 py-2 flex items-center justify-between gap-2">
-              <div className="text-[11px] tracking-[0.22em] uppercase text-white/80">
-                Ambient Music (SoundCloud)
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMusicMinimized((v) => !v)}
-                  className="px-3 py-1 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/85"
-                >
-                  {musicMinimized ? "Expand" : "Minimize"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMusicOpen(false);
-                    setMusicMinimized(true);
-                  }}
-                  className="px-3 py-1 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/85"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <div
-  		className="border-t border-white/10 bg-black/40 overflow-hidden"
-  		style={{
-    			maxHeight: musicMinimized ? 0 : 140,
-    			opacity: musicMinimized ? 0 : 1,
-    			transition: "max-height 220ms ease, opacity 160ms ease",
-    			pointerEvents: musicMinimized ? "none" : "auto",
-  		}}
->
-  	<iframe
-   		 key={soundcloudEmbedSrc}
-   		 src={soundcloudEmbedSrc}
-    		title="LedVelvet Ambient Music"
-    		width="100%"
-    		height="110"
-    		allow="autoplay"
-  		loading="lazy"
-    	style={{ border: 0, display: "block" }}
-  	/>
-</div>
-          </div>
-        )}
+        </div>
       </div>
 
+      {/* Body */}
+      <div
+        className="overflow-hidden"
+        style={{
+          maxHeight: musicMinimized ? 0 : 160,
+          opacity: musicMinimized ? 0 : 1,
+          transition: "max-height 220ms ease, opacity 160ms ease",
+          pointerEvents: musicMinimized ? "none" : "auto",
+        }}
+      >
+        <div className="px-4 py-3 bg-black/40">
+          <audio
+            className="lv-audio"
+            ref={ambientAudioRef}
+            src={ambientCurrent?.audio_url || ""}
+            preload="metadata"
+            controls
+            crossOrigin="anonymous"
+            onEnded={ambientNext}
+            style={{ width: "100%", display: "block", borderRadius: 14 }}
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+) : null}
 
 
+    
 
       {/* HERO (NERO) */}
       <section id="home" className="relative h-[100svh] w-full bg-black">
@@ -985,48 +1100,46 @@ console.log(
                     })()}
                     <div className="pointer-events-none absolute inset-0 z-30 bg-gradient-to-t from-black/90 via-black/35 to-black/10" />
                   </div>
-	<div className="p-6">
-                 <div className="flex items-center justify-between gap-3">
-  			<div className="text-xs tracking-[0.22em] uppercase text-white/75">{tag}</div>
+                  <div className="p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs tracking-[0.22em] uppercase text-white/75">{tag}</div>
 
- 	<div className="flex items-center gap-2">
-    	{e.deepdiveSlug && e.deepdivePublished ? (
-   	<button
-  	onClick={() => {
-                    if (!e.deepdiveSlug) return;
+                      <div className="flex items-center gap-2">
+                        {e.deepdiveSlug && e.deepdivePublished ? (
+                          <button
+                            onClick={() => {
+                              if (!e.deepdiveSlug) return;
 
-                    const params = new URLSearchParams(sp.toString());
-                    params.set("experience", e.deepdiveSlug);
-                    params.set("ticketUrl", e.ticketUrl || "");
-                    params.set("city", e.city || "");
-                    params.set("dateLabel", fmtDateIT(e.date));
+                              const params = new URLSearchParams(sp.toString());
+                              params.set("experience", e.deepdiveSlug);
+                              params.set("ticketUrl", e.ticketUrl || "");
+                              params.set("city", e.city || "");
+                              params.set("dateLabel", fmtDateIT(e.date));
 
-                    router.replace(`/moment2?${params.toString()}`, { scroll: false });
-                  }}
-                  className="px-4 py-2 bg-white/10 border border-white/25 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/40"
->
-  	Enter the experience
-	</button>
- 
-    	) : null}
+                              router.replace(`/moment2?${params.toString()}`, { scroll: false });
+                            }}
+                            className="px-4 py-2 bg-white/10 border border-white/25 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/40"
+                          >
+                            Enter the experience
+                          </button>
+                        ) : null}
 
-    	{soldOut ? (
-     	 <span className="text-xs text-white/60">Sold out</span>
-   	 ) : e.ticketUrl ? (
-      	<a
-    	    href={e.ticketUrl}
-       	 target="_blank"
-       	 rel="noreferrer"
-        	className="px-4 py-2 bg-[var(--red-accent)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90"
-      	>
-      	  Book
-     	 </a>
-   	 ) : (
-     	 <span className="text-xs text-white/60">Ticket soon</span>
-   	 )}
-  </div>
-</div>
-
+                        {soldOut ? (
+                          <span className="text-xs text-white/60">Sold out</span>
+                        ) : e.ticketUrl ? (
+                          <a
+                            href={e.ticketUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-4 py-2 bg-[var(--red-accent)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90"
+                          >
+                            Book
+                          </a>
+                        ) : (
+                          <span className="text-xs text-white/60">Ticket soon</span>
+                        )}
+                      </div>
+                    </div>
 
                     <h3 className="text-xl font-semibold mt-3 text-white">{e.name}</h3>
                     <div className="mt-2 text-sm text-white/80">
@@ -1131,46 +1244,45 @@ console.log(
                             </div>
 
                             <div className="p-6">
-                              
-			<div className="flex items-center justify-between gap-3">
-  			<div className="text-xs tracking-[0.22em] uppercase text-white/70">
-    			{e.deepdiveSlug ? "Experience" : "Recap"}
-  			</div>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-xs tracking-[0.22em] uppercase text-white/70">
+                                  {e.deepdiveSlug ? "Experience" : "Recap"}
+                                </div>
 
-  			<div className="flex items-center gap-2">
-    			{e.deepdiveSlug && e.deepdivePublished ? (
-			<button
-  			onClick={() => {
-                    if (!e.deepdiveSlug) return;
+                                <div className="flex items-center gap-2">
+                                  {e.deepdiveSlug && e.deepdivePublished ? (
+                                    <button
+                                      onClick={() => {
+                                        if (!e.deepdiveSlug) return;
 
-                    const params = new URLSearchParams(sp.toString());
-                    params.set("experience", e.deepdiveSlug);
-                    params.set("ticketUrl", e.ticketUrl || "");
-                    params.set("city", e.city || "");
-                    params.set("dateLabel", fmtDateIT(e.date));
+                                        const params = new URLSearchParams(sp.toString());
+                                        params.set("experience", e.deepdiveSlug);
+                                        params.set("ticketUrl", e.ticketUrl || "");
+                                        params.set("city", e.city || "");
+                                        params.set("dateLabel", fmtDateIT(e.date));
 
-                    router.replace(`/moment2?${params.toString()}`, { scroll: false });
-                  }}
-                  className="px-4 py-2 bg-white/10 border border-white/25 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/40"
-			>
-  			Enter the experience
-			</button>
-    			) : null}
+                                        router.replace(`/moment2?${params.toString()}`, { scroll: false });
+                                      }}
+                                      className="px-4 py-2 bg-white/10 border border-white/25 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/40"
+                                    >
+                                      Enter the experience
+                                    </button>
+                                  ) : null}
 
-    			{yt ? (
-      			<a
-       			href={e.aftermovieUrl}
-        		target="_blank"
-        		rel="noreferrer"
-        		className="px-4 py-2 bg-[var(--red-accent)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90"
-      			>
-        		Watch recap
-      			</a>
-   			 ) : (
-     			 <span className="text-xs text-white/60">Recap in arrivo</span>
-    			)}
-  			</div>
-			</div>
+                                  {yt ? (
+                                    <a
+                                      href={e.aftermovieUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-4 py-2 bg-[var(--red-accent)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90"
+                                    >
+                                      Watch recap
+                                    </a>
+                                  ) : (
+                                    <span className="text-xs text-white/60">Recap in arrivo</span>
+                                  )}
+                                </div>
+                              </div>
                               <h3 className="text-xl font-semibold mt-3 text-white">{e.name}</h3>
                               <div className="mt-2 text-sm text-white/70">
                                 {e.city} • {fmtDateIT(e.date)}
@@ -1409,7 +1521,7 @@ console.log(
           </div>
         </div>
       </footer>
-	{/* Deep Dive Overlay */}
+      {/* Deep Dive Overlay */}
       <DeepDiveOverlay
         slug={deepDiveOpen?.slug || null}
         onClose={() => {
@@ -1426,6 +1538,6 @@ console.log(
         city={cityQ || deepDiveOpen?.city || ""}
         dateLabel={dateLabelQ || deepDiveOpen?.dateLabel || ""}
       />
-</div>
+    </div>
   );
 }
