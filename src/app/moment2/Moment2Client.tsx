@@ -845,7 +845,7 @@ export default function Moment2() {
 
 {/* Ambient music player (Airtable MP3) */}
 {ambientTracks.length > 0 ? (
-  <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] w-[min(92vw,560px)]">
+  <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[60] w-[calc(100vw-16px)] sm:w-[520px]">
     <style>{`
       .lv-audio::-webkit-media-controls-panel {
         background-color: rgba(0,0,0,0.55);
@@ -866,10 +866,11 @@ export default function Moment2() {
       }
     `}</style>
 
-    <div className="border border-white/15 bg-black/75 backdrop-blur-md rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
-      {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between gap-3 border-b border-white/10">
-        <div className="min-w-0">
+    <div className="border border-white/15 bg-black/75 backdrop-blur-md rounded-2xl overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
+      {/* HEADER */}
+      <div className="px-3 py-2 flex items-center justify-between border-b border-white/10">
+        {/* Title – nascosto su mobile */}
+        <div className="hidden sm:block min-w-0">
           <div className="text-[10px] tracking-[0.32em] uppercase text-white/70">
             Ambient Music
           </div>
@@ -881,63 +882,64 @@ export default function Moment2() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        {/* CONTROLS */}
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           <button
-            type="button"
             onClick={ambientPrev}
-            className="h-9 w-10 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+            className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+            aria-label="Prev"
           >
             ◀
           </button>
 
           <button
-            type="button"
             onClick={ambientToggle}
-            className="h-9 px-4 rounded-full border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/90"
+            className="h-10 w-10 rounded-full border border-white/25 bg-white/10 text-white"
+            aria-label="Play Pause"
           >
-            Play / Pause
+            ⏯
           </button>
 
           <button
-            type="button"
             onClick={ambientNext}
-            className="h-9 w-10 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+            className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+            aria-label="Next"
           >
             ▶
           </button>
 
           <button
-            type="button"
             onClick={() => setMusicMinimized(v => !v)}
-            className="h-9 px-3 rounded-full border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/80"
+            className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/70"
+            aria-label="Open"
           >
-            {musicMinimized ? "Open" : "Min"}
+            ⌄
           </button>
 
           <button
-            type="button"
             onClick={() => {
               setMusicMinimized(true);
               ambientPause();
             }}
-            className="h-9 px-3 rounded-full border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase text-white/80"
+            className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/60"
+            aria-label="Close"
           >
-            Close
+            ✕
           </button>
         </div>
       </div>
 
-      {/* Body */}
+      {/* BODY */}
       <div
         className="overflow-hidden"
         style={{
-          maxHeight: musicMinimized ? 0 : 160,
+          maxHeight: musicMinimized ? 0 : 140,
           opacity: musicMinimized ? 0 : 1,
           transition: "max-height 220ms ease, opacity 160ms ease",
           pointerEvents: musicMinimized ? "none" : "auto",
         }}
       >
-        <div className="px-4 py-3 bg-black/40">
+        <div className="px-3 py-2 bg-black/40">
           <audio
             className="lv-audio"
             ref={ambientAudioRef}
@@ -953,7 +955,6 @@ export default function Moment2() {
     </div>
   </div>
 ) : null}
-
 
     
 
