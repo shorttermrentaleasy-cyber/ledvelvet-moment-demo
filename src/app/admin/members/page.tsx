@@ -135,6 +135,9 @@ export default function AdminMembersPage() {
   const [qrValue, setQrValue] = useState<string>("");
   const [qrImgUrl, setQrImgUrl] = useState<string>("");
 
+  // ✅ SOLO AGGIUNTA: totale soci dal DB (endpoint /api/admin/wallyfor/count)
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+
   const title = useMemo(() => {
     return tab === "wallyfor" ? "Associati — Wallyfor (ETS)" : "Associati — Legacy (Eventi / non-soci)";
   }, [tab]);
@@ -163,6 +166,16 @@ export default function AdminMembersPage() {
       setLoading(false);
     }
   }
+
+  // ✅ SOLO AGGIUNTA: carica totale una volta (silenzioso se endpoint manca)
+  useEffect(() => {
+    fetch("/api/admin/wallyfor/count", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.ok && typeof j.total === "number") setTotalCount(j.total);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (tab === "wallyfor") loadWallyfor();
@@ -193,6 +206,14 @@ export default function AdminMembersPage() {
       if (!json?.ok) throw new Error(json?.error || "import_failed");
       setImportMsg(`Import OK: ${json.imported} righe.`);
       await loadWallyfor();
+
+      // ✅ SOLO AGGIUNTA: refresh totale dopo import
+      fetch("/api/admin/wallyfor/count", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j?.ok && typeof j.total === "number") setTotalCount(j.total);
+        })
+        .catch(() => {});
     } catch (e: any) {
       setErr(e?.message || "import_failed");
     } finally {
@@ -300,7 +321,7 @@ export default function AdminMembersPage() {
 
                 <div style={styles.field}>
                   <div style={styles.label}>Totale</div>
-                  <div style={styles.metric}>{rows.length}</div>
+                  <div style={styles.metric}>{totalCount ?? rows.length}</div>
                 </div>
               </div>
             </section>
@@ -585,7 +606,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(0,0,0,0.18)",
     whiteSpace: "nowrap",
   },
-  td: { padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)", fontSize: 13, opacity: 0.9, whiteSpace: "nowrap" },
+  td: {
+    padding: "10px 12px",
+    borderBottom: "1px solid rgba(255,255,255,0.08)",
+    fontSize: 13,
+    opacity: 0.9,
+    whiteSpace: "nowrap",
+  },
   tdMono: {
     padding: "10px 12px",
     borderBottom: "1px solid rgba(255,255,255,0.08)",
@@ -594,7 +621,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     whiteSpace: "nowrap",
   },
-  tdRight: { padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)", textAlign: "right", whiteSpace: "nowrap" },
+  tdRight: {
+    padding: "10px 12px",
+    borderBottom: "1px solid rgba(255,255,255,0.08)",
+    textAlign: "right",
+    whiteSpace: "nowrap",
+  },
 
   qrBtn: {
     borderRadius: 999,
@@ -606,7 +638,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12.5,
   },
 
-  empty: { borderRadius: 14, padding: 16, border: "1px dashed rgba(255,255,255,0.18)", background: "rgba(0,0,0,0.14)" },
+  empty: {
+    borderRadius: 14,
+    padding: 16,
+    border: "1px dashed rgba(255,255,255,0.18)",
+    background: "rgba(0,0,0,0.14)",
+  },
   emptyTitle: { fontSize: 14, fontWeight: 750, marginBottom: 6 },
   emptyDesc: { fontSize: 12.5, opacity: 0.78, lineHeight: 1.35 },
 
@@ -631,7 +668,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   modalTop: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 },
   modalTitle: { fontSize: 15, fontWeight: 800, marginBottom: 4 },
-  modalDesc: { fontSize: 12.5, opacity: 0.75, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
+  modalDesc: {
+    fontSize: 12.5,
+    opacity: 0.75,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+  },
   modalClose: {
     borderRadius: 999,
     padding: "8px 10px",

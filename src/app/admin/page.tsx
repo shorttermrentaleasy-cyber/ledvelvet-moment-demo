@@ -40,21 +40,30 @@ export default async function AdminHomePage() {
           <Card title="Hero" desc="Titolo, sottotitolo e stato Hero" href="/admin/hero" />
           <Card title="Events" desc="Crea e modifica eventi" href="/admin/events" />
 
-          {/* ✅ PATCH MINIMA: aggiunta DeepDive */}
+          {/* DeepDive */}
           <Card title="DeepDive" desc="Experience / contenuti evento" href="/admin/deepdive" />
 
           <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
 
-          {/* ✅ PATCH MINIMA: DoorCheck accesso rapido */}
+          {/* DoorCheck */}
           <Card title="DoorCheck" desc="Scanner accessi staff" href="/doorcheck" />
 
-          {/* ✅ PATCH MINIMA: abilita sezione già esistente */}
+          {/* Associati */}
           <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" />
+
+          {/* ✅ PATCH MINIMA: Ambient Playlist (link Airtable) */}
+          <ExternalCard
+            title="Ambient Playlist (Hero)"
+            desc="Gestione musica ambient Hero (Airtable)"
+            href="https://airtable.com/appkpUBdMSN1oY4TI/pagCqw9rn03EsYAfo" // ← qui incolli TU il link diretto alla view ACTIVE_HERO
+          />
 
           <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
         </div>
 
-        <p style={styles.note}>Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.</p>
+        <p style={styles.note}>
+          Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.
+        </p>
       </div>
     </main>
   );
@@ -85,6 +94,32 @@ function Card({
     <Link href={href} style={{ textDecoration: "none" }}>
       {inner}
     </Link>
+  );
+}
+
+/* Card esterna (Airtable) */
+function ExternalCard({
+  title,
+  desc,
+  href,
+}: {
+  title: string;
+  desc: string;
+  href: string;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ textDecoration: "none" }}
+    >
+      <div style={styles.card}>
+        <div style={styles.cardTitle}>{title}</div>
+        <div style={styles.cardDesc}>{desc}</div>
+        <div style={styles.cardCta}>Open ↗</div>
+      </div>
+    </a>
   );
 }
 
