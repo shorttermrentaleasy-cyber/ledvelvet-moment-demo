@@ -5,22 +5,31 @@ import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
 
 const DOOR_PIN = "1979";
 const LS_KEY = "doorcheck_pin_ok";
+const LS_KEY_API = "doorcheck_api_key";
 
-type DoorcheckResponse =
-  | {
-      ok: true;
-      allowed: boolean;
-      reason: string;
-      method?: string;
-      member?: {
-        id: string;
-        first_name: string;
-        last_name: string;
-        email?: string | null;
-        legacy?: boolean;
-      };
-    }
-  | { ok: false; error: string };
+type DoorcheckOkResponse = {
+  ok: true;
+  allowed: boolean;
+
+  // scan flow (ETS)
+  reason?: string;
+  method?: string;
+  member?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email?: string | null;
+    legacy?: boolean;
+  };
+
+  // unified additions (RPC/manual flow)
+  kind?: "ETS" | "SRL";
+  status?: string;
+  checkin_id?: string | null;
+  legacy_person_id?: string | null;
+};
+
+type DoorcheckResponse = DoorcheckOkResponse | { ok: false; error: string };
 
 type PublicEvent = {
   id: string;
@@ -57,6 +66,11 @@ function fmtEventLabel(e: PublicEvent) {
   return bits.length ? `${e.name} · ${bits.join(" · ")}` : e.name;
 }
 
+function truthy(s?: string) {
+  const t = (s || "").trim();
+  return t.length ? t : null;
+}
+
 export default function DoorCheckPage() {
   const [eventId, setEventId] = useState("");
   const [selectedEventId, setSelectedEventId] = useState(""); // per dropdown
@@ -72,19 +86,42 @@ export default function DoorCheckPage() {
   const [pin, setPin] = useState("");
   const [pinOk, setPinOk] = useState(false);
 
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyOk, setApiKeyOk] = useState(false);
+
   const [scanOpen, setScanOpen] = useState(false);
   const [scanErr, setScanErr] = useState<string | null>(null);
   const [autoSubmitOnScan, setAutoSubmitOnScan] = useState(true);
   const [scanStarting, setScanStarting] = useState(false);
 
+  // manual SRL UI
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualName, setManualName] = useState("");
+  const [manualPhone, setManualPhone] = useState("");
+  const [manualEmail, setManualEmail] = useState("");
+  const [manualLoading, setManualLoading] = useState(false);
+  const [lastDeniedCode, setLastDeniedCode] = useState<string | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
 
-  const allowed = useMemo(
-    () => (res && "allowed" in res ? res.allowed : false),
-    [res]
-  );
+  const allowed = useMemo(() => {
+    return res && "allowed" in res ? !!res.allowed : false;
+  }, [res]);
+
+  const denyReason = useMemo(() => {
+    if (!res || !("ok" in res) || !res.ok) return null;
+    const r = (res.reason || "").trim();
+    return r || null;
+  }, [res]);
+
+  const canOfferManual = useMemo(() => {
+    if (!res || !("ok" in res) || !res.ok) return false;
+    if (res.allowed) return false;
+    const r = (res.reason || "").trim();
+    return r === "invalid_qr" || r === "invalid_barcode";
+  }, [res]);
 
   const stopScanner = () => {
     try {
@@ -125,6 +162,14 @@ export default function DoorCheckPage() {
     } catch {
       setPinOk(false);
     }
+    try {
+      const k = localStorage.getItem(LS_KEY_API) || "";
+      setApiKey(k);
+      setApiKeyOk(!!k.trim());
+    } catch {
+      setApiKey("");
+      setApiKeyOk(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -142,7 +187,7 @@ export default function DoorCheckPage() {
       setEventsLoading(true);
       setEventsErr(null);
       try {
-        const r = await fetch("/api/public/events", { cache: "no-store" });
+        const r = await fetch("/api/public/door-events", { cache: "no-store" });
         const j = await r.json();
 
         // ✅ supporta 2 formati comuni: {events:[...]} oppure [...]
@@ -205,6 +250,28 @@ export default function DoorCheckPage() {
     stopScanner();
   }
 
+  function saveApiKey() {
+    const k = apiKey.trim();
+    if (!k) {
+      alert("Inserisci la Door API Key");
+      return;
+    }
+    try {
+      localStorage.setItem(LS_KEY_API, k);
+    } catch {}
+    setApiKeyOk(true);
+    alert("Door API Key salvata");
+  }
+
+  function clearApiKey() {
+    try {
+      localStorage.removeItem(LS_KEY_API);
+    } catch {}
+    setApiKey("");
+    setApiKeyOk(false);
+    alert("Door API Key rimossa");
+  }
+
   async function doCheck(forcedQr?: string) {
     const eid = eventId.trim();
     const did = deviceId.trim();
@@ -214,29 +281,110 @@ export default function DoorCheckPage() {
       setRes({ ok: false, error: "Seleziona un evento e scansiona/incolla il codice." });
       return;
     }
+    if (!apiKeyOk) {
+      setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
+      return;
+    }
 
     setLoading(true);
     setRes(null);
+    setManualOpen(false);
+    setLastDeniedCode(null);
 
     try {
-      const r = await fetch("/api/doorcheck-proxy", {
+      	const apiKey = (localStorage.getItem(LS_KEY_API) || "").trim();
+
+	const r = await fetch("/api/doorcheck", {
+  		method: "POST",
+  		headers: {
+    		"Content-Type": "application/json",
+    		"x-api-key": apiKey, // <-- fondamentale
+  	},
+  	cache: "no-store",
+  	body: JSON.stringify({
+    	event_id: eid,
+    	qr: code,
+    	device_id: did || undefined,
+  	}),
+  });
+
+
+      const data = (await r.json()) as DoorcheckResponse;
+      setRes(data);
+
+      // se negato per invalid_qr/barcode, abilita manual
+      if (data && "ok" in data && data.ok && !data.allowed) {
+        const r = (data.reason || "").trim();
+        if (r === "invalid_qr" || r === "invalid_barcode") {
+          setLastDeniedCode(code);
+        }
+      }
+
+      if (data && "ok" in data && data.ok && data.allowed) setQr("");
+    } catch (e: any) {
+      setRes({ ok: false, error: e?.message || "Errore rete" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function doManualCheck() {
+    const eid = eventId.trim();
+    if (!eid) {
+      setRes({ ok: false, error: "Seleziona un evento prima." });
+      return;
+    }
+    if (!apiKeyOk) {
+      setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
+      return;
+    }
+
+    const full_name = truthy(manualName);
+    const phone = truthy(manualPhone);
+    const email = truthy(manualEmail);
+
+    if (!full_name && !phone) {
+      setRes({ ok: false, error: "Inserisci almeno Nome oppure Telefono." });
+      return;
+    }
+
+    setManualLoading(true);
+    setRes(null);
+
+    try {
+      const scanned = truthy(lastDeniedCode || "") || (phone ? `MANUAL:${phone}` : "MANUAL");
+
+      const r = await fetch("/api/doorcheck", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey.trim(),
+        },
         cache: "no-store",
         body: JSON.stringify({
           event_id: eid,
-          qr: code,
-          device_id: did || undefined,
+          mode: "manual",
+          full_name: full_name || undefined,
+          phone: phone || undefined,
+          email: email || undefined,
+          // non serve qr, ma se presente lo teniamo come scanned_code
+          qr: scanned,
         }),
       });
 
       const data = (await r.json()) as DoorcheckResponse;
       setRes(data);
-      if (data && "allowed" in data && data.allowed) setQr("");
+
+      // chiudi e reset form
+      setManualOpen(false);
+      setManualLoading(false);
+      setManualName("");
+      setManualPhone("");
+      setManualEmail("");
+      setLastDeniedCode(null);
     } catch (e: any) {
+      setManualLoading(false);
       setRes({ ok: false, error: e?.message || "Errore rete" });
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -362,23 +510,68 @@ export default function DoorCheckPage() {
         {pinOk && (
           <>
             <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+              {/* Door API Key (non in codice) */}
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="text-sm font-semibold">Door API Key</div>
+                <div className="mt-1 text-xs text-white/60">
+                  Inseriscila una volta (salvata su questo dispositivo). Non viene messa nel codice.
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <input
+                    value={apiKey}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      setApiKeyOk(!!e.target.value.trim());
+                    }}
+                    placeholder="x-api-key..."
+                    className="flex-1 min-w-[240px] rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30 font-mono"
+                    type="password"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveApiKey}
+                    className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                  >
+                    Salva
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearApiKey}
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                  >
+                    Rimuovi
+                  </button>
+                </div>
+
+                {!apiKeyOk ? (
+                  <div className="mt-2 text-[11px] text-red-300">
+                    Manca Door API Key: senza non puoi fare check-in.
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] text-emerald-300">
+                    OK: Door API Key presente su questo dispositivo.
+                  </div>
+                )}
+              </div>
+
               {/* ✅ Dropdown eventi */}
-              <label className="block">
+              <label className="block mt-4">
                 <div className="text-xs text-white/60 mb-1">Evento</div>
                 <select
                   value={selectedEventId}
                   onChange={(e) => {
                     const id = e.target.value;
                     setSelectedEventId(id);
-                    setEventId(id); // qui è la chiave: eventId = UUID scelto
+                    setEventId(id);
                     setRes(null);
+                    setManualOpen(false);
+                    setLastDeniedCode(null);
                   }}
                   className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-sm outline-none focus:border-white/30"
                 >
                   {!eventsLoading && events.length === 0 ? (
-                    <option value="">
-                      Nessun evento disponibile (o API non risponde)
-                    </option>
+                    <option value="">Nessun evento disponibile (o API non risponde)</option>
                   ) : null}
 
                   {eventsLoading ? (
@@ -395,9 +588,7 @@ export default function DoorCheckPage() {
                   {eventsErr ? (
                     <span className="text-red-300">{eventsErr}</span>
                   ) : (
-                    <>
-                      Selezionando un evento, l’UUID viene usato per il check-in.
-                    </>
+                    <>Selezionando un evento, l’UUID viene usato per il check-in.</>
                   )}
                 </div>
               </label>
@@ -428,7 +619,7 @@ export default function DoorCheckPage() {
                 <button
                   type="button"
                   onClick={startScanner}
-                  disabled={scanStarting}
+                  disabled={scanStarting || !apiKeyOk}
                   className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
                 >
                   {scanStarting ? "📷 Avvio camera..." : "📷 Scan (camera)"}
@@ -486,13 +677,14 @@ export default function DoorCheckPage() {
                   placeholder="Scansiona o incolla qui (Enter)"
                   className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-base outline-none focus:border-white/30 font-mono"
                   autoFocus
+                  disabled={!apiKeyOk}
                 />
               </label>
 
               <div className="mt-4 flex items-center gap-3">
                 <button
                   onClick={() => doCheck()}
-                  disabled={loading}
+                  disabled={loading || !apiKeyOk}
                   className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold disabled:opacity-50"
                 >
                   {loading ? "Controllo..." : "Check"}
@@ -503,6 +695,8 @@ export default function DoorCheckPage() {
                   onClick={() => {
                     setRes(null);
                     setQr("");
+                    setManualOpen(false);
+                    setLastDeniedCode(null);
                   }}
                   className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
                 >
@@ -517,42 +711,139 @@ export default function DoorCheckPage() {
                   Reset PIN
                 </button>
               </div>
-            </section>
 
-            <section className="mt-4">
-              {!res ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
-                  Nessun controllo ancora.
-                </div>
-              ) : "ok" in res && res.ok ? (
-                <div
-                  className={`rounded-2xl border p-5 ${
-                    allowed
-                      ? "border-emerald-400/30 bg-emerald-400/10"
-                      : "border-red-400/30 bg-red-400/10"
-                  }`}
-                >
-                  <div className="text-lg font-semibold">
-                    {allowed ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}
+              {/* CTA manual SRL solo quando senso */}
+              {canOfferManual && (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="text-sm font-semibold">Codice non riconosciuto</div>
+                  <div className="mt-1 text-xs text-white/60">
+                    Vuoi far entrare un ospite non socio? Inserisci i dati al volo e registra l’accesso come SRL.
                   </div>
-                  <div className="mt-2 text-sm font-mono">
-                    reason: {res.reason}
-                    {res.method ? ` · method: ${res.method}` : ""}
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualOpen(true);
+                        setManualName("");
+                        setManualPhone("");
+                        setManualEmail("");
+                      }}
+                      className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                    >
+                      ➕ Inserisci ospite manuale
+                    </button>
+                    <span className="text-[11px] text-white/40 font-mono">
+                      scanned_code: {lastDeniedCode || "(n/a)"}
+                    </span>
                   </div>
-                  {res.member ? (
-                    <div className="mt-3 text-sm">
-                      {res.member.first_name} {res.member.last_name}{" "}
-                      {res.member.legacy ? "(legacy)" : null}
-                    </div>
-                  ) : null}
                 </div>
-              ) : (
-                <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
-                  <div className="text-lg font-semibold">Errore</div>
-                  <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
+              )}
+
+              {/* FORM manual SRL */}
+              {manualOpen && (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="text-sm font-semibold">Ospite (SRL) – inserimento rapido</div>
+                  <div className="mt-1 text-xs text-white/60">
+                    Minimo: Nome oppure Telefono. (Consigliato: entrambi)
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <input
+                      value={manualName}
+                      onChange={(e) => setManualName(e.target.value)}
+                      placeholder="Nome e cognome"
+                      className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30"
+                    />
+                    <input
+                      value={manualPhone}
+                      onChange={(e) => setManualPhone(e.target.value)}
+                      placeholder="Telefono"
+                      className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30"
+                      inputMode="tel"
+                    />
+                    <input
+                      value={manualEmail}
+                      onChange={(e) => setManualEmail(e.target.value)}
+                      placeholder="Email (opzionale)"
+                      className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30"
+                      inputMode="email"
+                    />
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={doManualCheck}
+                      disabled={manualLoading}
+                      className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                    >
+                      {manualLoading ? "Registrazione..." : "Registra ingresso SRL"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setManualOpen(false)}
+                      className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                    >
+                      Annulla
+                    </button>
+                  </div>
                 </div>
               )}
             </section>
+           
+<section className="mt-4">
+  {!res ? (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
+      Nessun controllo ancora.
+    </div>
+  ) : "ok" in res && res.ok ? (
+    <div
+      className={`rounded-2xl border p-5 ${
+        allowed ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"
+      }`}
+    >
+      <div className="text-lg font-semibold">{allowed ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+
+      <div className="mt-2 text-sm font-mono">
+        {res.kind ? `kind: ${res.kind}` : null}
+        {res.kind ? " · " : ""}
+        {res.status ? `status: ${res.status}` : `reason: ${denyReason || "n/a"}`}
+        {res.method ? ` · method: ${res.method}` : ""}
+      </div>
+
+      {(res as any)?.display_name ? (
+  <div className="mt-1 text-white/80">name: {(res as any).display_name}</div>
+) : null}
+
+
+      {res.checkin_id ? (
+        <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {res.checkin_id}</div>
+      ) : null}
+
+      {res.legacy_person_id ? (
+        <div className="mt-2 text-[11px] text-white/40 font-mono">
+          legacy_person_id: {res.legacy_person_id}
+        </div>
+      ) : null}
+
+      {res.member ? (
+        <div className="mt-3 text-sm">
+          {res.member.first_name} {res.member.last_name} {res.member.legacy ? "(legacy)" : null}
+        </div>
+      ) : null}
+    </div>
+  ) : (
+    <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
+      <div className="text-lg font-semibold">Errore</div>
+      <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
+    </div>
+  )}
+</section>
+
+
+
+
+
           </>
         )}
       </div>
