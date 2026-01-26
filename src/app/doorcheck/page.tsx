@@ -803,18 +803,16 @@ export default function DoorCheckPage() {
       }`}
     >
       <div className="text-lg font-semibold">{allowed ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+<div className="mt-2 text-sm font-mono">
+  {res.kind ? `kind: ${res.kind}` : null}
+  {res.kind ? " · " : ""}
+  {res.status ? `status: ${res.status}` : `reason: ${denyReason || "n/a"}`}
+  {res.method ? ` · method: ${res.method}` : ""}
+</div>
 
-      <div className="mt-2 text-sm font-mono">
-        {res.kind ? `kind: ${res.kind}` : null}
-        {res.kind ? " · " : ""}
-        {res.status ? `status: ${res.status}` : `reason: ${denyReason || "n/a"}`}
-        {res.method ? ` · method: ${res.method}` : ""}
-      </div>
-
-      {(res as any)?.display_name ? (
+{(res as any).display_name ? (
   <div className="mt-1 text-white/80">name: {(res as any).display_name}</div>
 ) : null}
-
 
       {res.checkin_id ? (
         <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {res.checkin_id}</div>
