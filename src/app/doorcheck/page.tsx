@@ -126,6 +126,10 @@ export default function DoorCheckPage() {
     return r === "invalid_qr" || r === "invalid_barcode";
   }, [res]);
 
+const currentEvent = useMemo(() => {
+  return events.find((e) => e.id === selectedEventId) || null;
+}, [events, selectedEventId]);
+
   const stopScanner = () => {
     try {
       controlsRef.current?.stop();
@@ -751,45 +755,110 @@ useEffect(() => {
               )}
             </section>
 
-            <section className="mt-4">
-              {!res ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">Nessun controllo ancora.</div>
-              ) : "ok" in res && res.ok ? (
-                <div className={`rounded-2xl border p-5 ${allowed ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"}`}>
-                  <div className="text-lg font-semibold">{allowed ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+     <section className="mt-4">
+  {!res ? (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
+      Nessun controllo ancora.
+    </div>
+  ) : "ok" in res && res.ok ? (
+    (() => {
+      const resAny = res as any;
+      const allowed = !!resAny.allowed;
 
-                  <div className="mt-2 text-sm font-mono">
-                    {res.kind ? `kind: ${res.kind}` : null}
-                    {res.kind ? " · " : ""}
-                    {res.status ? `status: ${res.status}` : null}
-                    {(res as any).reason ? ` · reason: ${(res as any).reason}` : denyReason ? ` · reason: ${denyReason}` : ""}
-                  </div>
+      const isDenied = !allowed;
+      const denyReasonEff = (resAny?.reason || denyReason || "").toString();
 
-                  {(res as any).display_name ? (
-                    <div className="mt-1 text-white/80">name: {(res as any).display_name}</div>
-                  ) : null}
+   
+const canOfferBuyTicket =
+  isDenied && denyReasonEff === "missing_ticket" && !!(currentEvent as any)?.ticketUrl;
 
-                  {res.checkin_id ? (
-                    <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {res.checkin_id}</div>
-                  ) : null}
 
-                  {res.legacy_person_id ? (
-                    <div className="mt-2 text-[11px] text-white/40 font-mono">legacy_person_id: {res.legacy_person_id}</div>
-                  ) : null}
 
-                  {res.member ? (
-                    <div className="mt-3 text-sm">
-                      {res.member.first_name} {res.member.last_name} {res.member.legacy ? "(legacy)" : null}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
-                  <div className="text-lg font-semibold">Errore</div>
-                  <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
-                </div>
-              )}
-            </section>
+      const canOfferSrlFromTicket =
+        isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
+
+      return (
+        <div
+          className={`rounded-2xl border p-5 ${
+            allowed ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"
+          }`}
+        >
+          <div className="text-lg font-semibold">{allowed ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+
+          <div className="mt-2 text-sm font-mono">
+            {resAny.kind ? `kind: ${resAny.kind}` : null}
+            {resAny.kind ? " · " : ""}
+            {resAny.status ? `status: ${resAny.status}` : null}
+            {resAny.reason ? ` · reason: ${resAny.reason}` : denyReason ? ` · reason: ${denyReason}` : ""}
+          </div>
+
+          {resAny.display_name ? <div className="mt-1 text-white/80">name: {resAny.display_name}</div> : null}
+
+          {/* CTA azioni staff su denied */}
+          {isDenied ? (
+            <div className="mt-4 flex flex-wrap gap-3">
+              {canOfferBuyTicket ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    
+
+
+const url = String((currentEvent as any)?.ticketUrl || "").trim();
+
+
+
+
+
+                    if (!url) return;
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
+                  className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                >
+                  🎟️ Apri acquisto biglietto
+                </button>
+              ) : null}
+
+              {canOfferSrlFromTicket ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualOpen(true);
+                    setManualName(resAny?.display_name || "");
+                    setManualPhone("");
+                    setManualEmail("");
+                  }}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                >
+                  ➕ Passa a SRL (ospite manuale)
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {resAny.checkin_id ? (
+            <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {resAny.checkin_id}</div>
+          ) : null}
+
+          {resAny.legacy_person_id ? (
+            <div className="mt-2 text-[11px] text-white/40 font-mono">legacy_person_id: {resAny.legacy_person_id}</div>
+          ) : null}
+
+          {resAny.member ? (
+            <div className="mt-3 text-sm">
+              {resAny.member.first_name} {resAny.member.last_name} {resAny.member.legacy ? "(legacy)" : null}
+            </div>
+          ) : null}
+        </div>
+      );
+    })()
+  ) : (
+    <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
+      <div className="text-lg font-semibold">Errore</div>
+      <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
+    </div>
+  )}
+</section>
           </>
         )}
       </div>

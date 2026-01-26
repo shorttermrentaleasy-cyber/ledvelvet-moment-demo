@@ -1,4 +1,3 @@
-// src/app/api/doorcheck/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -21,11 +20,11 @@ type DoorcheckBody = {
   event_id?: string;
   event_ref?: string; // opzionale: events.xceed_event_ref
   mode?: "scan" | "manual";
-  qr?: string; // barcode/qr scansionato o testo inserito
-  full_name?: string; // per mode=manual
-  phone?: string; // per mode=manual
-  email?: string; // opzionale per mode=manual
-  device_id?: string; // opzionale
+  qr?: string;
+  full_name?: string; // manual
+  phone?: string; // manual
+  email?: string; // manual opzionale
+  device_id?: string;
 };
 
 function isDigitsOnly(s: string) {
@@ -33,13 +32,21 @@ function isDigitsOnly(s: string) {
 }
 
 function normalizeEmail(email: string | null | undefined) {
-  const e = (email || "").trim().toLowerCase();
-  return e || null;
+  const e = String(email ?? "").trim().toLowerCase();
+  if (!e) return null;
+  if (!e.includes("@") || !e.includes(".")) return null;
+  return e;
 }
 
 function normalizePhone(phone: string | null | undefined) {
-  const p = (phone || "").trim().replace(/[^\d+]/g, "");
-  return p || null;
+  let p = String(phone ?? "").trim();
+  if (!p) return null;
+  p = p.replace(/[^\d+]/g, "");
+  if (!p) return null;
+
+  // normalizza "39xxxxxxxx" => "+39xxxxxxxx"
+  if (/^39\d{8,}$/.test(p)) p = `+${p}`;
+  return p.length >= 6 ? p : null;
 }
 
 function buildFullName(first: string | null | undefined, last: string | null | undefined) {
@@ -65,18 +72,13 @@ async function resolveEventId(
   const ref = (eventRef || "").trim();
   if (!ref) return null;
 
-  const { data: ev, error: evErr } = await supabase
-    .from("events")
-    .select("id")
-    .eq("xceed_event_ref", ref)
-    .maybeSingle();
+  const { data: ev, error: evErr } = await supabase.from("events").select("id").eq("xceed_event_ref", ref).maybeSingle();
   if (evErr) throw new Error(evErr.message);
   if (!ev) return null;
   return ev.id as string;
 }
 
 async function getEventPolicy(supabase: ReturnType<typeof supabaseAdmin>, eventId: string) {
-  // campi opzionali: se non esistono, default false
   const { data: ev, error } = await supabase
     .from("events")
     .select("id, require_ticket, require_membership")
@@ -146,13 +148,7 @@ async function memberAlreadyCheckedIn(
   eventId: string,
   memberId: string
 ): Promise<string | null> {
-  const { data, error } = await supabase
-    .from("checkins")
-    .select("id")
-    .eq("event_id", eventId)
-    .eq("member_id", memberId)
-    .limit(1);
-
+  const { data, error } = await supabase.from("checkins").select("id").eq("event_id", eventId).eq("member_id", memberId).limit(1);
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) return null;
   return (data[0] as any).id as string;
@@ -180,7 +176,7 @@ async function resolveMemberByEmailOrPhone(
   emailNorm: string | null,
   phoneNorm: string | null
 ): Promise<{ id: string; display_name: string | null } | { ambiguous: true } | null> {
-  // email (primario)
+  // email primario
   if (emailNorm) {
     const { data, error } = await supabase
       .from("members")
@@ -196,12 +192,20 @@ async function resolveMemberByEmailOrPhone(
     if (data && data.length > 1) return { ambiguous: true };
   }
 
-  // phone (fallback)
+  // telefono fallback: prova varianti
   if (phoneNorm) {
+    const candidates = new Set<string>();
+    candidates.add(phoneNorm);
+    if (phoneNorm.startsWith("+")) candidates.add(phoneNorm.slice(1));
+    if (phoneNorm.startsWith("+39")) candidates.add(phoneNorm.replace(/^\+39/, ""));
+    if (phoneNorm.startsWith("39")) candidates.add(phoneNorm.replace(/^39/, ""));
+
+    const inArr = Array.from(candidates);
+
     const { data, error } = await supabase
       .from("members")
       .select("id, first_name, last_name")
-      .eq("phone", phoneNorm)
+      .in("phone", inArr)
       .limit(2);
 
     if (error) throw new Error(error.message);
@@ -218,27 +222,47 @@ async function resolveMemberByEmailOrPhone(
 async function memberHasTicketForEvent(
   supabase: ReturnType<typeof supabaseAdmin>,
   eventId: string,
-  emailNorm: string | null,
-  phoneNorm: string | null
+  memberEmail: string | null,
+  memberPhone: string | null
 ) {
-  if (!emailNorm && !phoneNorm) return false;
+  const emailNorm = normalizeEmail(memberEmail);
+  const phoneNorm = normalizePhone(memberPhone);
 
-  const { data, error } = await supabase
-    .from("xceed_tickets")
-    .select("id")
-    .eq("event_id", eventId)
-    .or(
-      [
-        emailNorm ? `buyer_email_norm.eq.${emailNorm}` : null,
-        phoneNorm ? `buyer_phone_norm.eq.${phoneNorm}` : null,
-      ]
-        .filter(Boolean)
-        .join(",")
-    )
-    .limit(1);
+  // 1) match per email (più affidabile)
+  if (emailNorm) {
+    const { data, error } = await supabase
+      .from("xceed_tickets")
+      .select("id")
+      .eq("event_id", eventId)
+      .ilike("email", emailNorm)
+      .limit(1);
 
-  if (error) throw new Error(error.message);
-  return Boolean(data && data.length > 0);
+    if (error) throw new Error(error.message);
+    if (data && data.length > 0) return true;
+  }
+
+  // 2) match per phone (fallback) con varianti
+  if (phoneNorm) {
+    const candidates = new Set<string>();
+    candidates.add(phoneNorm);
+    if (phoneNorm.startsWith("+")) candidates.add(phoneNorm.slice(1));
+    if (phoneNorm.startsWith("+39")) candidates.add(phoneNorm.replace(/^\+39/, ""));
+    if (phoneNorm.startsWith("39")) candidates.add(phoneNorm.replace(/^39/, ""));
+
+    const inArr = Array.from(candidates);
+
+    const { data, error } = await supabase
+      .from("xceed_tickets")
+      .select("id")
+      .eq("event_id", eventId)
+      .in("phone", inArr)
+      .limit(1);
+
+    if (error) throw new Error(error.message);
+    if (data && data.length > 0) return true;
+  }
+
+  return false;
 }
 
 async function upsertLegacyPerson(
@@ -248,7 +272,6 @@ async function upsertLegacyPerson(
   const emailNorm = normalizeEmail(args.email || null);
   const phoneNorm = normalizePhone(args.phone || null);
 
-  // prova a trovare per email/phone (se presenti) per evitare duplicati
   if (emailNorm || phoneNorm) {
     const orParts: string[] = [];
     if (emailNorm) orParts.push(`email.ilike.${emailNorm}`);
@@ -280,13 +303,11 @@ async function upsertLegacyPerson(
     .maybeSingle();
 
   if (insErr) throw new Error(insErr.message);
-
   return { id: (ins as any).id as string };
 }
 
 export async function POST(req: Request) {
   try {
-    // 1) API key
     const got = (req.headers.get("x-api-key") || "").trim();
     const expected = (process.env.DOOR_API_KEY || "").trim();
     if (!expected) {
@@ -297,19 +318,17 @@ export async function POST(req: Request) {
     const body = (await req.json()) as DoorcheckBody;
     const supabase = supabaseAdmin();
 
-    // 2) evento
     const eventId = await resolveEventId(supabase, body.event_id || null, body.event_ref || null);
     if (!eventId) return NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 });
 
-    // 3) policy evento
     const policy = await getEventPolicy(supabase, eventId);
 
     const mode = body.mode || "scan";
     const qrRaw = (body.qr || "").trim();
 
-    // ======================================================
-    // MODE: MANUAL (crea legacy person + checkin SRL)
-    // ======================================================
+    // =========================
+    // MANUAL => SRL
+    // =========================
     if (mode === "manual") {
       const fullName = (body.full_name || "").trim();
       const phoneNorm = normalizePhone(body.phone || null);
@@ -332,7 +351,7 @@ export async function POST(req: Request) {
           ok: true,
           allowed: true,
           kind: "SRL",
-          status: "already",
+          status: "Already Checked IN",
           legacy_person_id: legacy.id,
           display_name: fullName,
         });
@@ -368,22 +387,16 @@ export async function POST(req: Request) {
       });
     }
 
-    // ======================================================
-    // MODE: SCAN
-    // ======================================================
+    // =========================
+    // SCAN
+    // =========================
     if (!qrRaw) return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
 
-    // A) tessera socio (barcode Wally o QR LV)
+    // A) tessera socio (ETS)
     const member = await findMemberByBarcodeOrCard(supabase, qrRaw);
     if (member) {
-      // policy: se richiede biglietto, verifica ticket su xceed_tickets via email/phone
       if (policy.require_ticket) {
-        const hasTicket = await memberHasTicketForEvent(
-          supabase,
-          eventId,
-          normalizeEmail(member.email),
-          normalizePhone(member.phone)
-        );
+        const hasTicket = await memberHasTicketForEvent(supabase, eventId, member.email, member.phone);
         if (!hasTicket) {
           return NextResponse.json({
             ok: true,
@@ -403,7 +416,7 @@ export async function POST(req: Request) {
           ok: true,
           allowed: true,
           kind: "ETS",
-          status: "already",
+          status: "Already Checked IN",
           member_id: member.id,
           display_name: member.display_name,
         });
@@ -436,10 +449,10 @@ export async function POST(req: Request) {
       });
     }
 
-    // B) ticket XCEED (xceed_tickets.qr_code)
+    // B) ticket XCEED (xceed_tickets.qr_code)  ✅ FIX: colonne vere
     const { data: ticket, error: tErr } = await supabase
       .from("xceed_tickets")
-      .select("id, legacy_person_id, buyer_name, buyer_email_norm, buyer_phone_norm")
+      .select("id, legacy_person_id, full_name, email, phone")
       .eq("event_id", eventId)
       .eq("qr_code", qrRaw)
       .maybeSingle();
@@ -447,11 +460,11 @@ export async function POST(req: Request) {
     if (tErr) throw new Error(tErr.message);
 
     if (ticket?.id) {
-      const buyerEmail = (ticket as any).buyer_email_norm ? String((ticket as any).buyer_email_norm) : null;
-      const buyerPhone = (ticket as any).buyer_phone_norm ? String((ticket as any).buyer_phone_norm) : null;
-      const buyerName = ((ticket as any).buyer_name || "").toString().trim() || "Xceed guest";
+      const buyerName = String((ticket as any).full_name ?? "").trim() || "Xceed guest";
+      const buyerEmail = normalizeEmail((ticket as any).email ?? null);
+      const buyerPhone = normalizePhone((ticket as any).phone ?? null);
 
-      // policy: se richiede membership ETS, deve esistere un member matchato per email/phone del ticket
+      // membership richiesta? allora devo matchare un socio ETS con email/phone del ticket
       if (policy.require_membership) {
         const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
         if (m && (m as any).ambiguous) {
@@ -474,7 +487,7 @@ export async function POST(req: Request) {
         }
       }
 
-      // assicura legacy_person_id (serve per log e per mostrare nome)
+      // assicura legacy_person_id (per log/check-in XCEED)
       let legacyPersonId = (ticket as any).legacy_person_id as string | null;
       if (!legacyPersonId) {
         const legacy = await upsertLegacyPerson(supabase, {
@@ -499,7 +512,7 @@ export async function POST(req: Request) {
           ok: true,
           allowed: true,
           kind: "XCEED",
-          status: "already",
+          status: "Already Checked IN",
           legacy_person_id: legacyPersonId,
           display_name: buyerName,
         });
@@ -521,6 +534,9 @@ export async function POST(req: Request) {
 
       if (insErr) throw new Error(insErr.message);
 
+      // audit
+      await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
+
       return NextResponse.json({
         ok: true,
         allowed: true,
@@ -532,7 +548,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // C) legacy_people barcode (numerico)
+    // C) legacy_people barcode numerico => SRL storico
     if (isDigitsOnly(qrRaw)) {
       const { data: lp, error: lpErr } = await supabase
         .from("legacy_people")
@@ -549,7 +565,7 @@ export async function POST(req: Request) {
             ok: true,
             allowed: true,
             kind: "SRL",
-            status: "already",
+            status: "Already Checked IN",
             legacy_person_id: (lp as any).id,
             display_name: (lp as any).full_name ?? null,
           });
