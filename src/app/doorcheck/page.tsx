@@ -23,10 +23,13 @@ type DoorcheckOkResponse = {
   };
 
   // unified additions (RPC/manual flow)
-  kind?: "ETS" | "SRL";
+  kind?: "ETS" | "SRL" | "XCEED" | "UNKNOWN";
   status?: string;
   checkin_id?: string | null;
   legacy_person_id?: string | null;
+
+  // ✅ extra (senza cambiare UI)
+  display_name?: string | null;
 };
 
 type DoorcheckResponse = DoorcheckOkResponse | { ok: false; error: string };
@@ -73,7 +76,7 @@ function truthy(s?: string) {
 
 export default function DoorCheckPage() {
   const [eventId, setEventId] = useState("");
-  const [selectedEventId, setSelectedEventId] = useState(""); // per dropdown
+  const [selectedEventId, setSelectedEventId] = useState("");
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [eventsErr, setEventsErr] = useState<string | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -132,8 +135,7 @@ export default function DoorCheckPage() {
     const video = videoRef.current;
     if (video) {
       try {
-        const tracks =
-          (video.srcObject as MediaStream | null)?.getTracks?.() || [];
+        const tracks = (video.srcObject as MediaStream | null)?.getTracks?.() || [];
         tracks.forEach((t) => t.stop());
       } catch {}
       try {
@@ -146,15 +148,17 @@ export default function DoorCheckPage() {
     setScanStarting(false);
   };
 
-  // blocca scroll quando scanner aperto
-  useEffect(() => {
-    if (!scanOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [scanOpen]);
+ // iOS: overflow hidden blocca anche lo scroll della pagina quando la camera è aperta.
+// Quindi NON blocchiamo lo scroll globale.
+useEffect(() => {
+  if (!scanOpen) return;
+  const prevOverscroll = (document.body.style as any).overscrollBehavior;
+  (document.body.style as any).overscrollBehavior = "contain";
+  return () => {
+    (document.body.style as any).overscrollBehavior = prevOverscroll;
+  };
+}, [scanOpen]);
+
 
   useEffect(() => {
     try {
@@ -190,10 +194,9 @@ export default function DoorCheckPage() {
         const r = await fetch("/api/public/door-events", { cache: "no-store" });
         const j = await r.json();
 
-        // ✅ supporta 2 formati comuni: {events:[...]} oppure [...]
+        // supporta 2 formati comuni: {events:[...]} oppure [...]
         const list = Array.isArray(j) ? j : Array.isArray(j?.events) ? j.events : [];
 
-        // Normalizza: id/name
         const mapped: PublicEvent[] = (list || [])
           .map((x: any) => ({
             id: String(x.id || x.event_id || ""),
@@ -206,7 +209,6 @@ export default function DoorCheckPage() {
 
         if (!cancelled) {
           setEvents(mapped);
-          // se non c’è selezione, pre-seleziona il primo e copia in eventId
           if (!selectedEventId && mapped.length) {
             setSelectedEventId(mapped[0].id);
             setEventId(mapped[0].id);
@@ -292,30 +294,29 @@ export default function DoorCheckPage() {
     setLastDeniedCode(null);
 
     try {
-      	const apiKey = (localStorage.getItem(LS_KEY_API) || "").trim();
+      // ✅ legge SEMPRE da localStorage (evita incoerenze)
+      const k = (localStorage.getItem(LS_KEY_API) || "").trim();
 
-	const r = await fetch("/api/doorcheck", {
-  		method: "POST",
-  		headers: {
-    		"Content-Type": "application/json",
-    		"x-api-key": apiKey, // <-- fondamentale
-  	},
-  	cache: "no-store",
-  	body: JSON.stringify({
-    	event_id: eid,
-    	qr: code,
-    	device_id: did || undefined,
-  	}),
-  });
-
+      const r = await fetch("/api/doorcheck", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": k,
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          event_id: eid,
+          qr: code,
+          device_id: did || undefined,
+        }),
+      });
 
       const data = (await r.json()) as DoorcheckResponse;
       setRes(data);
 
-      // se negato per invalid_qr/barcode, abilita manual
       if (data && "ok" in data && data.ok && !data.allowed) {
-        const r = (data.reason || "").trim();
-        if (r === "invalid_qr" || r === "invalid_barcode") {
+        const rr = (data.reason || "").trim();
+        if (rr === "invalid_qr" || rr === "invalid_barcode") {
           setLastDeniedCode(code);
         }
       }
@@ -367,7 +368,6 @@ export default function DoorCheckPage() {
           full_name: full_name || undefined,
           phone: phone || undefined,
           email: email || undefined,
-          // non serve qr, ma se presente lo teniamo come scanned_code
           qr: scanned,
         }),
       });
@@ -375,7 +375,6 @@ export default function DoorCheckPage() {
       const data = (await r.json()) as DoorcheckResponse;
       setRes(data);
 
-      // chiudi e reset form
       setManualOpen(false);
       setManualLoading(false);
       setManualName("");
@@ -430,29 +429,24 @@ export default function DoorCheckPage() {
         },
       };
 
-      controlsRef.current = await readerRef.current.decodeFromConstraints(
-        constraints,
-        video,
-        (result, err) => {
-          if (result) {
-            const text = result.getText()?.trim();
-            if (!text) return;
+      controlsRef.current = await readerRef.current.decodeFromConstraints(constraints, video, (result, err) => {
+        if (result) {
+          const text = result.getText()?.trim();
+          if (!text) return;
 
-            setQr(text);
+          setQr(text);
 
-            // auto submit solo se eventId presente
-            if (autoSubmitOnScan && eventId.trim()) {
-              stopScanner();
-              setTimeout(() => doCheck(text), 80);
-            }
-            return;
+          if (autoSubmitOnScan && eventId.trim()) {
+            stopScanner();
+            setTimeout(() => doCheck(text), 80);
           }
-
-          if (err && !isProbablyNotFoundErr(err)) {
-            setScanErr(String((err as any)?.message || err));
-          }
+          return;
         }
-      );
+
+        if (err && !isProbablyNotFoundErr(err)) {
+          setScanErr(String((err as any)?.message || err));
+        }
+      });
 
       setScanStarting(false);
     } catch (e: any) {
@@ -469,21 +463,15 @@ export default function DoorCheckPage() {
         <header className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">DoorCheck</h1>
-            <p className="mt-1 text-white/60 text-sm">
-              Controllo ingressi – QR / Barcode (MVP)
-            </p>
+            <p className="mt-1 text-white/60 text-sm">Controllo ingressi – QR / Barcode (MVP)</p>
           </div>
-          <span className="text-xs text-white/40 border border-white/10 rounded-full px-3 py-1">
-            /doorcheck
-          </span>
+          <span className="text-xs text-white/40 border border-white/10 rounded-full px-3 py-1">/doorcheck</span>
         </header>
 
         {!pinOk && (
           <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <h2 className="text-lg font-semibold">Accesso staff</h2>
-            <p className="mt-1 text-sm text-white/60">
-              Inserisci il PIN per abilitare il controllo ingressi.
-            </p>
+            <p className="mt-1 text-sm text-white/60">Inserisci il PIN per abilitare il controllo ingressi.</p>
 
             <div className="mt-4 flex items-center gap-3">
               <input
@@ -497,10 +485,7 @@ export default function DoorCheckPage() {
                 }}
                 autoFocus
               />
-              <button
-                onClick={checkPin}
-                className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
-              >
+              <button onClick={checkPin} className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold">
                 Sblocca
               </button>
             </div>
@@ -510,7 +495,7 @@ export default function DoorCheckPage() {
         {pinOk && (
           <>
             <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-              {/* Door API Key (non in codice) */}
+              {/* Door API Key */}
               <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="text-sm font-semibold">Door API Key</div>
                 <div className="mt-1 text-xs text-white/60">
@@ -528,11 +513,7 @@ export default function DoorCheckPage() {
                     className="flex-1 min-w-[240px] rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30 font-mono"
                     type="password"
                   />
-                  <button
-                    type="button"
-                    onClick={saveApiKey}
-                    className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
-                  >
+                  <button type="button" onClick={saveApiKey} className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold">
                     Salva
                   </button>
                   <button
@@ -545,17 +526,13 @@ export default function DoorCheckPage() {
                 </div>
 
                 {!apiKeyOk ? (
-                  <div className="mt-2 text-[11px] text-red-300">
-                    Manca Door API Key: senza non puoi fare check-in.
-                  </div>
+                  <div className="mt-2 text-[11px] text-red-300">Manca Door API Key: senza non puoi fare check-in.</div>
                 ) : (
-                  <div className="mt-2 text-[11px] text-emerald-300">
-                    OK: Door API Key presente su questo dispositivo.
-                  </div>
+                  <div className="mt-2 text-[11px] text-emerald-300">OK: Door API Key presente su questo dispositivo.</div>
                 )}
               </div>
 
-              {/* ✅ Dropdown eventi */}
+              {/* Dropdown eventi */}
               <label className="block mt-4">
                 <div className="text-xs text-white/60 mb-1">Evento</div>
                 <select
@@ -584,12 +561,9 @@ export default function DoorCheckPage() {
                     ))
                   )}
                 </select>
+
                 <div className="mt-2 text-[11px] text-white/40">
-                  {eventsErr ? (
-                    <span className="text-red-300">{eventsErr}</span>
-                  ) : (
-                    <>Selezionando un evento, l’UUID viene usato per il check-in.</>
-                  )}
+                  {eventsErr ? <span className="text-red-300">{eventsErr}</span> : <>Selezionando un evento, l’UUID viene usato per il check-in.</>}
                 </div>
               </label>
 
@@ -636,11 +610,7 @@ export default function DoorCheckPage() {
                 ) : null}
 
                 <label className="flex items-center gap-2 text-xs text-white/60 select-none">
-                  <input
-                    type="checkbox"
-                    checked={autoSubmitOnScan}
-                    onChange={(e) => setAutoSubmitOnScan(e.target.checked)}
-                  />
+                  <input type="checkbox" checked={autoSubmitOnScan} onChange={(e) => setAutoSubmitOnScan(e.target.checked)} />
                   auto-check dopo scan
                 </label>
 
@@ -660,9 +630,7 @@ export default function DoorCheckPage() {
                       style={{ height: "38vh", objectFit: "cover" }}
                     />
                   </div>
-                  <div className="mt-2 text-[11px] text-white/40">
-                    iPhone/iPad: serve HTTPS (Vercel). In locale può essere instabile.
-                  </div>
+                  <div className="mt-2 text-[11px] text-white/40">iPhone/iPad: serve HTTPS (Vercel). In locale può essere instabile.</div>
                 </div>
               ) : null}
 
@@ -703,16 +671,12 @@ export default function DoorCheckPage() {
                   Reset scan
                 </button>
 
-                <button
-                  type="button"
-                  onClick={resetPin}
-                  className="ml-auto text-xs text-white/40 underline"
-                >
+                <button type="button" onClick={resetPin} className="ml-auto text-xs text-white/40 underline">
                   Reset PIN
                 </button>
               </div>
 
-              {/* CTA manual SRL solo quando senso */}
+              {/* CTA manual SRL */}
               {canOfferManual && (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="text-sm font-semibold">Codice non riconosciuto</div>
@@ -732,9 +696,7 @@ export default function DoorCheckPage() {
                     >
                       ➕ Inserisci ospite manuale
                     </button>
-                    <span className="text-[11px] text-white/40 font-mono">
-                      scanned_code: {lastDeniedCode || "(n/a)"}
-                    </span>
+                    <span className="text-[11px] text-white/40 font-mono">scanned_code: {lastDeniedCode || "(n/a)"}</span>
                   </div>
                 </div>
               )}
@@ -743,9 +705,7 @@ export default function DoorCheckPage() {
               {manualOpen && (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
                   <div className="text-sm font-semibold">Ospite (SRL) – inserimento rapido</div>
-                  <div className="mt-1 text-xs text-white/60">
-                    Minimo: Nome oppure Telefono. (Consigliato: entrambi)
-                  </div>
+                  <div className="mt-1 text-xs text-white/60">Minimo: Nome oppure Telefono. (Consigliato: entrambi)</div>
 
                   <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
                     <input
@@ -790,58 +750,46 @@ export default function DoorCheckPage() {
                 </div>
               )}
             </section>
-           
-<section className="mt-4">
-  {!res ? (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
-      Nessun controllo ancora.
-    </div>
-  ) : "ok" in res && res.ok ? (
-    <div
-      className={`rounded-2xl border p-5 ${
-        allowed ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"
-      }`}
-    >
-      <div className="text-lg font-semibold">{allowed ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
-<div className="mt-2 text-sm font-mono">
-  {res.kind ? `kind: ${res.kind}` : null}
-  {res.kind ? " · " : ""}
-  {res.status ? `status: ${res.status}` : `reason: ${denyReason || "n/a"}`}
-  {res.method ? ` · method: ${res.method}` : ""}
-</div>
 
-{(res as any).display_name ? (
-  <div className="mt-1 text-white/80">name: {(res as any).display_name}</div>
-) : null}
+            <section className="mt-4">
+              {!res ? (
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">Nessun controllo ancora.</div>
+              ) : "ok" in res && res.ok ? (
+                <div className={`rounded-2xl border p-5 ${allowed ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"}`}>
+                  <div className="text-lg font-semibold">{allowed ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
 
-      {res.checkin_id ? (
-        <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {res.checkin_id}</div>
-      ) : null}
+                  <div className="mt-2 text-sm font-mono">
+                    {res.kind ? `kind: ${res.kind}` : null}
+                    {res.kind ? " · " : ""}
+                    {res.status ? `status: ${res.status}` : null}
+                    {(res as any).reason ? ` · reason: ${(res as any).reason}` : denyReason ? ` · reason: ${denyReason}` : ""}
+                  </div>
 
-      {res.legacy_person_id ? (
-        <div className="mt-2 text-[11px] text-white/40 font-mono">
-          legacy_person_id: {res.legacy_person_id}
-        </div>
-      ) : null}
+                  {(res as any).display_name ? (
+                    <div className="mt-1 text-white/80">name: {(res as any).display_name}</div>
+                  ) : null}
 
-      {res.member ? (
-        <div className="mt-3 text-sm">
-          {res.member.first_name} {res.member.last_name} {res.member.legacy ? "(legacy)" : null}
-        </div>
-      ) : null}
-    </div>
-  ) : (
-    <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
-      <div className="text-lg font-semibold">Errore</div>
-      <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
-    </div>
-  )}
-</section>
+                  {res.checkin_id ? (
+                    <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {res.checkin_id}</div>
+                  ) : null}
 
+                  {res.legacy_person_id ? (
+                    <div className="mt-2 text-[11px] text-white/40 font-mono">legacy_person_id: {res.legacy_person_id}</div>
+                  ) : null}
 
-
-
-
+                  {res.member ? (
+                    <div className="mt-3 text-sm">
+                      {res.member.first_name} {res.member.last_name} {res.member.legacy ? "(legacy)" : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
+                  <div className="text-lg font-semibold">Errore</div>
+                  <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
+                </div>
+              )}
+            </section>
           </>
         )}
       </div>
