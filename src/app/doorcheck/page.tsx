@@ -754,8 +754,7 @@ useEffect(() => {
                 </div>
               )}
             </section>
-
-     <section className="mt-4">
+<section className="mt-4">
   {!res ? (
     <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
       Nessun controllo ancora.
@@ -763,33 +762,35 @@ useEffect(() => {
   ) : "ok" in res && res.ok ? (
     (() => {
       const resAny = res as any;
-      const allowed = !!resAny.allowed;
+      const allowedNow = !!resAny.allowed;
 
-      const isDenied = !allowed;
-      const denyReasonEff = (resAny?.reason || denyReason || "").toString();
+      const isDenied = !allowedNow;
+      const denyReasonEff = String(resAny?.reason || denyReason || "").trim();
 
-   
-const canOfferBuyTicket =
-  isDenied && denyReasonEff === "missing_ticket" && !!(currentEvent as any)?.ticketUrl;
+      const ticketUrl = String((currentEvent as any)?.ticketUrl || "").trim();
+      const membershipUrl = String((currentEvent as any)?.membershipUrl || "").trim();
 
-
+      const canOfferBuyTicket = isDenied && denyReasonEff === "missing_ticket" && !!ticketUrl;
 
       const canOfferSrlFromTicket =
+        isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
+
+      const canOfferMembershipCta =
         isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
 
       return (
         <div
           className={`rounded-2xl border p-5 ${
-            allowed ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"
+            allowedNow ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"
           }`}
         >
-          <div className="text-lg font-semibold">{allowed ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+          <div className="text-lg font-semibold">{allowedNow ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
 
           <div className="mt-2 text-sm font-mono">
             {resAny.kind ? `kind: ${resAny.kind}` : null}
             {resAny.kind ? " · " : ""}
             {resAny.status ? `status: ${resAny.status}` : null}
-            {resAny.reason ? ` · reason: ${resAny.reason}` : denyReason ? ` · reason: ${denyReason}` : ""}
+            {(resAny.reason || denyReason) ? ` · reason: ${String(resAny.reason || denyReason).trim()}` : ""}
           </div>
 
           {resAny.display_name ? <div className="mt-1 text-white/80">name: {resAny.display_name}</div> : null}
@@ -801,21 +802,29 @@ const canOfferBuyTicket =
                 <button
                   type="button"
                   onClick={() => {
-                    
-
-
-const url = String((currentEvent as any)?.ticketUrl || "").trim();
-
-
-
-
-
-                    if (!url) return;
-                    window.open(url, "_blank", "noopener,noreferrer");
+                    if (!ticketUrl) return;
+                    window.open(ticketUrl, "_blank", "noopener,noreferrer");
                   }}
                   className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
                 >
                   🎟️ Apri acquisto biglietto
+                </button>
+              ) : null}
+
+              {canOfferMembershipCta ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    // per ora semplice: se hai un URL lo apri, altrimenti messaggio staff
+                    if (membershipUrl) {
+                      window.open(membershipUrl, "_blank", "noopener,noreferrer");
+                      return;
+                    }
+                    alert("Procedura: iscrizione/rinnovo ETS (verifica con staff).");
+                  }}
+                  className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                >
+                  🪪 Diventa socio ETS
                 </button>
               ) : null}
 
