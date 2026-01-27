@@ -459,95 +459,146 @@ export async function POST(req: Request) {
 
     if (tErr) throw new Error(tErr.message);
 
-    if (ticket?.id) {
-      const buyerName = String((ticket as any).full_name ?? "").trim() || "Xceed guest";
-      const buyerEmail = normalizeEmail((ticket as any).email ?? null);
-      const buyerPhone = normalizePhone((ticket as any).phone ?? null);
+if (ticket?.id) {
+  const buyerName = String((ticket as any).full_name ?? "").trim() || "Xceed guest";
+  const buyerEmail = normalizeEmail((ticket as any).email ?? null);
+  const buyerPhone = normalizePhone((ticket as any).phone ?? null);
 
-      // membership richiesta? allora devo matchare un socio ETS con email/phone del ticket
-      if (policy.require_membership) {
-        const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
-        if (m && (m as any).ambiguous) {
-          return NextResponse.json({
-            ok: true,
-            allowed: false,
-            kind: "XCEED",
-            status: "denied",
-            reason: "ambiguous_member_match",
-          });
-        }
-        if (!m) {
-          return NextResponse.json({
-            ok: true,
-            allowed: false,
-            kind: "XCEED",
-            status: "denied",
-            reason: "not_a_member",
-          });
-        }
-      }
+  // ✅ CASE 1: evento richiede membership -> check-in ETS unico (member_id)
+  if (policy.require_membership) {
+    const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
 
-      // assicura legacy_person_id (per log/check-in XCEED)
-      let legacyPersonId = (ticket as any).legacy_person_id as string | null;
-      if (!legacyPersonId) {
-        const legacy = await upsertLegacyPerson(supabase, {
-          source: "guest",
-          full_name: buyerName,
-          email: buyerEmail,
-          phone: buyerPhone,
-        });
-        legacyPersonId = legacy.id;
-
-        const { error: updErr } = await supabase
-          .from("xceed_tickets")
-          .update({ legacy_person_id: legacyPersonId })
-          .eq("id", (ticket as any).id);
-
-        if (updErr) throw new Error(updErr.message);
-      }
-
-      const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, legacyPersonId);
-      if (alreadyId) {
-        return NextResponse.json({
-          ok: true,
-          allowed: true,
-          kind: "XCEED",
-          status: "Already Checked IN",
-          legacy_person_id: legacyPersonId,
-          display_name: buyerName,
-        });
-      }
-
-      const { data: ins, error: insErr } = await supabase
-        .from("checkins")
-        .insert({
-          event_id: eventId,
-          legacy_person_id: legacyPersonId,
-          result: "allowed",
-          reason: policy.require_membership ? "xceed_ok_member_required" : "xceed_ok",
-          method: "xceed_qr",
-          kind: "XCEED",
-          scanned_code: qrRaw,
-        })
-        .select("id")
-        .maybeSingle();
-
-      if (insErr) throw new Error(insErr.message);
-
-      // audit
-      await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
-
+    if (m && (m as any).ambiguous) {
       return NextResponse.json({
         ok: true,
-        allowed: true,
+        allowed: false,
         kind: "XCEED",
-        status: "checked_in",
-        checkin_id: (ins as any)?.id || null,
-        legacy_person_id: legacyPersonId,
+        status: "denied",
+        reason: "ambiguous_member_match",
         display_name: buyerName,
       });
     }
 
+    if (!m) {
+      return NextResponse.json({
+        ok: true,
+        allowed: false,
+        kind: "XCEED",
+        status: "denied",
+        reason: "not_a_member",
+        display_name: buyerName,
+      });
+    }
+
+    // già check-in ETS?
+    const alreadyEtsId = await memberAlreadyCheckedIn(supabase, eventId, (m as any).id);
+    if (alreadyEtsId) {
+      // audit: collega ticket al checkin ETS
+      await supabase.from("xceed_tickets").update({ checkin_id: alreadyEtsId }).eq("id", (ticket as any).id);
+
+      return NextResponse.json({
+        ok: true,
+        allowed: true,
+        kind: "ETS",
+        status: "already",
+        member_id: (m as any).id,
+        checkin_id: alreadyEtsId,
+        display_name: (m as any).display_name || buyerName,
+      });
+    }
+
+    // crea check-in ETS (non XCEED)
+    const { data: ins, error: insErr } = await supabase
+      .from("checkins")
+      .insert({
+        event_id: eventId,
+        member_id: (m as any).id,
+        result: "allowed",
+        reason: "ets_via_xceed",
+        method: "xceed_qr",
+        kind: "ETS",
+        scanned_code: qrRaw,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (insErr) throw new Error(insErr.message);
+
+    await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
+
+    return NextResponse.json({
+      ok: true,
+      allowed: true,
+      kind: "ETS",
+      status: "checked_in",
+      member_id: (m as any).id,
+      checkin_id: (ins as any)?.id || null,
+      display_name: (m as any).display_name || buyerName,
+    });
+  }
+
+  // ✅ CASE 2: evento NON richiede membership -> comportamento XCEED legacy (come prima)
+
+  // assicura legacy_person_id
+  let legacyPersonId = (ticket as any).legacy_person_id as string | null;
+  if (!legacyPersonId) {
+    const legacy = await upsertLegacyPerson(supabase, {
+      source: "guest",
+      full_name: buyerName,
+      email: buyerEmail,
+      phone: buyerPhone,
+    });
+    legacyPersonId = legacy.id;
+
+    const { error: updErr } = await supabase
+      .from("xceed_tickets")
+      .update({ legacy_person_id: legacyPersonId })
+      .eq("id", (ticket as any).id);
+
+    if (updErr) throw new Error(updErr.message);
+  }
+
+  const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, legacyPersonId);
+  if (alreadyId) {
+    return NextResponse.json({
+      ok: true,
+      allowed: true,
+      kind: "XCEED",
+      status: "already",
+      legacy_person_id: legacyPersonId,
+      display_name: buyerName,
+      checkin_id: alreadyId,
+    });
+  }
+
+  const { data: ins, error: insErr } = await supabase
+    .from("checkins")
+    .insert({
+      event_id: eventId,
+      legacy_person_id: legacyPersonId,
+      result: "allowed",
+      reason: "xceed_ok",
+      method: "xceed_qr",
+      kind: "XCEED",
+      scanned_code: qrRaw,
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (insErr) throw new Error(insErr.message);
+
+  await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
+
+  return NextResponse.json({
+    ok: true,
+    allowed: true,
+    kind: "XCEED",
+    status: "checked_in",
+    checkin_id: (ins as any)?.id || null,
+    legacy_person_id: legacyPersonId,
+    display_name: buyerName,
+  });
+}
     // C) legacy_people barcode numerico => SRL storico
     if (isDigitsOnly(qrRaw)) {
       const { data: lp, error: lpErr } = await supabase
