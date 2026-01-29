@@ -263,13 +263,22 @@ async function saveApiKey() {
     return;
   }
 
-  const r = await fetch("/api/doorcheck/ping", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": k,
-    },
-  });
+  // ✅ legge SEMPRE da localStorage (evita incoerenze)
+      const k = (localStorage.getItem(LS_KEY_API) || "").trim();
+
+      const r = await fetch("/api/doorcheck", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": k,
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          event_id: eid,
+          qr: code,
+          device_id: did || undefined,
+        }),
+      });
 
   if (!r.ok) {
     alert("❌ API Key non valida");
@@ -311,7 +320,8 @@ async function saveApiKey() {
     setLastDeniedCode(null);
 
     try {
-      // ✅ legge SEMPRE da localStorage (evita incoerenze)
+      
+	// ✅ legge SEMPRE da localStorage (evita incoerenze)
       const k = (localStorage.getItem(LS_KEY_API) || "").trim();
 
       const r = await fetch("/api/doorcheck", {
