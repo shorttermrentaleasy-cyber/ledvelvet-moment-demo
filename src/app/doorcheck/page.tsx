@@ -263,32 +263,36 @@ async function saveApiKey() {
     return;
   }
 
-  // ✅ legge SEMPRE da localStorage (evita incoerenze)
-      const k = (localStorage.getItem(LS_KEY_API) || "").trim();
+  try {
+    // salva subito
+    localStorage.setItem(LS_KEY_API, k);
 
-      const r = await fetch("/api/doorcheck", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": k,
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-          event_id: eid,
-          qr: code,
-          device_id: did || undefined,
-        }),
-      });
+    // valida via ping (non richiede event_id/qr)
+    const r = await fetch("/api/doorcheck/ping", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": k,
+      },
+      cache: "no-store",
+    });
 
-  if (!r.ok) {
-    alert("❌ API Key non valida");
+    const j = await r.json().catch(() => null);
+
+    if (!r.ok || !j?.ok) {
+      alert("❌ API Key non valida");
+      localStorage.removeItem(LS_KEY_API);
+      setApiKeyOk(false);
+      return;
+    }
+
+    setApiKey(k);
+    setApiKeyOk(true);
+    alert("✅ Door API Key valida e salvata");
+  } catch (e: any) {
+    alert(`❌ Errore rete: ${e?.message || "impossibile validare la chiave"}`);
     setApiKeyOk(false);
-    return;
   }
-
-  localStorage.setItem(LS_KEY_API, k);
-  setApiKeyOk(true);
-  alert("✅ API Key valida e salvata");
 }
 
   function clearApiKey() {
@@ -300,120 +304,131 @@ async function saveApiKey() {
     alert("Door API Key rimossa");
   }
 
-  async function doCheck(forcedQr?: string) {
-    const eid = eventId.trim();
-    const did = deviceId.trim();
-    const code = (forcedQr ?? qr).trim();
+async function doCheck(forcedQr?: string) {
+  const eid = eventId.trim();
+  const did = deviceId.trim();
+  const code = (forcedQr ?? qr).trim();
 
-    if (!eid || !code) {
-      setRes({ ok: false, error: "Seleziona un evento e scansiona/incolla il codice." });
-      return;
-    }
-    if (!apiKeyOk) {
+  if (!eid || !code) {
+    setRes({ ok: false, error: "Seleziona un evento e scansiona/incolla il codice." });
+    return;
+  }
+  if (!apiKeyOk) {
+    setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
+    return;
+  }
+
+  setLoading(true);
+  setRes(null);
+  setManualOpen(false);
+  setLastDeniedCode(null);
+
+  try {
+    // ✅ SEMPRE da localStorage (non dallo state)
+    const k = (localStorage.getItem(LS_KEY_API) || "").trim();
+    if (!k) {
       setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
       return;
     }
 
-    setLoading(true);
-    setRes(null);
-    setManualOpen(false);
-    setLastDeniedCode(null);
+    const r = await fetch("/api/doorcheck", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": k,
+      },
+      cache: "no-store",
+      body: JSON.stringify({
+        event_id: eid,
+        qr: code,
+        device_id: did || undefined,
+      }),
+    });
 
-    try {
-      
-	// ✅ legge SEMPRE da localStorage (evita incoerenze)
-      const k = (localStorage.getItem(LS_KEY_API) || "").trim();
+    const data = (await r.json()) as DoorcheckResponse;
+    setRes(data);
 
-      const r = await fetch("/api/doorcheck", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": k,
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-          event_id: eid,
-          qr: code,
-          device_id: did || undefined,
-        }),
-      });
-
-      const data = (await r.json()) as DoorcheckResponse;
-      setRes(data);
-
-      if (data && "ok" in data && data.ok && !data.allowed) {
-        const rr = (data.reason || "").trim();
-        if (rr === "invalid_qr" || rr === "invalid_barcode") {
-          setLastDeniedCode(code);
-        }
+    if (data && "ok" in data && data.ok && !data.allowed) {
+      const rr = (data.reason || "").trim();
+      if (rr === "invalid_qr" || rr === "invalid_barcode") {
+        setLastDeniedCode(code);
       }
-
-      if (data && "ok" in data && data.ok && data.allowed) setQr("");
-    } catch (e: any) {
-      setRes({ ok: false, error: e?.message || "Errore rete" });
-    } finally {
-      setLoading(false);
     }
+
+    if (data && "ok" in data && data.ok && data.allowed) setQr("");
+  } catch (e: any) {
+    setRes({ ok: false, error: e?.message || "Errore rete" });
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function doManualCheck() {
+  const eid = eventId.trim();
+  if (!eid) {
+    setRes({ ok: false, error: "Seleziona un evento prima." });
+    return;
+  }
+  if (!apiKeyOk) {
+    setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
+    return;
   }
 
-  async function doManualCheck() {
-    const eid = eventId.trim();
-    if (!eid) {
-      setRes({ ok: false, error: "Seleziona un evento prima." });
-      return;
-    }
-    if (!apiKeyOk) {
+  const full_name = truthy(manualName);
+  const phone = truthy(manualPhone);
+  const email = truthy(manualEmail);
+
+  if (!full_name && !phone) {
+    setRes({ ok: false, error: "Inserisci almeno Nome oppure Telefono." });
+    return;
+  }
+
+  setManualLoading(true);
+  setRes(null);
+
+  try {
+    const scanned = truthy(lastDeniedCode || "") || (phone ? `MANUAL:${phone}` : "MANUAL");
+
+    // ✅ SEMPRE da localStorage (non dallo state)
+    const k = (localStorage.getItem(LS_KEY_API) || "").trim();
+    if (!k) {
+      setManualLoading(false);
       setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
       return;
     }
 
-    const full_name = truthy(manualName);
-    const phone = truthy(manualPhone);
-    const email = truthy(manualEmail);
+    const r = await fetch("/api/doorcheck", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": k,
+      },
+      cache: "no-store",
+      body: JSON.stringify({
+        event_id: eid,
+        mode: "manual",
+        full_name: full_name || undefined,
+        phone: phone || undefined,
+        email: email || undefined,
+        qr: scanned,
+      }),
+    });
 
-    if (!full_name && !phone) {
-      setRes({ ok: false, error: "Inserisci almeno Nome oppure Telefono." });
-      return;
-    }
+    const data = (await r.json()) as DoorcheckResponse;
+    setRes(data);
 
-    setManualLoading(true);
-    setRes(null);
-
-    try {
-      const scanned = truthy(lastDeniedCode || "") || (phone ? `MANUAL:${phone}` : "MANUAL");
-
-      const r = await fetch("/api/doorcheck", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey.trim(),
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-          event_id: eid,
-          mode: "manual",
-          full_name: full_name || undefined,
-          phone: phone || undefined,
-          email: email || undefined,
-          qr: scanned,
-        }),
-      });
-
-      const data = (await r.json()) as DoorcheckResponse;
-      setRes(data);
-
-      setManualOpen(false);
-      setManualLoading(false);
-      setManualName("");
-      setManualPhone("");
-      setManualEmail("");
-      setLastDeniedCode(null);
-    } catch (e: any) {
-      setManualLoading(false);
-      setRes({ ok: false, error: e?.message || "Errore rete" });
-    }
+    setManualOpen(false);
+    setManualName("");
+    setManualPhone("");
+    setManualEmail("");
+    setLastDeniedCode(null);
+  } catch (e: any) {
+    setRes({ ok: false, error: e?.message || "Errore rete" });
+  } finally {
+    setManualLoading(false);
   }
-
+}
+ 
   async function startScanner() {
     if (scanStarting) return;
 
