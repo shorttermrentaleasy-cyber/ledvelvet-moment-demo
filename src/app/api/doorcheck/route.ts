@@ -43,7 +43,6 @@ function normalizePhone(phone: string | null | undefined) {
   if (!p) return null;
   p = p.replace(/[^\d+]/g, "");
   if (!p) return null;
-
   // normalizza "39xxxxxxxx" => "+39xxxxxxxx"
   if (/^39\d{8,}$/.test(p)) p = `+${p}`;
   return p.length >= 6 ? p : null;
@@ -54,6 +53,30 @@ function buildFullName(first: string | null | undefined, last: string | null | u
   const ln = (last || "").trim();
   const joined = `${fn} ${ln}`.trim();
   return joined || null;
+}
+
+/**
+ * API KEY: prima prova da tabella app_config (gestibile da admin),
+ * fallback su env DOOR_API_KEY (compatibilità).
+ *
+ * Struttura attesa:
+ *   public.app_config(key text primary key, value text)
+ *   key = 'door_api_key'
+ */
+async function getDoorApiKeyExpected(supabase: ReturnType<typeof supabaseAdmin>) {
+  // fallback env
+  const envKey = (process.env.DOOR_API_KEY || "").trim();
+
+  try {
+    const { data, error } = await supabase.from("app_config").select("value").eq("key", "door_api_key").maybeSingle();
+    if (error) throw error;
+    const dbKey = String((data as any)?.value || "").trim();
+    if (dbKey) return dbKey;
+  } catch {
+    // se tabella/record non esiste, non blocchiamo: userà envKey
+  }
+
+  return envKey;
 }
 
 async function resolveEventId(
@@ -148,7 +171,13 @@ async function memberAlreadyCheckedIn(
   eventId: string,
   memberId: string
 ): Promise<string | null> {
-  const { data, error } = await supabase.from("checkins").select("id").eq("event_id", eventId).eq("member_id", memberId).limit(1);
+  const { data, error } = await supabase
+    .from("checkins")
+    .select("id")
+    .eq("event_id", eventId)
+    .eq("member_id", memberId)
+    .limit(1);
+
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) return null;
   return (data[0] as any).id as string;
@@ -176,7 +205,6 @@ async function resolveMemberByEmailOrPhone(
   emailNorm: string | null,
   phoneNorm: string | null
 ): Promise<{ id: string; display_name: string | null } | { ambiguous: true } | null> {
-  // email primario
   if (emailNorm) {
     const { data, error } = await supabase
       .from("members")
@@ -192,7 +220,6 @@ async function resolveMemberByEmailOrPhone(
     if (data && data.length > 1) return { ambiguous: true };
   }
 
-  // telefono fallback: prova varianti
   if (phoneNorm) {
     const candidates = new Set<string>();
     candidates.add(phoneNorm);
@@ -228,7 +255,7 @@ async function memberHasTicketForEvent(
   const emailNorm = normalizeEmail(memberEmail);
   const phoneNorm = normalizePhone(memberPhone);
 
-  // 1) match per email (più affidabile)
+  // 1) match email
   if (emailNorm) {
     const { data, error } = await supabase
       .from("xceed_tickets")
@@ -241,7 +268,7 @@ async function memberHasTicketForEvent(
     if (data && data.length > 0) return true;
   }
 
-  // 2) match per phone (fallback) con varianti
+  // 2) match phone con varianti
   if (phoneNorm) {
     const candidates = new Set<string>();
     candidates.add(phoneNorm);
@@ -284,7 +311,6 @@ async function upsertLegacyPerson(
       .limit(2);
 
     if (exErr) throw new Error(exErr.message);
-
     if (existing && existing.length === 1) {
       const id = (existing[0] as any).id as string;
       return { id };
@@ -306,25 +332,63 @@ async function upsertLegacyPerson(
   return { id: (ins as any).id as string };
 }
 
+async function isDoorApiKeyValid(supabase: ReturnType<typeof supabaseAdmin>, apiKey: string) {
+  const k = (apiKey || "").trim();
+  if (!k) return false;
+
+  // Adatta i nomi colonna se diversi:
+  // ipotesi: door_api_keys(api_key text, active boolean)
+  const { data, error } = await supabase
+    .from("door_api_keys")
+    .select("id")
+    .eq("active", true)
+    .eq("api_key", k)
+    .limit(1);
+
+  if (error) throw new Error(error.message);
+  return !!(data && data.length > 0);
+}
+
+
 export async function POST(req: Request) {
   try {
-    const got = (req.headers.get("x-api-key") || "").trim();
-    const expected = (process.env.DOOR_API_KEY || "").trim();
-    if (!expected) {
-      return NextResponse.json({ ok: false, error: "Server misconfigured: DOOR_API_KEY missing" }, { status: 500 });
-    }
-    if (!got || got !== expected) return unauthorized("Invalid API key");
-
-    const body = (await req.json()) as DoorcheckBody;
     const supabase = supabaseAdmin();
 
-    const eventId = await resolveEventId(supabase, body.event_id || null, body.event_ref || null);
-    if (!eventId) return NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 });
+   // ✅ API KEY (db -> fallback env)
+const got = (req.headers.get("x-api-key") || "").trim();
+if (!got) return unauthorized("Missing API key");
 
-    const policy = await getEventPolicy(supabase, eventId);
+// NB: getDoorApiKeyExpected deve restituire una stringa (o "" se non trovata)
+const expected = String(await getDoorApiKeyExpected(supabase)).trim();
 
-    const mode = body.mode || "scan";
-    const qrRaw = (body.qr || "").trim();
+if (!expected) {
+  return NextResponse.json(
+    { ok: false, error: "Server misconfigured: door api key missing" },
+    { status: 500 }
+  );
+}
+
+if (got !== expected) return unauthorized("Invalid API key");
+
+// ✅ body (una sola volta)
+const body = (await req.json()) as DoorcheckBody;
+
+// ✅ resolve event
+const eventId = await resolveEventId(supabase, body.event_id || null, body.event_ref || null);
+if (!eventId) {
+  return NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 });
+}
+
+// ✅ policy
+const policy = await getEventPolicy(supabase, eventId);
+
+// ✅ mode + qr
+const mode = (body.mode || "scan").trim() as "scan" | "manual";
+const qrRaw = (body.qr || "").trim();
+
+if (mode === "scan" && !qrRaw) {
+  return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
+}
 
     // =========================
     // MANUAL => SRL
@@ -334,13 +398,14 @@ export async function POST(req: Request) {
       const phoneNorm = normalizePhone(body.phone || null);
       const emailNorm = normalizeEmail(body.email || null);
 
-      if (!fullName || !phoneNorm) {
+      // coerente con UI: minimo nome O telefono
+      if (!fullName && !phoneNorm) {
         return NextResponse.json({ ok: false, error: "Missing full_name or phone" }, { status: 400 });
       }
 
       const legacy = await upsertLegacyPerson(supabase, {
         source: "guest",
-        full_name: fullName,
+        full_name: fullName || null,
         email: emailNorm,
         phone: phoneNorm,
       });
@@ -351,13 +416,14 @@ export async function POST(req: Request) {
           ok: true,
           allowed: true,
           kind: "SRL",
-          status: "",
+          status: "Already Checked IN",
           legacy_person_id: legacy.id,
-          display_name: fullName,
+          display_name: fullName || null,
+          checkin_id: alreadyId,
         });
       }
 
-      const scanned_code = qrRaw || `MANUAL:${phoneNorm}`;
+      const scanned_code = qrRaw || (phoneNorm ? `MANUAL:${phoneNorm}` : "MANUAL");
 
       const { data: ins, error: insErr } = await supabase
         .from("checkins")
@@ -382,7 +448,7 @@ export async function POST(req: Request) {
         status: "created_and_checked_in",
         checkin_id: (ins as any)?.id || null,
         legacy_person_id: legacy.id,
-        display_name: fullName,
+        display_name: fullName || null,
         scanned_code,
       });
     }
@@ -419,6 +485,7 @@ export async function POST(req: Request) {
           status: "Already Checked IN",
           member_id: member.id,
           display_name: member.display_name,
+          checkin_id: alreadyId,
         });
       }
 
@@ -449,7 +516,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // B) ticket XCEED (xceed_tickets.qr_code)  ✅ FIX: colonne vere
+    // B) ticket XCEED (xceed_tickets.qr_code)  ✅ colonne reali
     const { data: ticket, error: tErr } = await supabase
       .from("xceed_tickets")
       .select("id, legacy_person_id, full_name, email, phone")
@@ -459,146 +526,142 @@ export async function POST(req: Request) {
 
     if (tErr) throw new Error(tErr.message);
 
-if (ticket?.id) {
-  const buyerName = String((ticket as any).full_name ?? "").trim() || "Xceed guest";
-  const buyerEmail = normalizeEmail((ticket as any).email ?? null);
-  const buyerPhone = normalizePhone((ticket as any).phone ?? null);
+    if (ticket?.id) {
+      const buyerName = String((ticket as any).full_name ?? "").trim() || "Xceed guest";
+      const buyerEmail = normalizeEmail((ticket as any).email ?? null);
+      const buyerPhone = normalizePhone((ticket as any).phone ?? null);
 
-  // ✅ CASE 1: evento richiede membership -> check-in ETS unico (member_id)
-  if (policy.require_membership) {
-    const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
+      // ✅ CASE 1: evento richiede membership -> check-in ETS unico (member_id)
+      if (policy.require_membership) {
+        const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
 
-    if (m && (m as any).ambiguous) {
-      return NextResponse.json({
-        ok: true,
-        allowed: false,
-        kind: "XCEED",
-        status: "denied",
-        reason: "ambiguous_member_match",
-        display_name: buyerName,
-      });
-    }
+        if (m && (m as any).ambiguous) {
+          return NextResponse.json({
+            ok: true,
+            allowed: false,
+            kind: "XCEED",
+            status: "denied",
+            reason: "ambiguous_member_match",
+            display_name: buyerName,
+          });
+        }
 
-    if (!m) {
-      return NextResponse.json({
-        ok: true,
-        allowed: false,
-        kind: "XCEED",
-        status: "denied",
-        reason: "not_a_member",
-        display_name: buyerName,
-      });
-    }
+        if (!m) {
+          return NextResponse.json({
+            ok: true,
+            allowed: false,
+            kind: "XCEED",
+            status: "denied",
+            reason: "not_a_member",
+            display_name: buyerName,
+          });
+        }
 
-    // già check-in ETS?
-    const alreadyEtsId = await memberAlreadyCheckedIn(supabase, eventId, (m as any).id);
-    if (alreadyEtsId) {
-      // audit: collega ticket al checkin ETS
-      await supabase.from("xceed_tickets").update({ checkin_id: alreadyEtsId }).eq("id", (ticket as any).id);
+        const alreadyEtsId = await memberAlreadyCheckedIn(supabase, eventId, (m as any).id);
+        if (alreadyEtsId) {
+          await supabase.from("xceed_tickets").update({ checkin_id: alreadyEtsId }).eq("id", (ticket as any).id);
+
+          return NextResponse.json({
+            ok: true,
+            allowed: true,
+            kind: "ets_via_xceed",
+            status: "Already Checked IN",
+            member_id: (m as any).id,
+            checkin_id: alreadyEtsId,
+            display_name: (m as any).display_name || buyerName,
+          });
+        }
+
+        const { data: ins, error: insErr } = await supabase
+          .from("checkins")
+          .insert({
+            event_id: eventId,
+            member_id: (m as any).id,
+            result: "allowed",
+            reason: "ets_via_xceed",
+            method: "xceed_qr",
+            kind: "ETS",
+            scanned_code: qrRaw,
+          })
+          .select("id")
+          .maybeSingle();
+
+        if (insErr) throw new Error(insErr.message);
+
+        await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
+
+        return NextResponse.json({
+          ok: true,
+          allowed: true,
+          kind: "ETS",
+          status: "checked_in",
+          member_id: (m as any).id,
+          checkin_id: (ins as any)?.id || null,
+          display_name: (m as any).display_name || buyerName,
+        });
+      }
+
+      // ✅ CASE 2: evento NON richiede membership -> comportamento XCEED legacy
+      let legacyPersonId = (ticket as any).legacy_person_id as string | null;
+      if (!legacyPersonId) {
+        const legacy = await upsertLegacyPerson(supabase, {
+          source: "guest",
+          full_name: buyerName,
+          email: buyerEmail,
+          phone: buyerPhone,
+        });
+        legacyPersonId = legacy.id;
+
+        const { error: updErr } = await supabase
+          .from("xceed_tickets")
+          .update({ legacy_person_id: legacyPersonId })
+          .eq("id", (ticket as any).id);
+
+        if (updErr) throw new Error(updErr.message);
+      }
+
+      const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, legacyPersonId);
+      if (alreadyId) {
+        return NextResponse.json({
+          ok: true,
+          allowed: true,
+          kind: "XCEED",
+          status: "Already Checked IN",
+          legacy_person_id: legacyPersonId,
+          display_name: buyerName,
+          checkin_id: alreadyId,
+        });
+      }
+
+      const { data: ins, error: insErr } = await supabase
+        .from("checkins")
+        .insert({
+          event_id: eventId,
+          legacy_person_id: legacyPersonId,
+          result: "allowed",
+          reason: "xceed_ok",
+          method: "xceed_qr",
+          kind: "XCEED",
+          scanned_code: qrRaw,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (insErr) throw new Error(insErr.message);
+
+      await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
 
       return NextResponse.json({
         ok: true,
         allowed: true,
-        kind: "ETS",
-        status: "Already Checked IN",
-        member_id: (m as any).id,
-        checkin_id: alreadyEtsId,
-        display_name: (m as any).display_name || buyerName,
+        kind: "XCEED",
+        status: "checked_in",
+        checkin_id: (ins as any)?.id || null,
+        legacy_person_id: legacyPersonId,
+        display_name: buyerName,
       });
     }
 
-    // crea check-in ETS (non XCEED)
-    const { data: ins, error: insErr } = await supabase
-      .from("checkins")
-      .insert({
-        event_id: eventId,
-        member_id: (m as any).id,
-        result: "allowed",
-        reason: "ets_via_xceed",
-        method: "xceed_qr",
-        kind: "ETS",
-        scanned_code: qrRaw,
-      })
-      .select("id")
-      .maybeSingle();
-
-    if (insErr) throw new Error(insErr.message);
-
-    await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
-
-    return NextResponse.json({
-      ok: true,
-      allowed: true,
-      kind: "ETS",
-      status: "checked_in",
-      member_id: (m as any).id,
-      checkin_id: (ins as any)?.id || null,
-      display_name: (m as any).display_name || buyerName,
-    });
-  }
-
-  // ✅ CASE 2: evento NON richiede membership -> comportamento XCEED legacy (come prima)
-
-  // assicura legacy_person_id
-  let legacyPersonId = (ticket as any).legacy_person_id as string | null;
-  if (!legacyPersonId) {
-    const legacy = await upsertLegacyPerson(supabase, {
-      source: "guest",
-      full_name: buyerName,
-      email: buyerEmail,
-      phone: buyerPhone,
-    });
-    legacyPersonId = legacy.id;
-
-    const { error: updErr } = await supabase
-      .from("xceed_tickets")
-      .update({ legacy_person_id: legacyPersonId })
-      .eq("id", (ticket as any).id);
-
-    if (updErr) throw new Error(updErr.message);
-  }
-
-  const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, legacyPersonId);
-  if (alreadyId) {
-    return NextResponse.json({
-      ok: true,
-      allowed: true,
-      kind: "XCEED",
-      status: "Already Checked IN",
-      legacy_person_id: legacyPersonId,
-      display_name: buyerName,
-      checkin_id: alreadyId,
-    });
-  }
-
-  const { data: ins, error: insErr } = await supabase
-    .from("checkins")
-    .insert({
-      event_id: eventId,
-      legacy_person_id: legacyPersonId,
-      result: "allowed",
-      reason: "xceed_ok",
-      method: "xceed_qr",
-      kind: "XCEED",
-      scanned_code: qrRaw,
-    })
-    .select("id")
-    .maybeSingle();
-
-  if (insErr) throw new Error(insErr.message);
-
-  await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
-
-  return NextResponse.json({
-    ok: true,
-    allowed: true,
-    kind: "XCEED",
-    status: "checked_in",
-    checkin_id: (ins as any)?.id || null,
-    legacy_person_id: legacyPersonId,
-    display_name: buyerName,
-  });
-}
     // C) legacy_people barcode numerico => SRL storico
     if (isDigitsOnly(qrRaw)) {
       const { data: lp, error: lpErr } = await supabase
@@ -619,6 +682,7 @@ if (ticket?.id) {
             status: "Already Checked IN",
             legacy_person_id: (lp as any).id,
             display_name: (lp as any).full_name ?? null,
+            checkin_id: alreadyId,
           });
         }
 
@@ -662,3 +726,5 @@ if (ticket?.id) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
 }
+
+export {};

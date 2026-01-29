@@ -55,15 +55,17 @@ export default async function AdminHomePage() {
           <ExternalCard
             title="Ambient Playlist (Hero)"
             desc="Gestione musica ambient Hero (Airtable)"
-            href="https://airtable.com/appkpUBdMSN1oY4TI/pagCqw9rn03EsYAfo" // ← qui incolli TU il link diretto alla view ACTIVE_HERO
+            href="https://airtable.com/appkpUBdMSN1oY4TI/pagCqw9rn03EsYAfo"
           />
+
+          {/* ✅ NUOVO: Door API Key su Supabase (no codice) */}
+          <Card title="Door API Key" desc="Gestione chiave DoorCheck (admin)" href="/admin/settings/door-api" />
+
 
           <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
         </div>
 
-        <p style={styles.note}>
-          Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.
-        </p>
+        <p style={styles.note}>Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.</p>
       </div>
     </main>
   );
@@ -97,7 +99,7 @@ function Card({
   );
 }
 
-/* Card esterna (Airtable) */
+/* Card esterna (Airtable / Supabase) */
 function ExternalCard({
   title,
   desc,
@@ -108,12 +110,7 @@ function ExternalCard({
   href: string;
 }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{ textDecoration: "none" }}
-    >
+    <a href={href} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
       <div style={styles.card}>
         <div style={styles.cardTitle}>{title}</div>
         <div style={styles.cardDesc}>{desc}</div>

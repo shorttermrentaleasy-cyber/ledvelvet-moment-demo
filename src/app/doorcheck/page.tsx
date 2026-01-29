@@ -256,18 +256,31 @@ useEffect(() => {
     stopScanner();
   }
 
-  function saveApiKey() {
-    const k = apiKey.trim();
-    if (!k) {
-      alert("Inserisci la Door API Key");
-      return;
-    }
-    try {
-      localStorage.setItem(LS_KEY_API, k);
-    } catch {}
-    setApiKeyOk(true);
-    alert("Door API Key salvata");
+async function saveApiKey() {
+  const k = apiKey.trim();
+  if (!k) {
+    alert("Inserisci la Door API Key");
+    return;
   }
+
+  const r = await fetch("/api/doorcheck/ping", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": k,
+    },
+  });
+
+  if (!r.ok) {
+    alert("❌ API Key non valida");
+    setApiKeyOk(false);
+    return;
+  }
+
+  localStorage.setItem(LS_KEY_API, k);
+  setApiKeyOk(true);
+  alert("✅ API Key valida e salvata");
+}
 
   function clearApiKey() {
     try {
