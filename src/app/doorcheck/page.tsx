@@ -126,9 +126,9 @@ export default function DoorCheckPage() {
     return r === "invalid_qr" || r === "invalid_barcode";
   }, [res]);
 
-const currentEvent = useMemo(() => {
-  return events.find((e) => e.id === selectedEventId) || null;
-}, [events, selectedEventId]);
+  const currentEvent = useMemo(() => {
+    return events.find((e) => e.id === selectedEventId) || null;
+  }, [events, selectedEventId]);
 
   const stopScanner = () => {
     try {
@@ -152,17 +152,16 @@ const currentEvent = useMemo(() => {
     setScanStarting(false);
   };
 
- // iOS: overflow hidden blocca anche lo scroll della pagina quando la camera è aperta.
-// Quindi NON blocchiamo lo scroll globale.
-useEffect(() => {
-  if (!scanOpen) return;
-  const prevOverscroll = (document.body.style as any).overscrollBehavior;
-  (document.body.style as any).overscrollBehavior = "contain";
-  return () => {
-    (document.body.style as any).overscrollBehavior = prevOverscroll;
-  };
-}, [scanOpen]);
-
+  // iOS: overflow hidden blocca anche lo scroll della pagina quando la camera è aperta.
+  // Quindi NON blocchiamo lo scroll globale.
+  useEffect(() => {
+    if (!scanOpen) return;
+    const prevOverscroll = (document.body.style as any).overscrollBehavior;
+    (document.body.style as any).overscrollBehavior = "contain";
+    return () => {
+      (document.body.style as any).overscrollBehavior = prevOverscroll;
+    };
+  }, [scanOpen]);
 
   useEffect(() => {
     try {
@@ -256,18 +255,26 @@ useEffect(() => {
     stopScanner();
   }
 
-async function saveApiKey() {
-  const k = apiKey.trim();
-  if (!k) {
-    alert("Inserisci la Door API Key");
-    return;
-  }
+  async function saveApiKey() {
+    // ✅ regola d'oro: ogni request usa SEMPRE localStorage
+    const typed = apiKey.trim();
+    if (!typed) {
+      alert("Inserisci la Door API Key");
+      return;
+    }
 
-  try {
-    // salva subito
-    localStorage.setItem(LS_KEY_API, k);
+    // scrivo prima la key (così anche il ping legge da LS)
+    try {
+      localStorage.setItem(LS_KEY_API, typed);
+    } catch {}
 
-    // valida via ping (non richiede event_id/qr)
+    const k = (localStorage.getItem(LS_KEY_API) || "").trim();
+    if (!k) {
+      alert("Impossibile salvare la Door API Key su questo dispositivo.");
+      setApiKeyOk(false);
+      return;
+    }
+
     const r = await fetch("/api/doorcheck/ping", {
       method: "POST",
       headers: {
@@ -277,23 +284,18 @@ async function saveApiKey() {
       cache: "no-store",
     });
 
-    const j = await r.json().catch(() => null);
-
-    if (!r.ok || !j?.ok) {
+    if (!r.ok) {
       alert("❌ API Key non valida");
-      localStorage.removeItem(LS_KEY_API);
       setApiKeyOk(false);
       return;
     }
 
     setApiKey(k);
     setApiKeyOk(true);
-    alert("✅ Door API Key valida e salvata");
-  } catch (e: any) {
-    alert(`❌ Errore rete: ${e?.message || "impossibile validare la chiave"}`);
-    setApiKeyOk(false);
+    setRes(null);
+    setLastDeniedCode(null);
+    alert("✅ API Key valida e salvata");
   }
-}
 
   function clearApiKey() {
     try {
@@ -304,131 +306,131 @@ async function saveApiKey() {
     alert("Door API Key rimossa");
   }
 
-async function doCheck(forcedQr?: string) {
-  const eid = eventId.trim();
-  const did = deviceId.trim();
-  const code = (forcedQr ?? qr).trim();
+  async function doCheck(forcedQr?: string) {
+    const eid = eventId.trim();
+    const did = deviceId.trim();
+    const code = (forcedQr ?? qr).trim();
 
-  if (!eid || !code) {
-    setRes({ ok: false, error: "Seleziona un evento e scansiona/incolla il codice." });
-    return;
-  }
-  if (!apiKeyOk) {
-    setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
-    return;
-  }
-
-  setLoading(true);
-  setRes(null);
-  setManualOpen(false);
-  setLastDeniedCode(null);
-
-  try {
-    // ✅ SEMPRE da localStorage (non dallo state)
-    const k = (localStorage.getItem(LS_KEY_API) || "").trim();
-    if (!k) {
+    if (!eid || !code) {
+      setRes({ ok: false, error: "Seleziona un evento e scansiona/incolla il codice." });
+      return;
+    }
+    if (!apiKeyOk) {
       setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
       return;
     }
 
-    const r = await fetch("/api/doorcheck", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": k,
-      },
-      cache: "no-store",
-      body: JSON.stringify({
-        event_id: eid,
-        qr: code,
-        device_id: did || undefined,
-      }),
-    });
-
-    const data = (await r.json()) as DoorcheckResponse;
-    setRes(data);
-
-    if (data && "ok" in data && data.ok && !data.allowed) {
-      const rr = (data.reason || "").trim();
-      if (rr === "invalid_qr" || rr === "invalid_barcode") {
-        setLastDeniedCode(code);
-      }
-    }
-
-    if (data && "ok" in data && data.ok && data.allowed) setQr("");
-  } catch (e: any) {
-    setRes({ ok: false, error: e?.message || "Errore rete" });
-  } finally {
-    setLoading(false);
-  }
-}
-
-async function doManualCheck() {
-  const eid = eventId.trim();
-  if (!eid) {
-    setRes({ ok: false, error: "Seleziona un evento prima." });
-    return;
-  }
-  if (!apiKeyOk) {
-    setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
-    return;
-  }
-
-  const full_name = truthy(manualName);
-  const phone = truthy(manualPhone);
-  const email = truthy(manualEmail);
-
-  if (!full_name && !phone) {
-    setRes({ ok: false, error: "Inserisci almeno Nome oppure Telefono." });
-    return;
-  }
-
-  setManualLoading(true);
-  setRes(null);
-
-  try {
-    const scanned = truthy(lastDeniedCode || "") || (phone ? `MANUAL:${phone}` : "MANUAL");
-
-    // ✅ SEMPRE da localStorage (non dallo state)
-    const k = (localStorage.getItem(LS_KEY_API) || "").trim();
-    if (!k) {
-      setManualLoading(false);
-      setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
-      return;
-    }
-
-    const r = await fetch("/api/doorcheck", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": k,
-      },
-      cache: "no-store",
-      body: JSON.stringify({
-        event_id: eid,
-        mode: "manual",
-        full_name: full_name || undefined,
-        phone: phone || undefined,
-        email: email || undefined,
-        qr: scanned,
-      }),
-    });
-
-    const data = (await r.json()) as DoorcheckResponse;
-    setRes(data);
-
+    setLoading(true);
+    setRes(null);
     setManualOpen(false);
-    setManualName("");
-    setManualPhone("");
-    setManualEmail("");
     setLastDeniedCode(null);
-  } catch (e: any) {
-    setRes({ ok: false, error: e?.message || "Errore rete" });
-  } finally {
-    setManualLoading(false);
+
+    try {
+      // ✅ SEMPRE da localStorage (non dallo state)
+      const k = (localStorage.getItem(LS_KEY_API) || "").trim();
+      if (!k) {
+        setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
+        return;
+      }
+
+      const r = await fetch("/api/doorcheck", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": k,
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          event_id: eid,
+          qr: code,
+          device_id: did || undefined,
+        }),
+      });
+
+      const data = (await r.json()) as DoorcheckResponse;
+      setRes(data);
+
+      if (data && "ok" in data && data.ok && !data.allowed) {
+        const rr = (data.reason || "").trim();
+        if (rr === "invalid_qr" || rr === "invalid_barcode") {
+          setLastDeniedCode(code);
+        }
+      }
+
+      if (data && "ok" in data && data.ok && data.allowed) setQr("");
+    } catch (e: any) {
+      setRes({ ok: false, error: e?.message || "Errore rete" });
+    } finally {
+      setLoading(false);
+    }
   }
-}
- 
+
+  async function doManualCheck() {
+    const eid = eventId.trim();
+    if (!eid) {
+      setRes({ ok: false, error: "Seleziona un evento prima." });
+      return;
+    }
+    if (!apiKeyOk) {
+      setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
+      return;
+    }
+
+    const full_name = truthy(manualName);
+    const phone = truthy(manualPhone);
+    const email = truthy(manualEmail);
+
+    if (!full_name && !phone) {
+      setRes({ ok: false, error: "Inserisci almeno Nome oppure Telefono." });
+      return;
+    }
+
+    setManualLoading(true);
+    setRes(null);
+
+    try {
+      const scanned = truthy(lastDeniedCode || "") || (phone ? `MANUAL:${phone}` : "MANUAL");
+
+      // ✅ SEMPRE da localStorage (non dallo state)
+      const k = (localStorage.getItem(LS_KEY_API) || "").trim();
+      if (!k) {
+        setManualLoading(false);
+        setRes({ ok: false, error: "Manca la Door API Key (salvala sopra)." });
+        return;
+      }
+
+      const r = await fetch("/api/doorcheck", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": k,
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          event_id: eid,
+          mode: "manual",
+          full_name: full_name || undefined,
+          phone: phone || undefined,
+          email: email || undefined,
+          qr: scanned,
+        }),
+      });
+
+      const data = (await r.json()) as DoorcheckResponse;
+      setRes(data);
+
+      setManualOpen(false);
+      setManualName("");
+      setManualPhone("");
+      setManualEmail("");
+      setLastDeniedCode(null);
+    } catch (e: any) {
+      setRes({ ok: false, error: e?.message || "Errore rete" });
+    } finally {
+      setManualLoading(false);
+    }
+  }
+
   async function startScanner() {
     if (scanStarting) return;
 
@@ -549,13 +551,18 @@ async function doManualCheck() {
                     value={apiKey}
                     onChange={(e) => {
                       setApiKey(e.target.value);
-                      setApiKeyOk(!!e.target.value.trim());
+                      // ✅ se la modifichi, non è più "validata" finché non fai Salva/ping
+                      setApiKeyOk(false);
                     }}
                     placeholder="x-api-key..."
                     className="flex-1 min-w-[240px] rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30 font-mono"
                     type="password"
                   />
-                  <button type="button" onClick={saveApiKey} className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold">
+                  <button
+                    type="button"
+                    onClick={saveApiKey}
+                    className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                  >
                     Salva
                   </button>
                   <button
@@ -605,7 +612,11 @@ async function doManualCheck() {
                 </select>
 
                 <div className="mt-2 text-[11px] text-white/40">
-                  {eventsErr ? <span className="text-red-300">{eventsErr}</span> : <>Selezionando un evento, l’UUID viene usato per il check-in.</>}
+                  {eventsErr ? (
+                    <span className="text-red-300">{eventsErr}</span>
+                  ) : (
+                    <>Selezionando un evento, l’UUID viene usato per il check-in.</>
+                  )}
                 </div>
               </label>
 
@@ -652,7 +663,11 @@ async function doManualCheck() {
                 ) : null}
 
                 <label className="flex items-center gap-2 text-xs text-white/60 select-none">
-                  <input type="checkbox" checked={autoSubmitOnScan} onChange={(e) => setAutoSubmitOnScan(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={autoSubmitOnScan}
+                    onChange={(e) => setAutoSubmitOnScan(e.target.checked)}
+                  />
                   auto-check dopo scan
                 </label>
 
@@ -672,7 +687,9 @@ async function doManualCheck() {
                       style={{ height: "38vh", objectFit: "cover" }}
                     />
                   </div>
-                  <div className="mt-2 text-[11px] text-white/40">iPhone/iPad: serve HTTPS (Vercel). In locale può essere instabile.</div>
+                  <div className="mt-2 text-[11px] text-white/40">
+                    iPhone/iPad: serve HTTPS (Vercel). In locale può essere instabile.
+                  </div>
                 </div>
               ) : null}
 
@@ -792,120 +809,122 @@ async function doManualCheck() {
                 </div>
               )}
             </section>
-<section className="mt-4">
-  {!res ? (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
-      Nessun controllo ancora.
-    </div>
-  ) : "ok" in res && res.ok ? (
-    (() => {
-      const resAny = res as any;
-      const allowedNow = !!resAny.allowed;
 
-      const isDenied = !allowedNow;
-      const denyReasonEff = String(resAny?.reason || denyReason || "").trim();
+            <section className="mt-4">
+              {!res ? (
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
+                  Nessun controllo ancora.
+                </div>
+              ) : "ok" in res && res.ok ? (
+                (() => {
+                  const resAny = res as any;
+                  const allowedNow = !!resAny.allowed;
 
-      const ticketUrl = String((currentEvent as any)?.ticketUrl || "").trim();
-      const membershipUrl = String((currentEvent as any)?.membershipUrl || "").trim();
+                  const isDenied = !allowedNow;
+                  const denyReasonEff = String(resAny?.reason || denyReason || "").trim();
 
-      const canOfferBuyTicket = isDenied && denyReasonEff === "missing_ticket" && !!ticketUrl;
+                  const ticketUrl = String((currentEvent as any)?.ticketUrl || "").trim();
+                  const membershipUrl = String((currentEvent as any)?.membershipUrl || "").trim();
 
-      const canOfferSrlFromTicket =
-        isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
+                  const canOfferBuyTicket = isDenied && denyReasonEff === "missing_ticket" && !!ticketUrl;
 
-      const canOfferMembershipCta =
-        isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
+                  const canOfferSrlFromTicket =
+                    isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
 
-      return (
-        <div
-          className={`rounded-2xl border p-5 ${
-            allowedNow ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"
-          }`}
-        >
-          <div className="text-lg font-semibold">{allowedNow ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+                  const canOfferMembershipCta =
+                    isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
 
-          <div className="mt-2 text-sm font-mono">
-            {resAny.kind ? `kind: ${resAny.kind}` : null}
-            {resAny.kind ? " · " : ""}
-            {resAny.status ? `status: ${resAny.status}` : null}
-            {(resAny.reason || denyReason) ? ` · reason: ${String(resAny.reason || denyReason).trim()}` : ""}
-          </div>
+                  return (
+                    <div
+                      className={`rounded-2xl border p-5 ${
+                        allowedNow ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"
+                      }`}
+                    >
+                      <div className="text-lg font-semibold">{allowedNow ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
 
-          {resAny.display_name ? <div className="mt-1 text-white/80">name: {resAny.display_name}</div> : null}
+                      <div className="mt-2 text-sm font-mono">
+                        {resAny.kind ? `kind: ${resAny.kind}` : null}
+                        {resAny.kind ? " · " : ""}
+                        {resAny.status ? `status: ${resAny.status}` : null}
+                        {(resAny.reason || denyReason) ? ` · reason: ${String(resAny.reason || denyReason).trim()}` : ""}
+                      </div>
 
-          {/* CTA azioni staff su denied */}
-          {isDenied ? (
-            <div className="mt-4 flex flex-wrap gap-3">
-              {canOfferBuyTicket ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!ticketUrl) return;
-                    window.open(ticketUrl, "_blank", "noopener,noreferrer");
-                  }}
-                  className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
-                >
-                  🎟️ Apri acquisto biglietto
-                </button>
-              ) : null}
+                      {resAny.display_name ? <div className="mt-1 text-white/80">name: {resAny.display_name}</div> : null}
 
-              {canOfferMembershipCta ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    // per ora semplice: se hai un URL lo apri, altrimenti messaggio staff
-                    if (membershipUrl) {
-                      window.open(membershipUrl, "_blank", "noopener,noreferrer");
-                      return;
-                    }
-                    alert("Procedura: iscrizione/rinnovo ETS (verifica con staff).");
-                  }}
-                  className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
-                >
-                  🪪 Diventa socio ETS
-                </button>
-              ) : null}
+                      {/* CTA azioni staff su denied */}
+                      {isDenied ? (
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          {canOfferBuyTicket ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!ticketUrl) return;
+                                window.open(ticketUrl, "_blank", "noopener,noreferrer");
+                              }}
+                              className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                            >
+                              🎟️ Apri acquisto biglietto
+                            </button>
+                          ) : null}
 
-              {canOfferSrlFromTicket ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setManualOpen(true);
-                    setManualName(resAny?.display_name || "");
-                    setManualPhone("");
-                    setManualEmail("");
-                  }}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
-                >
-                  ➕ Passa a SRL (ospite manuale)
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+                          {canOfferMembershipCta ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (membershipUrl) {
+                                  window.open(membershipUrl, "_blank", "noopener,noreferrer");
+                                  return;
+                                }
+                                alert("Procedura: iscrizione/rinnovo ETS (verifica con staff).");
+                              }}
+                              className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                            >
+                              🪪 Diventa socio ETS
+                            </button>
+                          ) : null}
 
-          {resAny.checkin_id ? (
-            <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {resAny.checkin_id}</div>
-          ) : null}
+                          {canOfferSrlFromTicket ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setManualOpen(true);
+                                setManualName(resAny?.display_name || "");
+                                setManualPhone("");
+                                setManualEmail("");
+                              }}
+                              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                            >
+                              ➕ Passa a SRL (ospite manuale)
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
 
-          {resAny.legacy_person_id ? (
-            <div className="mt-2 text-[11px] text-white/40 font-mono">legacy_person_id: {resAny.legacy_person_id}</div>
-          ) : null}
+                      {resAny.checkin_id ? (
+                        <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {resAny.checkin_id}</div>
+                      ) : null}
 
-          {resAny.member ? (
-            <div className="mt-3 text-sm">
-              {resAny.member.first_name} {resAny.member.last_name} {resAny.member.legacy ? "(legacy)" : null}
-            </div>
-          ) : null}
-        </div>
-      );
-    })()
-  ) : (
-    <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
-      <div className="text-lg font-semibold">Errore</div>
-      <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
-    </div>
-  )}
-</section>
+                      {resAny.legacy_person_id ? (
+                        <div className="mt-2 text-[11px] text-white/40 font-mono">
+                          legacy_person_id: {resAny.legacy_person_id}
+                        </div>
+                      ) : null}
+
+                      {resAny.member ? (
+                        <div className="mt-3 text-sm">
+                          {resAny.member.first_name} {resAny.member.last_name} {resAny.member.legacy ? "(legacy)" : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5">
+                  <div className="text-lg font-semibold">Errore</div>
+                  <div className="mt-2 text-sm font-mono">{(res as any).error}</div>
+                </div>
+              )}
+            </section>
           </>
         )}
       </div>

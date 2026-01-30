@@ -56,27 +56,24 @@ function buildFullName(first: string | null | undefined, last: string | null | u
 }
 
 /**
- * API KEY: prima prova da tabella app_config (gestibile da admin),
- * fallback su env DOOR_API_KEY (compatibilità).
- *
- * Struttura attesa:
- *   public.app_config(key text primary key, value text)
- *   key = 'door_api_key'
+ * API KEY (DB ONLY)
+ * Usa solo: public.door_api_keys(api_key text, active boolean)
+ * RLS admin-only: con SERVICE_ROLE bypassa.
  */
-async function getDoorApiKeyExpected(supabase: ReturnType<typeof supabaseAdmin>) {
-  // fallback env
-  const envKey = (process.env.DOOR_API_KEY || "").trim();
+async function isDoorApiKeyValid(supabase: ReturnType<typeof supabaseAdmin>, apiKey: string) {
+  const k = (apiKey || "").trim();
+  if (!k) return false;
 
-  try {
-    const { data, error } = await supabase.from("app_config").select("value").eq("key", "door_api_key").maybeSingle();
-    if (error) throw error;
-    const dbKey = String((data as any)?.value || "").trim();
-    if (dbKey) return dbKey;
-  } catch {
-    // se tabella/record non esiste, non blocchiamo: userà envKey
-  }
+  // ipotesi: door_api_keys(api_key text, active boolean)
+  const { data, error } = await supabase
+    .from("door_api_keys")
+    .select("id")
+    .eq("active", true)
+    .eq("api_key", k)
+    .limit(1);
 
-  return envKey;
+  if (error) throw new Error(error.message);
+  return !!(data && data.length > 0);
 }
 
 async function resolveEventId(
@@ -332,63 +329,36 @@ async function upsertLegacyPerson(
   return { id: (ins as any).id as string };
 }
 
-async function isDoorApiKeyValid(supabase: ReturnType<typeof supabaseAdmin>, apiKey: string) {
-  const k = (apiKey || "").trim();
-  if (!k) return false;
-
-  // Adatta i nomi colonna se diversi:
-  // ipotesi: door_api_keys(api_key text, active boolean)
-  const { data, error } = await supabase
-    .from("door_api_keys")
-    .select("id")
-    .eq("active", true)
-    .eq("api_key", k)
-    .limit(1);
-
-  if (error) throw new Error(error.message);
-  return !!(data && data.length > 0);
-}
-
-
 export async function POST(req: Request) {
   try {
     const supabase = supabaseAdmin();
 
-   // ✅ API KEY (db -> fallback env)
-const got = (req.headers.get("x-api-key") || "").trim();
-if (!got) return unauthorized("Missing API key");
+    // ✅ API KEY (DB ONLY)
+    const got = (req.headers.get("x-api-key") || "").trim();
+    if (!got) return unauthorized("Missing API key");
 
-// NB: getDoorApiKeyExpected deve restituire una stringa (o "" se non trovata)
-const expected = String(await getDoorApiKeyExpected(supabase)).trim();
+    const ok = await isDoorApiKeyValid(supabase, got);
+    if (!ok) return unauthorized("Invalid API key");
 
-if (!expected) {
-  return NextResponse.json(
-    { ok: false, error: "Server misconfigured: door api key missing" },
-    { status: 500 }
-  );
-}
+    // ✅ body (una sola volta)
+    const body = (await req.json()) as DoorcheckBody;
 
-if (got !== expected) return unauthorized("Invalid API key");
+    // ✅ resolve event
+    const eventId = await resolveEventId(supabase, body.event_id || null, body.event_ref || null);
+    if (!eventId) {
+      return NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 });
+    }
 
-// ✅ body (una sola volta)
-const body = (await req.json()) as DoorcheckBody;
+    // ✅ policy
+    const policy = await getEventPolicy(supabase, eventId);
 
-// ✅ resolve event
-const eventId = await resolveEventId(supabase, body.event_id || null, body.event_ref || null);
-if (!eventId) {
-  return NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 });
-}
+    // ✅ mode + qr
+    const mode = (body.mode || "scan").trim() as "scan" | "manual";
+    const qrRaw = (body.qr || "").trim();
 
-// ✅ policy
-const policy = await getEventPolicy(supabase, eventId);
-
-// ✅ mode + qr
-const mode = (body.mode || "scan").trim() as "scan" | "manual";
-const qrRaw = (body.qr || "").trim();
-
-if (mode === "scan" && !qrRaw) {
-  return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
-}
+    if (mode === "scan" && !qrRaw) {
+      return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
+    }
 
     // =========================
     // MANUAL => SRL
