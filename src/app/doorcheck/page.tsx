@@ -884,18 +884,23 @@ export default function DoorCheckPage() {
                           ) : null}
 
                           {canOfferSrlFromTicket ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setManualOpen(true);
-                                setManualName(resAny?.display_name || "");
-                                setManualPhone("");
-                                setManualEmail("");
-                              }}
-                              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
-                            >
-                              ➕ Passa a SRL (ospite manuale)
-                            </button>
+
+<button
+  type="button"
+  onClick={() => {
+    // ✅ fondamentale: conserva il QR del ticket XCEED
+    setLastDeniedCode(qr.trim());
+
+    setManualOpen(true);
+    setManualName(resAny?.display_name || "");
+    setManualPhone("");
+    setManualEmail("");
+  }}
+  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+>
+  ➕ Passa a SRL (ospite manuale)
+</button>                           
+
                           ) : null}
                         </div>
                       ) : null}

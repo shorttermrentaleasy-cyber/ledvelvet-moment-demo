@@ -279,13 +279,13 @@ export default function DeepDiveOverlay({
     return `/society?from=${encodeURIComponent(returnTo)}`;
   }, [returnTo]);
 
-  function slugToString(v: any): string {
-    if (!v) return "";
-    if (typeof v === "string") return v.trim();
-    if (Array.isArray(v)) return slugToString(v[0]);
-    if (typeof v === "object") return slugToString(v.slug ?? v.value ?? v.name ?? v.id);
-    return String(v).trim();
-  }
+  const slugToString = useCallback((v: any): string => {
+  if (!v) return "";
+  if (typeof v === "string") return v.trim();
+  if (Array.isArray(v)) return slugToString(v[0]);
+  if (typeof v === "object") return slugToString(v.slug ?? v.value ?? v.name ?? v.id);
+  return String(v).trim();
+}, []);
 
   // load deepdive
   useEffect(() => {
@@ -316,7 +316,7 @@ export default function DeepDiveOverlay({
     return () => {
       alive = false;
     };
-  }, [open, slug]);
+  }, [open, slug, slugToString]);
 
   // stop mood when slug changes / close
   useEffect(() => {

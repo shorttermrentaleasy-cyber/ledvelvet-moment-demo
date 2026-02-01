@@ -64,7 +64,6 @@ async function isDoorApiKeyValid(supabase: ReturnType<typeof supabaseAdmin>, api
   const k = (apiKey || "").trim();
   if (!k) return false;
 
-  // ipotesi: door_api_keys(api_key text, active boolean)
   const { data, error } = await supabase
     .from("door_api_keys")
     .select("id")
@@ -92,7 +91,12 @@ async function resolveEventId(
   const ref = (eventRef || "").trim();
   if (!ref) return null;
 
-  const { data: ev, error: evErr } = await supabase.from("events").select("id").eq("xceed_event_ref", ref).maybeSingle();
+  const { data: ev, error: evErr } = await supabase
+    .from("events")
+    .select("id")
+    .eq("xceed_event_ref", ref)
+    .maybeSingle();
+
   if (evErr) throw new Error(evErr.message);
   if (!ev) return null;
   return ev.id as string;
@@ -218,18 +222,10 @@ async function resolveMemberByEmailOrPhone(
   }
 
   if (phoneNorm) {
-    const candidates = new Set<string>();
-    candidates.add(phoneNorm);
-    if (phoneNorm.startsWith("+")) candidates.add(phoneNorm.slice(1));
-    if (phoneNorm.startsWith("+39")) candidates.add(phoneNorm.replace(/^\+39/, ""));
-    if (phoneNorm.startsWith("39")) candidates.add(phoneNorm.replace(/^39/, ""));
-
-    const inArr = Array.from(candidates);
-
     const { data, error } = await supabase
       .from("members")
       .select("id, first_name, last_name")
-      .in("phone", inArr)
+      .eq("phone", phoneNorm)
       .limit(2);
 
     if (error) throw new Error(error.message);
@@ -246,87 +242,98 @@ async function resolveMemberByEmailOrPhone(
 async function memberHasTicketForEvent(
   supabase: ReturnType<typeof supabaseAdmin>,
   eventId: string,
-  memberEmail: string | null,
-  memberPhone: string | null
-) {
-  const emailNorm = normalizeEmail(memberEmail);
-  const phoneNorm = normalizePhone(memberPhone);
+  email: string | null,
+  phone: string | null
+): Promise<boolean> {
+  // se non ho contatti, non posso verificare
+  if (!email && !phone) return false;
 
-  // 1) match email
-  if (emailNorm) {
-    const { data, error } = await supabase
-      .from("xceed_tickets")
-      .select("id")
-      .eq("event_id", eventId)
-      .ilike("email", emailNorm)
-      .limit(1);
+  // MVP: match su xceed_tickets (email/phone) per event_id
+  let q = supabase.from("xceed_tickets").select("id").eq("event_id", eventId).limit(1);
 
-    if (error) throw new Error(error.message);
-    if (data && data.length > 0) return true;
-  }
+  if (email) q = q.ilike("email", email);
+  if (!email && phone) q = q.eq("phone", phone);
 
-  // 2) match phone con varianti
-  if (phoneNorm) {
-    const candidates = new Set<string>();
-    candidates.add(phoneNorm);
-    if (phoneNorm.startsWith("+")) candidates.add(phoneNorm.slice(1));
-    if (phoneNorm.startsWith("+39")) candidates.add(phoneNorm.replace(/^\+39/, ""));
-    if (phoneNorm.startsWith("39")) candidates.add(phoneNorm.replace(/^39/, ""));
-
-    const inArr = Array.from(candidates);
-
-    const { data, error } = await supabase
-      .from("xceed_tickets")
-      .select("id")
-      .eq("event_id", eventId)
-      .in("phone", inArr)
-      .limit(1);
-
-    if (error) throw new Error(error.message);
-    if (data && data.length > 0) return true;
-  }
-
-  return false;
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return !!(data && data.length > 0);
 }
 
+/**
+ * ✅ Legacy domain table (PRODUZIONE): public.legacy_people
+ * - questa è l'UNICA tabella per persone NON socie (SRL/XCEED non ETS/manual)
+ * - members_legacy_staging resta SOLO staging/import e NON va mai usata qui
+ */
 async function upsertLegacyPerson(
   supabase: ReturnType<typeof supabaseAdmin>,
-  args: { full_name?: string | null; email?: string | null; phone?: string | null; source?: string | null }
+  payload: { source: "guest"; full_name: string | null; email: string | null; phone: string | null }
 ) {
-  const emailNorm = normalizeEmail(args.email || null);
-  const phoneNorm = normalizePhone(args.phone || null);
-
-  if (emailNorm || phoneNorm) {
-    const orParts: string[] = [];
-    if (emailNorm) orParts.push(`email.ilike.${emailNorm}`);
-    if (phoneNorm) orParts.push(`phone.eq.${phoneNorm}`);
-
-    const { data: existing, error: exErr } = await supabase
+  // Chiave di dedupe (ordine): email -> phone -> insert new
+  if (payload.email) {
+    const { data: ex, error: exErr } = await supabase
       .from("legacy_people")
-      .select("id")
-      .or(orParts.join(","))
-      .limit(2);
+      .select("id, full_name")
+      .eq("source", payload.source)
+      .ilike("email", payload.email)
+      .maybeSingle();
 
     if (exErr) throw new Error(exErr.message);
-    if (existing && existing.length === 1) {
-      const id = (existing[0] as any).id as string;
-      return { id };
+
+    if ((ex as any)?.id) {
+      const { data: upd, error: updErr } = await supabase
+        .from("legacy_people")
+        .update({
+          full_name: payload.full_name || (ex as any).full_name || null,
+          phone: payload.phone || null,
+        })
+        .eq("id", (ex as any).id)
+        .select("id, full_name")
+        .maybeSingle();
+
+      if (updErr) throw new Error(updErr.message);
+      return { id: (upd as any).id as string, full_name: (upd as any).full_name as string | null };
+    }
+  }
+
+  if (!payload.email && payload.phone) {
+    const { data: ex, error: exErr } = await supabase
+      .from("legacy_people")
+      .select("id, full_name")
+      .eq("source", payload.source)
+      .eq("phone", payload.phone)
+      .maybeSingle();
+
+    if (exErr) throw new Error(exErr.message);
+
+    if ((ex as any)?.id) {
+      const { data: upd, error: updErr } = await supabase
+        .from("legacy_people")
+        .update({
+          full_name: payload.full_name || (ex as any).full_name || null,
+          email: payload.email || null,
+        })
+        .eq("id", (ex as any).id)
+        .select("id, full_name")
+        .maybeSingle();
+
+      if (updErr) throw new Error(updErr.message);
+      return { id: (upd as any).id as string, full_name: (upd as any).full_name as string | null };
     }
   }
 
   const { data: ins, error: insErr } = await supabase
     .from("legacy_people")
     .insert({
-      source: args.source || "guest",
-      full_name: (args.full_name || "").trim() || null,
-      email: emailNorm,
-      phone: phoneNorm,
+      source: payload.source,
+      full_name: payload.full_name || null,
+      email: payload.email || null,
+      phone: payload.phone || null,
     })
-    .select("id")
+    .select("id, full_name")
     .maybeSingle();
 
   if (insErr) throw new Error(insErr.message);
-  return { id: (ins as any).id as string };
+  return { id: (ins as any).id as string, full_name: (ins as any).full_name as string | null };
 }
 
 export async function POST(req: Request) {
@@ -373,6 +380,37 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "Missing full_name or phone" }, { status: 400 });
       }
 
+      const scanned_code = qrRaw || (phoneNorm ? `MANUAL:${phoneNorm}` : "MANUAL");
+
+      // ✅ Se il manual nasce da un ticket XCEED (qr = qr_code), agganciamo il ticket per evitare duplicati alla riscansione.
+      let manualXceedTicket: any | null = null;
+      if (qrRaw && !qrRaw.startsWith("MANUAL")) {
+        const { data: t, error: tErr } = await supabase
+          .from("xceed_tickets")
+          .select("id, checkin_id, legacy_person_id, full_name, email, phone")
+          .eq("event_id", eventId)
+          .eq("qr_code", qrRaw)
+          .maybeSingle();
+
+        if (tErr) throw new Error(tErr.message);
+        if ((t as any)?.id) manualXceedTicket = t;
+
+        const tCheckinId = String((t as any)?.checkin_id ?? "").trim();
+        if (tCheckinId) {
+          const nm = String((t as any)?.full_name ?? "").trim() || fullName || "Xceed guest";
+          return NextResponse.json({
+            ok: true,
+            allowed: true,
+            kind: "XCEED",
+            status: "Already Checked IN",
+            checkin_id: tCheckinId,
+            legacy_person_id: (t as any)?.legacy_person_id ?? null,
+            display_name: nm,
+          });
+        }
+      }
+
+      // crea/riusa legacy person in dominio
       const legacy = await upsertLegacyPerson(supabase, {
         source: "guest",
         full_name: fullName || null,
@@ -380,20 +418,28 @@ export async function POST(req: Request) {
         phone: phoneNorm,
       });
 
+      // anti-duplicato sul legacy_person_id
       const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, legacy.id);
       if (alreadyId) {
+        if (manualXceedTicket?.id) {
+          const { error: updErr } = await supabase
+            .from("xceed_tickets")
+            .update({ checkin_id: alreadyId, legacy_person_id: legacy.id })
+            .eq("id", (manualXceedTicket as any).id);
+          if (updErr) throw new Error(updErr.message);
+        }
+
         return NextResponse.json({
           ok: true,
           allowed: true,
           kind: "SRL",
           status: "Already Checked IN",
-          legacy_person_id: legacy.id,
-          display_name: fullName || null,
           checkin_id: alreadyId,
+          legacy_person_id: legacy.id,
+          display_name: fullName || (legacy as any)?.full_name || null,
+          scanned_code,
         });
       }
-
-      const scanned_code = qrRaw || (phoneNorm ? `MANUAL:${phoneNorm}` : "MANUAL");
 
       const { data: ins, error: insErr } = await supabase
         .from("checkins")
@@ -411,12 +457,23 @@ export async function POST(req: Request) {
 
       if (insErr) throw new Error(insErr.message);
 
+      const newCheckinId = (ins as any)?.id || null;
+
+      // se era da ticket, salva legame ticket->checkin e ticket->legacy_person
+      if (manualXceedTicket?.id && newCheckinId) {
+        const { error: updErr } = await supabase
+          .from("xceed_tickets")
+          .update({ checkin_id: newCheckinId, legacy_person_id: legacy.id })
+          .eq("id", (manualXceedTicket as any).id);
+        if (updErr) throw new Error(updErr.message);
+      }
+
       return NextResponse.json({
         ok: true,
         allowed: true,
         kind: "SRL",
         status: "created_and_checked_in",
-        checkin_id: (ins as any)?.id || null,
+        checkin_id: newCheckinId,
         legacy_person_id: legacy.id,
         display_name: fullName || null,
         scanned_code,
@@ -486,10 +543,10 @@ export async function POST(req: Request) {
       });
     }
 
-    // B) ticket XCEED (xceed_tickets.qr_code)  ✅ colonne reali
+    // B) ticket XCEED (xceed_tickets.qr_code)
     const { data: ticket, error: tErr } = await supabase
       .from("xceed_tickets")
-      .select("id, legacy_person_id, full_name, email, phone")
+      .select("id, checkin_id, legacy_person_id, full_name, email, phone")
       .eq("event_id", eventId)
       .eq("qr_code", qrRaw)
       .maybeSingle();
@@ -500,6 +557,20 @@ export async function POST(req: Request) {
       const buyerName = String((ticket as any).full_name ?? "").trim() || "Xceed guest";
       const buyerEmail = normalizeEmail((ticket as any).email ?? null);
       const buyerPhone = normalizePhone((ticket as any).phone ?? null);
+
+      // ✅ anti-duplicati: se il ticket ha già checkin_id, fine.
+      const ticketCheckinId = String((ticket as any).checkin_id ?? "").trim();
+      if (ticketCheckinId) {
+        return NextResponse.json({
+          ok: true,
+          allowed: true,
+          kind: "XCEED",
+          status: "Already Checked IN",
+          checkin_id: ticketCheckinId,
+          legacy_person_id: (ticket as any).legacy_person_id ?? null,
+          display_name: buyerName,
+        });
+      }
 
       // ✅ CASE 1: evento richiede membership -> check-in ETS unico (member_id)
       if (policy.require_membership) {
@@ -534,7 +605,7 @@ export async function POST(req: Request) {
           return NextResponse.json({
             ok: true,
             allowed: true,
-            kind: "ets_via_xceed",
+            kind: "ETS",
             status: "Already Checked IN",
             member_id: (m as any).id,
             checkin_id: alreadyEtsId,
@@ -571,8 +642,10 @@ export async function POST(req: Request) {
         });
       }
 
-      // ✅ CASE 2: evento NON richiede membership -> comportamento XCEED legacy
+      // ✅ CASE 2: evento NON richiede membership -> XCEED guest (dominio legacy_people)
       let legacyPersonId = (ticket as any).legacy_person_id as string | null;
+
+      // crea legacy_person se ticket non lo ha
       if (!legacyPersonId) {
         const legacy = await upsertLegacyPerson(supabase, {
           source: "guest",
@@ -590,16 +663,19 @@ export async function POST(req: Request) {
         if (updErr) throw new Error(updErr.message);
       }
 
-      const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, legacyPersonId);
-      if (alreadyId) {
+      // anti-duplicato su legacy_person_id
+      const alreadyLegacyId = await legacyAlreadyCheckedIn(supabase, eventId, legacyPersonId);
+      if (alreadyLegacyId) {
+        await supabase.from("xceed_tickets").update({ checkin_id: alreadyLegacyId }).eq("id", (ticket as any).id);
+
         return NextResponse.json({
           ok: true,
           allowed: true,
           kind: "XCEED",
           status: "Already Checked IN",
           legacy_person_id: legacyPersonId,
+          checkin_id: alreadyLegacyId,
           display_name: buyerName,
-          checkin_id: alreadyId,
         });
       }
 
@@ -609,9 +685,9 @@ export async function POST(req: Request) {
           event_id: eventId,
           legacy_person_id: legacyPersonId,
           result: "allowed",
-          reason: "xceed_ok",
+          reason: policy.require_ticket ? "xceed_ok_ticket_ok" : "xceed_ok",
           method: "xceed_qr",
-          kind: "XCEED",
+          kind: "SRL",
           scanned_code: qrRaw,
         })
         .select("id")
@@ -632,56 +708,54 @@ export async function POST(req: Request) {
       });
     }
 
-    // C) legacy_people barcode numerico => SRL storico
-    if (isDigitsOnly(qrRaw)) {
-      const { data: lp, error: lpErr } = await supabase
-        .from("legacy_people")
-        .select("id, full_name")
-        .eq("legacy_barcode", qrRaw)
-        .maybeSingle();
+    // C) legacy_people (dominio) => SRL storico (legacy_people.legacy_barcode)
+    const { data: lp, error: lpErr } = await supabase
+      .from("legacy_people")
+      .select("id, full_name")
+      .eq("legacy_barcode", qrRaw)
+      .maybeSingle();
 
-      if (lpErr) throw new Error(lpErr.message);
+    if (lpErr) throw new Error(lpErr.message);
 
-      if (lp?.id) {
-        const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, (lp as any).id);
-        if (alreadyId) {
-          return NextResponse.json({
-            ok: true,
-            allowed: true,
-            kind: "SRL",
-            status: "Already Checked IN",
-            legacy_person_id: (lp as any).id,
-            display_name: (lp as any).full_name ?? null,
-            checkin_id: alreadyId,
-          });
-        }
-
-        const { data: ins, error: insErr } = await supabase
-          .from("checkins")
-          .insert({
-            event_id: eventId,
-            legacy_person_id: (lp as any).id,
-            result: "allowed",
-            reason: "srl_ok",
-            method: "lv_qr",
-            kind: "SRL",
-            scanned_code: qrRaw,
-          })
-          .select("id")
-          .maybeSingle();
-
-        if (insErr) throw new Error(insErr.message);
-
+    if (lp?.id) {
+      const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, (lp as any).id);
+      if (alreadyId) {
         return NextResponse.json({
           ok: true,
           allowed: true,
           kind: "SRL",
-          status: "checked_in",
-          checkin_id: (ins as any)?.id || null,
+          status: "Already Checked IN",
           legacy_person_id: (lp as any).id,
+          checkin_id: alreadyId,
           display_name: (lp as any).full_name ?? null,
         });
       }
+
+      const { data: ins, error: insErr } = await supabase
+        .from("checkins")
+        .insert({
+          event_id: eventId,
+          legacy_person_id: (lp as any).id,
+          result: "allowed",
+          reason: "srl_ok",
+          method: "lv_qr",
+          kind: "SRL",
+          scanned_code: qrRaw,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (insErr) throw new Error(insErr.message);
+
+      return NextResponse.json({
+        ok: true,
+        allowed: true,
+        kind: "SRL",
+        status: "checked_in",
+        checkin_id: (ins as any)?.id || null,
+        legacy_person_id: (lp as any).id,
+        display_name: (lp as any).full_name ?? null,
+      });
     }
 
     // D) sconosciuto

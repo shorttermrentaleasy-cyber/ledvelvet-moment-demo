@@ -16,7 +16,6 @@ function supabaseAdmin() {
 function normEmail(v: any): string | null {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return null;
-  // minimale: accetta solo se sembra email
   if (!s.includes("@") || !s.includes(".")) return null;
   return s;
 }
@@ -24,11 +23,8 @@ function normEmail(v: any): string | null {
 function normPhone(v: any): string | null {
   let s = String(v ?? "").trim();
   if (!s) return null;
-  // tieni solo numeri e +
   s = s.replace(/[^\d+]/g, "");
-  // normalizzazione IT minimale: se 39 senza +, metti +
   if (/^39\d{8,}$/.test(s)) s = `+${s}`;
-  // se parte con 0 o 3 e non ha prefisso, lascia com'è (MVP)
   return s.length >= 6 ? s : null;
 }
 
@@ -51,10 +47,16 @@ function pickColumn(headers: string[], patterns: string[]) {
 }
 
 function detectColumns(headers: string[]) {
-  const qr = pickColumn(headers, ["qr", "qrcode", "qr_code", "barcode", "code", "ticketcode", "ticket"]);
+  const qr = pickColumn(headers, ["qr", "qrcode", "qr_code", "barcode", "ticketcode", "ticket"]);
   const email = pickColumn(headers, ["email", "e-mail", "mail"]);
   const phone = pickColumn(headers, ["phone", "mobile", "tel", "telefono", "cell", "cellulare"]);
-  return { qr, email, phone };
+
+  const transaction = pickColumn(headers, ["transactionid", "transaction_id", "transaction", "bookingid", "orderid"]);
+  const status = pickColumn(headers, ["status"]);
+  const fullName = pickColumn(headers, ["fullname", "full_name", "name"]);
+  const bookingDate = pickColumn(headers, ["bookingdate", "booking_date", "date"]);
+
+  return { qr, email, phone, transaction, status, fullName, bookingDate };
 }
 
 function parseCSV(buf: Buffer) {
@@ -62,7 +64,6 @@ function parseCSV(buf: Buffer) {
   const lines = text.split(/\r?\n/).filter(l => l.trim().length);
   if (lines.length === 0) return { rows: [], headers: [] as string[] };
 
-  // separatore: prova ; poi , poi \t
   const first = lines[0];
   const sep = first.includes(";") ? ";" : first.includes(",") ? "," : "\t";
 
@@ -79,6 +80,15 @@ function parseCSV(buf: Buffer) {
     rows.push(row);
   }
   return { rows, headers };
+}
+
+function toDateOrNull(v: any): Date | null {
+  if (!v) return null;
+  if (v instanceof Date && !isNaN(v.valueOf())) return v;
+  const s = String(v).trim();
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.valueOf()) ? null : d;
 }
 
 async function updateBatch(
@@ -100,7 +110,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing batch_id" }, { status: 400 });
     }
 
-    // lock "soft": set processing
     await updateBatch(supabase, batch_id, { status: "processing", error: null });
 
     const { data: batch, error: bErr } = await supabase
@@ -116,7 +125,6 @@ export async function POST(req: Request) {
     const file_path = batch.file_path as string;
     const file_name = (batch.file_name as string) || "";
 
-    // download file
     const { data: dl, error: dlErr } = await supabase.storage.from("xceed-imports").download(file_path);
     if (dlErr) throw new Error(dlErr.message);
     if (!dl) throw new Error("Download failed");
@@ -124,7 +132,6 @@ export async function POST(req: Request) {
     const arr = await dl.arrayBuffer();
     const buf = Buffer.from(arr);
 
-    // parse
     let rows: any[] = [];
     let headers: string[] = [];
 
@@ -136,7 +143,7 @@ export async function POST(req: Request) {
       rows = parsed.rows;
       headers = parsed.headers;
     } else {
-      const wb = XLSX.read(buf, { type: "buffer" });
+      const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
       const sheetName = wb.SheetNames[0];
       const ws = wb.Sheets[sheetName];
       const json = XLSX.utils.sheet_to_json(ws, { defval: "" }) as any[];
@@ -155,7 +162,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Cannot detect QR column" }, { status: 400 });
     }
 
-    // map rows
     const payload = rows
       .map((r) => {
         const qr = toStringSafe(r[cols.qr!]);
@@ -167,28 +173,45 @@ export async function POST(req: Request) {
         const buyer_email_norm = normEmail(buyer_email);
         const buyer_phone_norm = normPhone(buyer_phone);
 
+        const transaction_id = cols.transaction ? toStringSafe(r[cols.transaction]) : "";
+        const status = cols.status ? toStringSafe(r[cols.status]) : "";
+        const full_name = cols.fullName ? toStringSafe(r[cols.fullName]) : "";
+        const booking_date = cols.bookingDate ? toDateOrNull(r[cols.bookingDate]) : null;
+
         return {
           event_id,
           qr_code: qr,
+
+          import_batch_id: batch_id, // audit + FK
+
+          transaction_id: transaction_id || null,
+          status: status || null,
+          full_name: full_name || null,
+          booking_date,
+
+          // manteniamo buyer_* come nel tuo schema (utile)
           buyer_email: buyer_email || null,
           buyer_phone: buyer_phone || null,
           buyer_email_norm,
           buyer_phone_norm,
-          raw: r, // audit
+
+          // e valorizziamo anche email/phone “base” per compatibilità futura
+          email: buyer_email_norm || null,
+          phone: buyer_phone_norm || null,
+
+          raw: r,
         };
       })
       .filter(Boolean) as any[];
 
     const rows_total = payload.length;
 
-    // batch insert in chunks
     let inserted = 0;
     const CHUNK = 500;
 
     for (let i = 0; i < payload.length; i += CHUNK) {
       const chunk = payload.slice(i, i + CHUNK);
 
-      // upsert with ignore duplicates: requires unique(event_id, qr_code)
       const { data: ins, error: insErr } = await supabase
         .from("xceed_tickets")
         .upsert(chunk, { onConflict: "event_id,qr_code", ignoreDuplicates: true })
