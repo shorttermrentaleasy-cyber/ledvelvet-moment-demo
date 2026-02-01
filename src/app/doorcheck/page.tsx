@@ -28,8 +28,17 @@ type DoorcheckOkResponse = {
   checkin_id?: string | null;
   legacy_person_id?: string | null;
 
-  // ✅ extra (senza cambiare UI)
+  // ✅ extra
   display_name?: string | null;
+
+  // ✅ NEW: messaggio umano dal backend
+  message?: string | null;
+
+  // ✅ NEW: ticket info (XCEED raw)
+  ticket_offer_title?: string | null;
+  ticket_offer_description?: string | null;
+  ticket_transaction_id?: string | null;
+  ticket_booking_date?: string | null;
 };
 
 type DoorcheckResponse = DoorcheckOkResponse | { ok: false; error: string };
@@ -119,10 +128,12 @@ export default function DoorCheckPage() {
     return r || null;
   }, [res]);
 
+  // ✅ prima era super-rigido: ora lo usiamo solo come “hint”
   const canOfferManual = useMemo(() => {
     if (!res || !("ok" in res) || !res.ok) return false;
     if (res.allowed) return false;
     const r = (res.reason || "").trim();
+    // se è un QR “invalido” ha senso offrire SRL manual “classico”
     return r === "invalid_qr" || r === "invalid_barcode";
   }, [res]);
 
@@ -350,11 +361,9 @@ export default function DoorCheckPage() {
       const data = (await r.json()) as DoorcheckResponse;
       setRes(data);
 
+      // ✅ se negato, conserva SEMPRE il codice scansionato (serve per “Passa a SRL”)
       if (data && "ok" in data && data.ok && !data.allowed) {
-        const rr = (data.reason || "").trim();
-        if (rr === "invalid_qr" || rr === "invalid_barcode") {
-          setLastDeniedCode(code);
-        }
+        setLastDeniedCode(code);
       }
 
       if (data && "ok" in data && data.ok && data.allowed) setQr("");
@@ -551,7 +560,6 @@ export default function DoorCheckPage() {
                     value={apiKey}
                     onChange={(e) => {
                       setApiKey(e.target.value);
-                      // ✅ se la modifichi, non è più "validata" finché non fai Salva/ping
                       setApiKeyOk(false);
                     }}
                     placeholder="x-api-key..."
@@ -735,7 +743,7 @@ export default function DoorCheckPage() {
                 </button>
               </div>
 
-              {/* CTA manual SRL */}
+              {/* CTA manual SRL (solo per invalid_qr / invalid_barcode) */}
               {canOfferManual && (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="text-sm font-semibold">Codice non riconosciuto</div>
@@ -755,7 +763,9 @@ export default function DoorCheckPage() {
                     >
                       ➕ Inserisci ospite manuale
                     </button>
-                    <span className="text-[11px] text-white/40 font-mono">scanned_code: {lastDeniedCode || "(n/a)"}</span>
+                    <span className="text-[11px] text-white/40 font-mono">
+                      scanned_code: {lastDeniedCode || "(n/a)"}
+                    </span>
                   </div>
                 </div>
               )}
@@ -817,7 +827,7 @@ export default function DoorCheckPage() {
                 </div>
               ) : "ok" in res && res.ok ? (
                 (() => {
-                  const resAny = res as any;
+                  const resAny = res as DoorcheckOkResponse;
                   const allowedNow = !!resAny.allowed;
 
                   const isDenied = !allowedNow;
@@ -828,11 +838,20 @@ export default function DoorCheckPage() {
 
                   const canOfferBuyTicket = isDenied && denyReasonEff === "missing_ticket" && !!ticketUrl;
 
+                  // ✅ qui includiamo anche not_found / not_a_member: così puoi creare SRL anche senza “ticket riconosciuto”
                   const canOfferSrlFromTicket =
-                    isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
+                    isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required" || denyReasonEff === "not_found");
 
                   const canOfferMembershipCta =
                     isDenied && (denyReasonEff === "not_a_member" || denyReasonEff === "membership_required");
+
+                  const humanMessage = String(resAny?.message || "").trim();
+
+                  const hasTicketInfo =
+                    !!String(resAny?.ticket_offer_title || "").trim() ||
+                    !!String(resAny?.ticket_offer_description || "").trim() ||
+                    !!String(resAny?.ticket_transaction_id || "").trim() ||
+                    !!String(resAny?.ticket_booking_date || "").trim();
 
                   return (
                     <div
@@ -842,6 +861,13 @@ export default function DoorCheckPage() {
                     >
                       <div className="text-lg font-semibold">{allowedNow ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
 
+                      {/* ✅ Message umano (se presente) */}
+                      {humanMessage ? (
+                        <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/85">
+                          {humanMessage}
+                        </div>
+                      ) : null}
+
                       <div className="mt-2 text-sm font-mono">
                         {resAny.kind ? `kind: ${resAny.kind}` : null}
                         {resAny.kind ? " · " : ""}
@@ -850,6 +876,34 @@ export default function DoorCheckPage() {
                       </div>
 
                       {resAny.display_name ? <div className="mt-1 text-white/80">name: {resAny.display_name}</div> : null}
+
+                      {/* ✅ Ticket info box (XCEED) */}
+                      {hasTicketInfo ? (
+                        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                          <div className="text-sm font-semibold">🎫 Ticket info</div>
+
+                          {resAny.ticket_offer_title ? (
+                            <div className="mt-2 text-sm text-white/90">
+                              <span className="text-white/50">Offer:</span> {resAny.ticket_offer_title}
+                            </div>
+                          ) : null}
+
+                          {resAny.ticket_offer_description ? (
+                            <div className="mt-1 text-xs text-white/70 whitespace-pre-wrap">
+                              {resAny.ticket_offer_description}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
+                            {resAny.ticket_transaction_id ? (
+                              <div>tx: {resAny.ticket_transaction_id}</div>
+                            ) : null}
+                            {resAny.ticket_booking_date ? (
+                              <div>booking: {String(resAny.ticket_booking_date)}</div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
 
                       {/* CTA azioni staff su denied */}
                       {isDenied ? (
@@ -884,23 +938,22 @@ export default function DoorCheckPage() {
                           ) : null}
 
                           {canOfferSrlFromTicket ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // ✅ conserva sempre il codice corrente (meglio: lastDeniedCode è già stato settato)
+                                const code = (qr || lastDeniedCode || "").trim();
+                                if (code) setLastDeniedCode(code);
 
-<button
-  type="button"
-  onClick={() => {
-    // ✅ fondamentale: conserva il QR del ticket XCEED
-    setLastDeniedCode(qr.trim());
-
-    setManualOpen(true);
-    setManualName(resAny?.display_name || "");
-    setManualPhone("");
-    setManualEmail("");
-  }}
-  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
->
-  ➕ Passa a SRL (ospite manuale)
-</button>                           
-
+                                setManualOpen(true);
+                                setManualName(resAny?.display_name || "");
+                                setManualPhone("");
+                                setManualEmail("");
+                              }}
+                              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                            >
+                              ➕ Passa a SRL (ospite manuale)
+                            </button>
                           ) : null}
                         </div>
                       ) : null}
@@ -919,6 +972,11 @@ export default function DoorCheckPage() {
                         <div className="mt-3 text-sm">
                           {resAny.member.first_name} {resAny.member.last_name} {resAny.member.legacy ? "(legacy)" : null}
                         </div>
+                      ) : null}
+
+                      {/* debug utile */}
+                      {isDenied && lastDeniedCode ? (
+                        <div className="mt-3 text-[11px] text-white/40 font-mono">lastDeniedCode: {lastDeniedCode}</div>
                       ) : null}
                     </div>
                   );
