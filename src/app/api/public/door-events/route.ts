@@ -12,23 +12,46 @@ function supabaseAdmin() {
   });
 }
 
+function clampInt(v: string | null, def: number, min: number, max: number) {
+  const n = Number.parseInt(String(v ?? ""), 10);
+  if (Number.isNaN(n)) return def;
+  return Math.max(min, Math.min(max, n));
+}
+
 export async function GET(req: Request) {
   try {
     const supabase = supabaseAdmin();
-
-    // opzionale: se vuoi includere solo eventi "con data", puoi usare ?only_dated=1
     const { searchParams } = new URL(req.url);
-    const onlyDated = searchParams.get("only_dated") === "1";
 
-    let q = supabase
+    const onlyDated = searchParams.get("only_dated") === "1";
+    const onlyFuture = searchParams.get("only_future") === "1";
+    const q = (searchParams.get("q") || "").trim();
+    const limit = clampInt(searchParams.get("limit"), 1000, 1, 2000); // 800/1000 ok
+
+    let query = supabase
       .from("events")
       .select("id, name, starts_at, city, venue, xceed_event_ref, xceed_url, created_at")
-      .order("starts_at", { ascending: false })
-      .order("created_at", { ascending: false });
+      .limit(limit);
 
-    if (onlyDated) q = q.not("starts_at", "is", null);
+    if (onlyDated) query = query.not("starts_at", "is", null);
 
-    const { data, error } = await q;
+    if (onlyFuture) {
+      // confronto in ISO (Supabase timestamptz ok)
+      const nowIso = new Date().toISOString();
+      query = query.gte("starts_at", nowIso);
+    }
+
+    if (q) {
+      // ricerca su più campi (ilike)
+      // NB: usa or() con sintassi Supabase
+      const esc = q.replace(/,/g, "\\,");
+      query = query.or(`name.ilike.%${esc}%,city.ilike.%${esc}%,venue.ilike.%${esc}%`);
+    }
+
+    // ✅ ordine alfabetico (come richiesto)
+    query = query.order("name", { ascending: true }).order("starts_at", { ascending: true });
+
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
 
     const events = (data || []).map((e: any) => ({
