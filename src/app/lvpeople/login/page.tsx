@@ -1,4 +1,4 @@
 import { redirect } from "next/navigation";
-export default function AdminLoginAlias() {
+export default function LVPeopleLoginAlias() {
   redirect("/login");
 }

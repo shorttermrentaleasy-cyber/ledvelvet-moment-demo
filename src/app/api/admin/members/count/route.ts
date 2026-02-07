@@ -25,52 +25,22 @@ async function requireAdmin() {
   return { ok: true as const, email };
 }
 
-function safeLike(q: string) {
-  // escape % and _
-  return `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
-}
-
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const admin = await requireAdmin();
     if (!admin.ok) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: admin.code });
-
-    const url = new URL(req.url);
-    const q = (url.searchParams.get("q") || "").trim();
-    const status = (url.searchParams.get("status") || "all").trim();
-
-    const limit = Math.max(1, Math.min(5000, Number(url.searchParams.get("limit") || 500)));
-    const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
 
     const supabase = createClient(assertEnv("SUPABASE_URL"), assertEnv("SUPABASE_SERVICE_ROLE"), {
       auth: { persistSession: false },
     });
 
-    let query = supabase
-      .from("wallyfor_members")
-      .select("id, barcode, first_name, last_name, full_name, email, status, raw, updated_at", { count: "exact" })
-      .order("updated_at", { ascending: true })
-      .range(offset, offset + limit - 1);
+    const { count, error } = await supabase
+      .from("members")
+      .select("id", { count: "exact", head: true });
 
-    if (status && status !== "all") query = query.eq("status", status);
-
-    if (q) {
-      const like = safeLike(q);
-      query = query.or(
-        `barcode.ilike.${like},full_name.ilike.${like},email.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`
-      );
-    }
-
-    const { data, error, count } = await query;
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
-    return NextResponse.json({
-      ok: true,
-      rows: data || [],
-      count: Number(count || 0),
-      limit,
-      offset,
-    });
+    return NextResponse.json({ ok: true, total: Number(count || 0) });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "server_error" }, { status: 500 });
   }

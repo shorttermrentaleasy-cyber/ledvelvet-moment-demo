@@ -1,8 +1,8 @@
 import type { NextAuthOptions } from "next-auth";
-import * as QRCode from "qrcode";
 import EmailProvider from "next-auth/providers/email";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { createClient } from "@supabase/supabase-js";
 
 function getAllowedAdmins(): string[] {
   return (process.env.ADMIN_EMAILS || "")
@@ -38,9 +38,7 @@ async function sendWithResend({
   text?: string;
 }) {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    throw new Error("Resend error: missing RESEND_API_KEY");
-  }
+  if (!apiKey) throw new Error("Resend error: missing RESEND_API_KEY");
 
   const fromRaw = cleanFrom(process.env.EMAIL_FROM) || "onboarding@resend.dev";
   const from = isValidFromFormat(fromRaw) ? fromRaw : "onboarding@resend.dev";
@@ -53,7 +51,7 @@ async function sendWithResend({
     },
     body: JSON.stringify({
       from,
-      to: [to], // sempre array
+      to: [to],
       subject,
       html,
       text,
@@ -66,17 +64,45 @@ async function sendWithResend({
   }
 }
 
+function supabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+async function isMemberEmail(emailRaw: string): Promise<boolean> {
+  const email = (emailRaw || "").toLowerCase().trim();
+  if (!email) return false;
+
+  try {
+    const sb = supabaseAdmin();
+    const { data, error } = await sb
+      .from("members")
+      .select("id")
+      .ilike("email", email)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return false;
+    return !!data?.id;
+  } catch {
+    return false;
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
   providers: [
     EmailProvider({
       async sendVerificationRequest({ identifier, url }) {
-        const subject = "Accesso area admin LedVelvet";
+        // ✅ generico (non solo admin)
+        const subject = "Accesso LedVelvet";
 
         const html = `
           <div style="font-family:Arial,sans-serif">
-            <h2>LedVelvet – Admin</h2>
+            <h2>LedVelvet</h2>
             <p>Clicca sul pulsante per accedere:</p>
             <p>
               <a href="${url}" style="padding:10px 16px;background:#000;color:#fff;text-decoration:none;border-radius:8px">
@@ -89,28 +115,58 @@ export const authOptions: NextAuthOptions = {
           </div>
         `;
 
-        await sendWithResend({
-          to: identifier,
-          subject,
-          html,
-        });
+        await sendWithResend({ to: identifier, subject, html });
       },
     }),
   ],
 
+  // ✅ un solo entrypoint UI
+
   pages: {
-    signIn: "/admin/login",
-    verifyRequest: "/admin/verify",
-  },
+  signIn: "/login",
+  verifyRequest: "/verify",
+  error: "/login", // ⬅️ QUESTO È IL FIX
+},
+
 
   callbacks: {
     async signIn({ user }) {
-      if (!user.email) return false;
-      return getAllowedAdmins().includes(user.email.toLowerCase());
+      const email = user?.email?.toLowerCase().trim();
+      if (!email) return false;
+
+      // ✅ admin OR socio (presente in public.members)
+      if (getAllowedAdmins().includes(email)) return true;
+
+      const memberOk = await isMemberEmail(email);
+      return memberOk;
     },
 
-    async redirect({ baseUrl }) {
-      return `${baseUrl}/admin`;
+    // ✅ NON forzare /admin: lasciamo passare il callbackUrl
+    async redirect({ url, baseUrl }) {
+      // allow relative callback urls
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      // allow callback urls on same origin
+      if (url.startsWith(baseUrl)) return url;
+      // fallback safe
+      return `${baseUrl}/login`;
+    },
+
+    // ✅ mettiamo role in session (senza cambiare schema Prisma)
+    async session({ session, user }) {
+      const email = user?.email?.toLowerCase().trim() || session?.user?.email?.toLowerCase().trim() || "";
+
+      const isAdmin = email ? getAllowedAdmins().includes(email) : false;
+      let isMember = false;
+
+      if (email && !isAdmin) {
+        isMember = await isMemberEmail(email);
+      } else if (email && isAdmin) {
+        // admin può anche essere socio: non ci interessa ora
+        isMember = await isMemberEmail(email);
+      }
+
+      (session as any).role = isAdmin ? "admin" : isMember ? "member" : "unknown";
+      return session;
     },
   },
 

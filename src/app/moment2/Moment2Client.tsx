@@ -35,7 +35,8 @@ type EventItem = {
   date: string;
   phase: "upcoming" | "past";
   ticketUrl?: string;
-
+// ✅ NEW: notes (Airtable "Notes")
+  notes?: string;
   teaserUrl?: string;
   aftermovieUrl?: string;
   featured?: boolean;
@@ -488,7 +489,8 @@ export default function Moment2() {
               date: e.date || e["date"] || "",
               phase,
               ticketUrl: e.ticketUrl || e["Ticket Url"] || "",
-
+ // ✅ NEW: Notes dal backoffice (Airtable "Notes")
+  notes: (e.notes || e["Notes"] || "").toString(),
               teaserUrl: e.teaserUrl || e["Teaser"] || "",
               aftermovieUrl: e.aftermovieUrl || e["Aftermovie"] || "",
               featured: Boolean(e.featured),
@@ -794,7 +796,7 @@ export default function Moment2() {
           <div className="flex items-center gap-2">
             {!user.email ? (
               <a
-                href="/lvpeople"
+                href="/login"
                 className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
               >
                 Accedi
@@ -1146,7 +1148,19 @@ export default function Moment2() {
                     <div className="mt-2 text-sm text-white/80">
                       {e.city} • {fmtDateIT(e.date)}
                     </div>
-
+{e.notes ? (
+  <div
+    className="mt-3 text-sm text-white/75 leading-relaxed"
+    style={{
+      display: "-webkit-box",
+      WebkitLineClamp: 3 as any,
+      WebkitBoxOrient: "vertical" as any,
+      overflow: "hidden",
+    }}
+  >
+    {e.notes}
+  </div>
+) : null}
                     {e.sponsors && e.sponsors.length > 0 ? (
                       <div className="mt-4">
                         <div className="text-[10px] tracking-[0.26em] uppercase text-white/75">Sponsors</div>
@@ -1288,7 +1302,19 @@ export default function Moment2() {
                               <div className="mt-2 text-sm text-white/70">
                                 {e.city} • {fmtDateIT(e.date)}
                               </div>
-
+{e.notes ? (
+  <div
+    className="mt-3 text-sm text-white/70 leading-relaxed"
+    style={{
+      display: "-webkit-box",
+      WebkitLineClamp: 3 as any,
+      WebkitBoxOrient: "vertical" as any,
+      overflow: "hidden",
+    }}
+  >
+    {e.notes}
+  </div>
+) : null}
                               {e.sponsors && e.sponsors.length > 0 ? (
                                 <div className="mt-4">
                                   <div className="text-[10px] tracking-[0.26em] uppercase text-white/70">Sponsors</div>

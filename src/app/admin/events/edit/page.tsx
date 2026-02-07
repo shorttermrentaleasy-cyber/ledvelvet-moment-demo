@@ -5,13 +5,14 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import AdminTopbarClient from "../../AdminTopbarClient";
 
 const HERO_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
+// ✅ nuovo: link YouTube Studio (upload teaser/aftermovie)
+const YT_STUDIO_VIDEOS_URL = "https://studio.youtube.com/channel/UCfQf25gurELioXHUNN8fSNQ/videos/";
 
 export const dynamic = "force-dynamic";
 
 function unauthorized() {
   redirect("/admin/login");
 }
-
 
 function normalizeDriveImageUrl(input: string): string {
   const s = String(input || "").trim();
@@ -36,7 +37,6 @@ function normalizeDriveImageUrl(input: string): string {
   // Not a drive link we recognize -> keep as-is (could be a normal https image)
   return s;
 }
-
 
 function isHttpUrl(v: string) {
   if (!v) return true;
@@ -182,23 +182,23 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) redirect(`/admin/events/edit?id=${id}`);
 
     const sponsorsSelected = formData.getAll("sponsors").map(String);
-	const heroRaw = String(formData.get("heroImageUrl") || "").trim();
-        const hero = normalizeDriveImageUrl(heroRaw);
-	const teaser = String(formData.get("teaserUrl") || "").trim();
-	const after = String(formData.get("aftermovieUrl") || "").trim();
-	// ✅ valida SOLO se non vuoto
-	
-if ((hero && !isHttpUrl(hero)) || (teaser && !isHttpUrl(teaser)) || (after && !isHttpUrl(after))) {
-  	redirect(`/admin/events/edit?id=${id}`);
-	}
-const ticketPlatform = String(formData.get("ticketPlatform") || "").trim();
-const ticketUrl = String(formData.get("ticketUrl") || "").trim();
-const city = String(formData.get("city") || "").trim();
-const venue = String(formData.get("venue") || "").trim();
-const status = String(formData.get("status") || "").trim();
-const notes = String(formData.get("notes") || "").trim();
+    const heroRaw = String(formData.get("heroImageUrl") || "").trim();
+    const hero = normalizeDriveImageUrl(heroRaw);
+    const teaser = String(formData.get("teaserUrl") || "").trim();
+    const after = String(formData.get("aftermovieUrl") || "").trim();
+    // ✅ valida SOLO se non vuoto
+    if ((hero && !isHttpUrl(hero)) || (teaser && !isHttpUrl(teaser)) || (after && !isHttpUrl(after))) {
+      redirect(`/admin/events/edit?id=${id}`);
+    }
 
-const fields: Record<string, any> = {
+    const ticketPlatform = String(formData.get("ticketPlatform") || "").trim();
+    const ticketUrl = String(formData.get("ticketUrl") || "").trim();
+    const city = String(formData.get("city") || "").trim();
+    const venue = String(formData.get("venue") || "").trim();
+    const status = String(formData.get("status") || "").trim();
+    const notes = String(formData.get("notes") || "").trim();
+
+    const fields: Record<string, any> = {
       "Event Name": String(formData.get("eventName") || "").trim(),
       date: normalizeDate(formData.get("date")),
       City: city || null,
@@ -211,11 +211,10 @@ const fields: Record<string, any> = {
       Featured: formData.get("featured") === "on",
     };
 
-  	if (hero) fields["Hero Image"] = [{ url: hero }];
-	if (!hero) fields["Hero Image"] = null;
-	fields["Teaser"] = teaser ? teaser : null;
-	fields["Aftermovie"] = after ? after : null;
-
+    if (hero) fields["Hero Image"] = [{ url: hero }];
+    if (!hero) fields["Hero Image"] = null;
+    fields["Teaser"] = teaser ? teaser : null;
+    fields["Aftermovie"] = after ? after : null;
 
     const r = await fetch(
       `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_EVENTS)}/${id}`,
@@ -256,7 +255,10 @@ const fields: Record<string, any> = {
         <form action={updateAction} style={styles.card}>
           <div style={styles.grid}>
             <Input label="Event name" name="eventName" defaultValue={f["Event Name"]} required />
+
+            {/* ✅ date: rende visibile l’icona calendario */}
             <Input label="Date" name="date" defaultValue={normalizeDate(f["date"])} type="date" />
+
             <Input label="City" name="city" defaultValue={f["City"]} />
             <Input label="Venue" name="venue" defaultValue={f["Venue"]} />
 
@@ -270,27 +272,37 @@ const fields: Record<string, any> = {
 
             <Input label="Ticket URL" name="ticketUrl" defaultValue={f["Ticket Url"]} />
 
-           <Field label="Hero Google Drive URL (o direct image URL)">
-  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-    <input
-      name="heroImageUrl"
-      defaultValue={heroImg}
-      style={{ ...styles.input, flex: 1 }}
-    />
-    <a
-      href={HERO_DRIVE_FOLDER_URL}
-      target="_blank"
-      rel="noreferrer"
-      style={styles.driveBtn}
-      title="Apri la cartella Drive dove caricare le immagini Hero"
-    >
-      Apri Drive
-    </a>
-  </div>
-</Field>
+            <Field label="Hero Google Drive URL (o direct image URL)">
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <input name="heroImageUrl" defaultValue={heroImg} style={{ ...styles.input, flex: 1 }} />
+                <a
+                  href={HERO_DRIVE_FOLDER_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={styles.driveBtn}
+                  title="Apri la cartella Drive dove caricare le immagini Hero"
+                >
+                  Apri Drive
+                </a>
+              </div>
+            </Field>
 
+            {/* ✅ Teaser con bottone YouTube Studio */}
+            <Field label="Teaser URL (YouTube)">
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <input name="teaserUrl" defaultValue={teaserUrl} style={{ ...styles.input, flex: 1 }} />
+                <a
+                  href={YT_STUDIO_VIDEOS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={styles.ytBtn}
+                  title="Apri YouTube Studio per caricare o gestire i video"
+                >
+                  YouTube Studio
+                </a>
+              </div>
+            </Field>
 
-            <Input label="Teaser URL (YouTube)" name="teaserUrl" defaultValue={teaserUrl} />
             <Input label="Aftermovie URL (YouTube)" name="aftermovieUrl" defaultValue={aftermovieUrl} />
 
             <div style={{ gridColumn: "1 / -1" }}>
@@ -315,8 +327,12 @@ const fields: Record<string, any> = {
           </div>
 
           <div style={styles.footer}>
-            <button type="submit" style={styles.primaryBtn}>Save</button>
-            <a href="/admin/events" style={styles.secondaryBtn}>Cancel</a>
+            <button type="submit" style={styles.primaryBtn}>
+              Save
+            </button>
+            <a href="/admin/events" style={styles.secondaryBtn}>
+              Cancel
+            </a>
           </div>
         </form>
       </div>
@@ -370,14 +386,16 @@ function Select({ label, name, defaultValue, options }: any) {
       <select name={name} defaultValue={defaultValue} style={styles.input}>
         <option value="">—</option>
         {options.map((o: string) => (
-          <option key={o} value={o}>{o}</option>
+          <option key={o} value={o}>
+            {o}
+          </option>
         ))}
       </select>
     </Field>
   );
 }
 
-/* styles: invariati */
+/* styles: invariati (con 2 micro aggiunte) */
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: "100vh", background: "#070812", color: "#fff" },
   wrap: { maxWidth: 860, margin: "0 auto", padding: 16 },
@@ -389,41 +407,57 @@ const styles: Record<string, React.CSSProperties> = {
   field: { display: "flex", flexDirection: "column", gap: 6 },
   label: { fontSize: 13, opacity: 0.8 },
   smallMuted: { fontSize: 11, opacity: 0.6 },
-input: {
-  height: 40,
-  borderRadius: 10,
-  background: "rgba(0,0,0,0.4)",
-  color: "#fff",
-  border: "1px solid rgba(255,255,255,0.18)",
-  padding: "0 12px",
-  outline: "none",
-},
 
-  
-textarea: {
-  minHeight: 110,
-  borderRadius: 10,
-  background: "rgba(0,0,0,0.4)",
-  color: "#fff",
-  border: "1px solid rgba(255,255,255,0.18)",
-  padding: "10px 12px",
-  outline: "none",
-},
+  input: {
+    height: 40,
+    borderRadius: 10,
+    background: "rgba(0,0,0,0.4)",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.18)",
+    padding: "0 12px",
+    outline: "none",
 
-driveBtn: {
-  height: 40,
-  padding: "0 14px",
-  borderRadius: 12,
-  border: "1px solid rgba(0,255,209,0.55)",
-  background: "rgba(0,0,0,0.22)",
-  color: "rgba(255,255,255,0.92)",
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
-  whiteSpace: "nowrap",
-},
+    // ✅ rende visibile l’icona calendario su input type="date" (Chrome/Safari)
+    colorScheme: "dark",
+  },
 
-  
+  textarea: {
+    minHeight: 110,
+    borderRadius: 10,
+    background: "rgba(0,0,0,0.4)",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.18)",
+    padding: "10px 12px",
+    outline: "none",
+  },
+
+  driveBtn: {
+    height: 40,
+    padding: "0 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(0,255,209,0.55)",
+    background: "rgba(0,0,0,0.22)",
+    color: "rgba(255,255,255,0.92)",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    whiteSpace: "nowrap",
+  },
+
+  // ✅ nuovo bottone YouTube Studio (stile coerente, diverso dal Drive per riconoscerlo)
+  ytBtn: {
+    height: 40,
+    padding: "0 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.22)",
+    background: "rgba(255,255,255,0.06)",
+    color: "rgba(255,255,255,0.92)",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    whiteSpace: "nowrap",
+  },
+
   checkRow: { display: "flex", justifyContent: "space-between", padding: 12 },
   details: { borderRadius: 12 },
   summary: { cursor: "pointer", padding: 10 },

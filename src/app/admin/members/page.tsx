@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-type TabKey = "wallyfor" | "legacy";
+type TabKey = "wallyfor" | "members" | "legacy";
 
 type WallyRow = {
   id: string;
@@ -123,6 +123,9 @@ export default function AdminMembersPage() {
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("all");
+	const [limit, setLimit] = useState(500);
+	const [offset, setOffset] = useState(0);
+
 
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<WallyRow[]>([]);
@@ -131,54 +134,144 @@ export default function AdminMembersPage() {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
   const [qrOpen, setQrOpen] = useState(false);
   const [qrValue, setQrValue] = useState<string>("");
   const [qrImgUrl, setQrImgUrl] = useState<string>("");
 
-  // ✅ SOLO AGGIUNTA: totale soci dal DB (endpoint /api/admin/wallyfor/count)
+  // totale coerente col tab (lo settiamo dalle list route)
   const [totalCount, setTotalCount] = useState<number | null>(null);
 
   const title = useMemo(() => {
-    return tab === "wallyfor" ? "Associati — Wallyfor (ETS)" : "Associati — Legacy (Eventi / non-soci)";
+    return tab === "wallyfor"
+      ? "Associati — Wallyfor (ETS)"
+      : tab === "members"
+      ? "Associati — Members (ETS)"
+      : "Associati — Legacy (Eventi / non-soci)";
   }, [tab]);
 
   const subtitle = useMemo(() => {
     return tab === "wallyfor"
-      ? "Importa e visualizza i soci ETS (fonte: export Wallyfor). QR generato dal Barcode."
+      ? "Importa e visualizza i soci ETS (fonte: export Wallyfor)."
+      : tab === "members"
+      ? "Vista operativa soci ETS (tabella members). Questa è la fonte usata dal sistema (DoorCheck)."
       : "Placeholder. Qui gestiremo i partecipanti/non-soci da convertire in ETS (step successivo).";
   }, [tab]);
 
   async function loadWallyfor() {
+  setLoading(true);
+  setErr(null);
+
+  try {
+    const qs = new URLSearchParams();
+
+    if (q.trim()) qs.set("q", q.trim());
+    if (status && status !== "all") qs.set("status", status);
+
+    // paginazione (default coerenti con la route)
+    qs.set("limit", "500");
+    qs.set("offset", "0");
+
+    const json = await fetchJsonSafe(
+      `/api/admin/wallyfor/list?${qs.toString()}`,
+      { cache: "no-store" }
+    );
+
+    if (!json?.ok) throw new Error(json?.error || "load_failed");
+
+    setRows(json.rows || []);
+
+    // 🔴 IMPORTANTE: aggiorna il totale dal COUNT vero
+    if (typeof json.count === "number") {
+      setTotalCount(json.count);
+    }
+  } catch (e: any) {
+    setErr(e?.message || "load_failed");
+    setRows([]);
+  } finally {
+    setLoading(false);
+  }
+}
+
+  async function loadMembers() {
     setLoading(true);
     setErr(null);
     try {
       const qs = new URLSearchParams();
-      if (q.trim()) qs.set("q", q.trim());
+      
+	if (q.trim()) qs.set("q", q.trim());
       if (status && status !== "all") qs.set("status", status);
-
-      const json = await fetchJsonSafe(`/api/admin/wallyfor/list?${qs.toString()}`, { cache: "no-store" });
+	qs.set("limit", String(limit));
+	qs.set("offset", String(offset));
+      const json = await fetchJsonSafe(`/api/admin/members/list?${qs.toString()}`, { cache: "no-store" });
       if (!json?.ok) throw new Error(json?.error || "load_failed");
-      setRows(json.rows || []);
+
+      const mapped: WallyRow[] = (json.rows || []).map((m: any) => ({
+        id: m.id,
+        barcode: m.legacy_barcode || "",
+        first_name: m.first_name ?? null,
+        last_name: m.last_name ?? null,
+        full_name: [m.first_name, m.last_name].filter(Boolean).join(" ") || null,
+        email: m.email ?? null,
+        status: m.status ?? null,
+        raw: {
+          Telefono: m.phone ?? "",
+          // CF non è nella select della route: per ora vuoto
+          "Codice fiscale": "",
+        },
+        updated_at: m.updated_at || m.created_at || "",
+      }));
+
+      setRows(mapped);
+      if (typeof json.count === "number") setTotalCount(json.count);
+      else setTotalCount(mapped.length);
     } catch (e: any) {
       setErr(e?.message || "load_failed");
       setRows([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
   }
 
-  // ✅ SOLO AGGIUNTA: carica totale una volta (silenzioso se endpoint manca)
-  useEffect(() => {
-    fetch("/api/admin/wallyfor/count", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.ok && typeof j.total === "number") setTotalCount(j.total);
-      })
-      .catch(() => {});
-  }, []);
+  async function runSyncToMembers(limit = 5000) {
+    setSyncing(true);
+    setSyncMsg(null);
+    setErr(null);
+
+    try {
+      const json = await fetchJsonSafe("/api/admin/wallyfor/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit }),
+      });
+
+      if (!json?.ok) throw new Error(json?.error || "sync_failed");
+
+      const updated = Number(json.updated_count ?? 0);
+      const inserted = Number(json.inserted_count ?? 0);
+      setSyncMsg(`Sync OK → members: aggiornati ${updated}, inseriti ${inserted}.`);
+    } catch (e: any) {
+      setErr(e?.message || "sync_failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   useEffect(() => {
+    setOffset(0);
+    setImportMsg(null);
+    setSyncMsg(null);
+    setErr(null);
+
     if (tab === "wallyfor") loadWallyfor();
+    if (tab === "members") loadMembers();
+    if (tab === "legacy") {
+      setRows([]);
+      setTotalCount(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
@@ -187,6 +280,7 @@ export default function AdminMembersPage() {
 
     setImporting(true);
     setImportMsg(null);
+    setSyncMsg(null);
     setErr(null);
 
     try {
@@ -206,14 +300,6 @@ export default function AdminMembersPage() {
       if (!json?.ok) throw new Error(json?.error || "import_failed");
       setImportMsg(`Import OK: ${json.imported} righe.`);
       await loadWallyfor();
-
-      // ✅ SOLO AGGIUNTA: refresh totale dopo import
-      fetch("/api/admin/wallyfor/count", { cache: "no-store" })
-        .then((r) => r.json())
-        .then((j) => {
-          if (j?.ok && typeof j.total === "number") setTotalCount(j.total);
-        })
-        .catch(() => {});
     } catch (e: any) {
       setErr(e?.message || "import_failed");
     } finally {
@@ -223,10 +309,14 @@ export default function AdminMembersPage() {
 
   function openQr(barcode: string) {
     setQrValue(barcode);
-    // ✅ QR senza dipendenze: immagine generata da servizio esterno
     const url = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(barcode)}`;
     setQrImgUrl(url);
     setQrOpen(true);
+  }
+
+  function onRefresh() {
+    if (tab === "wallyfor") return loadWallyfor();
+    if (tab === "members") return loadMembers();
   }
 
   return (
@@ -250,46 +340,67 @@ export default function AdminMembersPage() {
         </header>
 
         <section style={styles.tabsRow}>
-          <button
-            type="button"
-            onClick={() => setTab("wallyfor")}
-            style={tab === "wallyfor" ? styles.tabActive : styles.tab}
-          >
+          <button type="button" onClick={() => setTab("wallyfor")} style={tab === "wallyfor" ? styles.tabActive : styles.tab}>
             Wallyfor (ETS)
           </button>
-          <button
-            type="button"
-            onClick={() => setTab("legacy")}
-            style={tab === "legacy" ? styles.tabActive : styles.tab}
-          >
+          <button type="button" onClick={() => setTab("members")} style={tab === "members" ? styles.tabActive : styles.tab}>
+            Members (ETS)
+          </button>
+          <button type="button" onClick={() => setTab("legacy")} style={tab === "legacy" ? styles.tabActive : styles.tab}>
             Legacy (Eventi / non-soci)
           </button>
         </section>
 
-        {tab === "wallyfor" ? (
+        {tab === "wallyfor" || tab === "members" ? (
           <>
             <section style={styles.card}>
               <div style={styles.cardTop}>
                 <div>
-                  <div style={styles.cardTitle}>Import Wallyfor (CSV)</div>
+                  <div style={styles.cardTitle}>
+                    {tab === "wallyfor" ? "Import Wallyfor (CSV)" : "Soci ETS (Members)"}
+                  </div>
                   <div style={styles.cardDesc}>
-                    Carica l’export CSV Wallyfor. Upsert per <b>Barcode</b>. Tutte le colonne finiscono in <b>raw</b>.
+                    {tab === "wallyfor" ? (
+                      <>
+                        Carica l’export CSV Wallyfor. Upsert per <b>Barcode</b>. Tutte le colonne finiscono in <b>raw</b>.
+                      </>
+                    ) : (
+                      <>
+                        Vista su <b>members</b> (fonte DoorCheck). Import e sync non necessari qui.
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <label style={importing ? styles.primaryBtnDisabled : styles.primaryBtn}>
-                  {importing ? "Import in corso..." : "Import CSV"}
-                  <input
-                    type="file"
-                    accept=".csv,text/csv"
-                    style={{ display: "none" }}
-                    disabled={importing}
-                    onChange={(e) => onImportCsv(e.target.files?.[0] || null)}
-                  />
-                </label>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  {tab === "wallyfor" ? (
+                    <>
+                      <label style={importing ? styles.primaryBtnDisabled : styles.primaryBtn}>
+                        {importing ? "Import in corso..." : "Import CSV"}
+                        <input
+                          type="file"
+                          accept=".csv,text/csv"
+                          style={{ display: "none" }}
+                          disabled={importing}
+                          onChange={(e) => onImportCsv(e.target.files?.[0] || null)}
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => runSyncToMembers(5000)}
+                        disabled={syncing}
+                        style={syncing ? styles.primaryBtnDisabled : styles.primaryBtn}
+                      >
+                        {syncing ? "Sync in corso..." : "Sync → members"}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               </div>
 
               {importMsg ? <div style={styles.okBox}>{importMsg}</div> : null}
+              {syncMsg ? <div style={styles.okBox}>{syncMsg}</div> : null}
               {err ? <div style={styles.errBox}>{String(err)}</div> : null}
 
               <div style={styles.filtersGrid}>
@@ -314,7 +425,7 @@ export default function AdminMembersPage() {
 
                 <div style={styles.field}>
                   <div style={styles.label}>Azioni</div>
-                  <button type="button" style={styles.secondaryBtn} onClick={loadWallyfor} disabled={loading}>
+                  <button type="button" style={styles.secondaryBtn} onClick={onRefresh} disabled={loading}>
                     {loading ? "Carico..." : "Refresh"}
                   </button>
                 </div>
@@ -329,15 +440,21 @@ export default function AdminMembersPage() {
             <section style={styles.listCard}>
               <div style={styles.listHeader}>
                 <div>
-                  <div style={styles.cardTitle}>Lista soci ETS</div>
-                  <div style={styles.cardDesc}>QR viene generato dal campo <b>Barcode</b>.</div>
+                  <div style={styles.cardTitle}>Lista</div>
+                  <div style={styles.cardDesc}>
+                    QR viene generato dal campo <b>Barcode</b>.
+                  </div>
                 </div>
               </div>
 
               {rows.length === 0 ? (
                 <div style={styles.empty}>
                   <div style={styles.emptyTitle}>Nessun dato</div>
-                  <div style={styles.emptyDesc}>Importa un CSV Wallyfor per popolare la lista.</div>
+                  <div style={styles.emptyDesc}>
+                    {tab === "wallyfor"
+                      ? "Importa un CSV Wallyfor per popolare la lista."
+                      : "Non ci sono soci in members (o i filtri non trovano risultati)."}
+                  </div>
                 </div>
               ) : (
                 <div style={styles.tableWrap}>
@@ -365,12 +482,16 @@ export default function AdminMembersPage() {
                             <td style={styles.td}>{r.email || "—"}</td>
                             <td style={styles.td}>{tel || "—"}</td>
                             <td style={styles.tdMono}>{cf || "—"}</td>
-                            <td style={styles.tdMono}>{r.barcode}</td>
+                            <td style={styles.tdMono}>{r.barcode || "—"}</td>
                             <td style={styles.td}>{r.status || "—"}</td>
                             <td style={styles.tdRight}>
-                              <button type="button" style={styles.qrBtn} onClick={() => openQr(r.barcode)}>
-                                QR
-                              </button>
+                              {r.barcode ? (
+                                <button type="button" style={styles.qrBtn} onClick={() => openQr(r.barcode)}>
+                                  QR
+                                </button>
+                              ) : (
+                                <span style={{ opacity: 0.6 }}>—</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -422,7 +543,7 @@ export default function AdminMembersPage() {
         ) : null}
 
         <footer style={styles.footer}>
-          <span style={{ opacity: 0.7 }}>Step: Wallyfor import/lista/QR + Telefono/CF.</span>
+          <span style={{ opacity: 0.7 }}>Step: Wallyfor import/lista/Sync + Members view.</span>
         </footer>
       </div>
     </main>

@@ -26,8 +26,13 @@ async function requireAdmin() {
 }
 
 function safeLike(q: string) {
-  // escape % and _
-  return `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+  return `%${q.replace(/%/g, "\\%")}%`;
+}
+
+function clampInt(v: string | null, def: number, min: number, max: number) {
+  const n = Number.parseInt(String(v ?? ""), 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(max, n));
 }
 
 export async function GET(req: Request) {
@@ -35,31 +40,37 @@ export async function GET(req: Request) {
     const admin = await requireAdmin();
     if (!admin.ok) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: admin.code });
 
-    const url = new URL(req.url);
-    const q = (url.searchParams.get("q") || "").trim();
-    const status = (url.searchParams.get("status") || "all").trim();
-
-    const limit = Math.max(1, Math.min(5000, Number(url.searchParams.get("limit") || 500)));
-    const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
-
     const supabase = createClient(assertEnv("SUPABASE_URL"), assertEnv("SUPABASE_SERVICE_ROLE"), {
-      auth: { persistSession: false },
+      auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    let query = supabase
-      .from("wallyfor_members")
-      .select("id, barcode, first_name, last_name, full_name, email, status, raw, updated_at", { count: "exact" })
-      .order("updated_at", { ascending: true })
-      .range(offset, offset + limit - 1);
+    const { searchParams } = new URL(req.url);
+    const q = String(searchParams.get("q") || "").trim();
+    const status = String(searchParams.get("status") || "").trim(); // "ATTIVA" | "NON ATTIVA" | ""
+    const limit = clampInt(searchParams.get("limit"), 200, 1, 500);
+    const offset = clampInt(searchParams.get("offset"), 0, 0, 100000);
 
-    if (status && status !== "all") query = query.eq("status", status);
+    let query = supabase
+      .from("members")
+      .select(
+        "id, first_name, last_name, email, phone, codice_fiscale, legacy_barcode, status, updated_at, created_at",
+        { count: "exact" }
+      )
+      .eq("legacy", true) // soci ETS importati
+      .order("updated_at", { ascending: true });
+
+    if (status && status.toLowerCase() !== "all") {
+      query = query.eq("status", status);
+    }
 
     if (q) {
       const like = safeLike(q);
       query = query.or(
-        `barcode.ilike.${like},full_name.ilike.${like},email.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`
+        `first_name.ilike.${like},last_name.ilike.${like},email.ilike.${like},phone.ilike.${like},codice_fiscale.ilike.${like},legacy_barcode.ilike.${like}`
       );
     }
+
+    query = query.range(offset, offset + limit - 1);
 
     const { data, error, count } = await query;
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });

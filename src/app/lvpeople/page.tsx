@@ -40,9 +40,7 @@ function getSupabaseAdmin() {
   const key = process.env.SUPABASE_SERVICE_ROLE;
 
   if (!url || !key) {
-    throw new Error(
-      "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE env vars (server-side)."
-    );
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE env vars (server-side).");
   }
 
   return createClient(url, key, {
@@ -50,10 +48,7 @@ function getSupabaseAdmin() {
   });
 }
 
-function computeMemberStatus(args: {
-  legacy: boolean;
-  hasActiveMembership: boolean;
-}) {
+function computeMemberStatus(args: { legacy: boolean; hasActiveMembership: boolean }) {
   if (args.legacy) return "LEGACY" as const;
   if (args.hasActiveMembership) return "ATTIVO" as const;
   return "SCADUTO" as const;
@@ -63,17 +58,16 @@ export default async function LVPeopleHomePage() {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email?.toLowerCase().trim();
 
+  // ✅ CHANGE: entrypoint separato per LV People
   if (!email) {
-    redirect("/admin/login");
+    redirect("/login");
   }
 
   const supabase = getSupabaseAdmin();
 
   const { data: member, error: memberErr } = await supabase
     .from("members")
-    .select(
-      "id, first_name, last_name, email, phone, legacy, language, created_at"
-    )
+    .select("id, first_name, last_name, email, phone, legacy, language, created_at")
     .ilike("email", email)
     .maybeSingle<MemberRow>();
 
@@ -82,13 +76,10 @@ export default async function LVPeopleHomePage() {
       <main className="min-h-screen bg-black text-white p-6">
         <div className="max-w-2xl mx-auto">
           <h1 className="text-2xl font-semibold">LV People</h1>
-          <p className="mt-4 text-red-300">
-            Errore lettura socio da Supabase: {memberErr.message}
-          </p>
+          <p className="mt-4 text-red-300">Errore lettura socio da Supabase: {memberErr.message}</p>
           <p className="mt-2 text-white/70 text-sm">
-            Controlla che esistano le tabelle LV People in Supabase e che le env
-            vars SUPABASE_URL / SUPABASE_SERVICE_ROLE siano impostate su Vercel e
-            in locale.
+            Controlla che esistano le tabelle LV People in Supabase e che le env vars SUPABASE_URL /
+            SUPABASE_SERVICE_ROLE siano impostate su Vercel e in locale.
           </p>
         </div>
       </main>
@@ -102,22 +93,17 @@ export default async function LVPeopleHomePage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-semibold">LV People</h1>
-              <p className="mt-1 text-white/70 text-sm">
-                Area socio (MVP) – tessera e storico accessi.
-              </p>
+              <p className="mt-1 text-white/70 text-sm">Area socio (MVP) – tessera e storico accessi.</p>
             </div>
             <LVPeopleActions />
           </div>
 
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <p className="text-white/80">
-              Non risulto registrato come socio LV People per questa email:
-            </p>
+            <p className="text-white/80">Non risulto registrato come socio LV People per questa email:</p>
             <p className="mt-2 font-mono text-sm text-white">{email}</p>
 
             <p className="mt-4 text-white/70 text-sm">
-              Se questa è un’email corretta, lo staff può importarti come socio
-              (legacy) o associare il tuo account.
+              Se questa è un’email corretta, lo staff può importarti come socio (legacy) o associare il tuo account.
             </p>
           </div>
         </div>
@@ -145,10 +131,7 @@ export default async function LVPeopleHomePage() {
     .maybeSingle<MembershipRow>();
 
   const hasActiveMembership = !!activeMembership;
-  const status = computeMemberStatus({
-    legacy: member.legacy,
-    hasActiveMembership,
-  });
+  const status = computeMemberStatus({ legacy: member.legacy, hasActiveMembership });
 
   return (
     <main className="min-h-screen bg-black text-white p-6">
@@ -156,9 +139,7 @@ export default async function LVPeopleHomePage() {
         <header className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">LV People</h1>
-            <p className="mt-1 text-white/70 text-sm">
-              Area socio (MVP) – tessera e storico accessi.
-            </p>
+            <p className="mt-1 text-white/70 text-sm">Area socio (MVP) – tessera e storico accessi.</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -189,12 +170,10 @@ export default async function LVPeopleHomePage() {
                 {member.first_name} {member.last_name}
               </div>
               <div className="mt-2 text-sm text-white/70 break-words">
-                <span className="text-white/50">Email:</span>{" "}
-                {member.email || "—"}
+                <span className="text-white/50">Email:</span> {member.email || "—"}
               </div>
               <div className="mt-1 text-sm text-white/70 break-words">
-                <span className="text-white/50">Telefono:</span>{" "}
-                {member.phone || "—"}
+                <span className="text-white/50">Telefono:</span> {member.phone || "—"}
               </div>
             </div>
 
@@ -202,33 +181,23 @@ export default async function LVPeopleHomePage() {
               <div className="text-sm text-white/60">Tessera</div>
 
               {cardErr ? (
-                <p className="mt-2 text-sm text-red-300">
-                  Errore lettura tessera: {cardErr.message}
-                </p>
+                <p className="mt-2 text-sm text-red-300">Errore lettura tessera: {cardErr.message}</p>
               ) : !card ? (
                 <div className="mt-2 text-sm text-white/70">
                   Nessuna tessera associata a questo socio.
-                  <div className="mt-2 text-xs text-white/50">
-                    (MVP: la tessera viene creata in fase import / onboarding.)
-                  </div>
+                  <div className="mt-2 text-xs text-white/50">(MVP: la tessera viene creata in fase import / onboarding.)</div>
                 </div>
               ) : card.revoked ? (
                 <div className="mt-2">
-                  <div className="text-sm text-red-200 font-semibold">
-                    Tessera revocata
-                  </div>
-                  <div className="mt-2 font-mono text-sm text-white/70 break-all">
-                    {card.qr_secret}
-                  </div>
+                  <div className="text-sm text-red-200 font-semibold">Tessera revocata</div>
+                  <div className="mt-2 font-mono text-sm text-white/70 break-all">{card.qr_secret}</div>
                 </div>
               ) : (
                 <>
                   <MemberQrCard value={card.qr_secret} revoked={card.revoked} />
 
                   <div className="mt-2">
-                    <div className="font-mono text-sm text-white break-all">
-                      {card.qr_secret}
-                    </div>
+                    <div className="font-mono text-sm text-white break-all">{card.qr_secret}</div>
                     <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-white/60">
                       QR pronto: mostra questo codice/QR all’ingresso.
                     </div>
@@ -237,9 +206,7 @@ export default async function LVPeopleHomePage() {
               )}
 
               {msErr ? (
-                <p className="mt-3 text-xs text-red-300">
-                  Errore lettura membership: {msErr.message}
-                </p>
+                <p className="mt-3 text-xs text-red-300">Errore lettura membership: {msErr.message}</p>
               ) : (
                 <p className="mt-3 text-xs text-white/50">
                   {member.legacy
@@ -260,18 +227,15 @@ export default async function LVPeopleHomePage() {
               Vedi storico accessi
             </a>
 
-            <span className="text-xs text-white/50">
-              Lo storico accessi è visibile solo a te e allo staff autorizzato.
-            </span>
+            <span className="text-xs text-white/50">Lo storico accessi è visibile solo a te e allo staff autorizzato.</span>
           </div>
         </section>
 
         <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
           <h2 className="text-lg font-semibold">Nota</h2>
           <p className="mt-2 text-sm text-white/70">
-            Questo MVP usa l’email della sessione per trovare il socio in
-            Supabase. In futuro potremo separare login admin vs login soci senza
-            buttare via nulla.
+            Questo MVP usa l’email della sessione per trovare il socio in Supabase. In futuro separiamo login admin vs login soci
+            senza buttare via nulla.
           </p>
         </section>
       </div>
