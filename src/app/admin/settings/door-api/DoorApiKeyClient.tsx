@@ -46,6 +46,15 @@ export default function DoorApiKeyClient() {
   const [manualKey, setManualKey] = useState("");
   const [rotating, setRotating] = useState(false);
 
+  // Provisioning UI
+  const [provLabel, setProvLabel] = useState("porta principale");
+  const [provDeviceId, setProvDeviceId] = useState("ipad-ingresso-1");
+  const [provTtl] = useState(30);
+  const [provUrl, setProvUrl] = useState<string | null>(null);
+  const [provExpiresAt, setProvExpiresAt] = useState<string | null>(null);
+  const [provQrDataUrl, setProvQrDataUrl] = useState<string | null>(null);
+  const [provLoading, setProvLoading] = useState(false);
+
   const activeRow = useMemo(() => keys.find((k) => k.active), [keys]);
 
   async function load() {
@@ -142,6 +151,51 @@ export default function DoorApiKeyClient() {
     }
   }
 
+  async function createProvisionQr() {
+    setProvLoading(true);
+    setErr(null);
+    setProvUrl(null);
+    setProvExpiresAt(null);
+    setProvQrDataUrl(null);
+
+    try {
+      const r = await fetch("/api/admin/door-provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          ttl_minutes: provTtl,
+          label: (provLabel || "").trim() || null,
+          device_id: (provDeviceId || "").trim() || null,
+        }),
+      });
+
+      const j = await r.json();
+      if (!r.ok || !j?.ok) {
+        setErr(j?.error || "Provisioning fallito");
+        return;
+      }
+
+      const url = String(j.provision_url || "").trim();
+      setProvUrl(url);
+      setProvExpiresAt(String(j.expires_at || "") || null);
+
+      // genera PNG QR client-side
+      const QRCode = (await import("qrcode")).default;
+      const dataUrl = await QRCode.toDataURL(url, {
+        errorCorrectionLevel: "M",
+        margin: 2,
+        scale: 8,
+      });
+
+      setProvQrDataUrl(dataUrl);
+    } catch (e: any) {
+      setErr(e?.message || "Errore rete");
+    } finally {
+      setProvLoading(false);
+    }
+  }
+
   useEffect(() => {
     load();
   }, []);
@@ -150,14 +204,16 @@ export default function DoorApiKeyClient() {
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
       <div className="text-xs text-white/50 tracking-widest">ADMIN • SETTINGS</div>
       <h1 className="mt-1 text-2xl font-semibold">Door API Key</h1>
-<div className="mt-3">
-  <a
-    href="/admin/"
-    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80 hover:bg-white/10"
-  >
-    ← Torna a Settings
-  </a>
-</div>
+
+      <div className="mt-3">
+        <a
+          href="/admin/"
+          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80 hover:bg-white/10"
+        >
+          ← Torna a Settings
+        </a>
+      </div>
+
       <p className="mt-1 text-sm text-white/60">Gestisci la chiave usata da /api/doorcheck. Solo admin.</p>
 
       <div className="mt-6 rounded-2xl border border-white/10 bg-black/30 p-4">
@@ -202,6 +258,81 @@ export default function DoorApiKeyClient() {
             {loading ? "Carico..." : "Ricarica"}
           </button>
         </div>
+      </div>
+
+      {/* Provisioning QR */}
+      <div className="mt-6 rounded-2xl border border-white/10 bg-black/30 p-4">
+        <div className="text-sm font-semibold">Provisioning QR (TTL 30 min)</div>
+        <div className="text-xs text-white/60 mt-1">
+          Genera un QR temporaneo (one-time) che autorizza un device a salvare la Door API Key senza copiarla a mano.
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input
+            value={provLabel}
+            onChange={(e) => setProvLabel(e.target.value)}
+            className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30"
+            placeholder="device label (es: porta principale)"
+          />
+          <input
+            value={provDeviceId}
+            onChange={(e) => setProvDeviceId(e.target.value)}
+            className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30"
+            placeholder="device_id (es: ipad-ingresso-1)"
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={createProvisionQr}
+            disabled={provLoading}
+            className="rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold disabled:opacity-50"
+          >
+            {provLoading ? "Creo QR..." : `Crea QR (scade in ${provTtl} min)`}
+          </button>
+
+          {provUrl ? (
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(provUrl);
+              }}
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+            >
+              Copia link
+            </button>
+          ) : null}
+
+          {provQrDataUrl ? (
+            <a
+              href={provQrDataUrl}
+              download={`doorcheck_provision_${(provDeviceId || "device").replace(/\s+/g, "_")}.png`}
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+            >
+              Scarica QR PNG
+            </a>
+          ) : null}
+        </div>
+
+        {provUrl ? (
+          <div className="mt-3 rounded-xl border border-white/10 bg-black/40 p-3 text-xs text-white/70 break-all">
+            <div className="font-semibold text-white/80">Link provisioning</div>
+            <div className="mt-1 font-mono">{provUrl}</div>
+            {provExpiresAt ? (
+              <div className="mt-2 text-[11px] text-white/50 font-mono">
+                expires_at: {new Date(provExpiresAt).toLocaleString("it-IT")}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {provQrDataUrl ? (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={provQrDataUrl} alt="Provision QR" className="w-64 h-64" />
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-6 rounded-2xl border border-white/10 bg-black/30 p-4">

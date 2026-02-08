@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +34,16 @@ async function requireAdmin() {
 }
 
 function genKey(len = 28) {
-  // evita caratteri ambigui, ma resta abbastanza "random"
+  // evita caratteri ambigui, ma resta abbastanza random; usa Node crypto
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@*-_";
+  const bytes = crypto.randomBytes(len);
   let out = "";
-  const bytes = new Uint8Array(len);
-  crypto.getRandomValues(bytes);
   for (let i = 0; i < len; i++) out += alphabet[bytes[i] % alphabet.length];
   return out;
+}
+
+function genTokenHex(bytesLen = 24) {
+  return crypto.randomBytes(bytesLen).toString("hex");
 }
 
 export async function GET() {
@@ -87,6 +91,20 @@ export async function GET() {
   }
 }
 
+type RotateBody = {
+  action?: "rotate";
+  label?: string;
+  api_key?: string; // opzionale: key manuale
+};
+
+type ProvisionBody = {
+  action: "provision";
+  ttl_minutes?: number; // default 30
+  max_uses?: number; // default 1
+  label?: string; // descrittivo (per admin / qr)
+  device_id?: string; // opzionale
+};
+
 export async function POST(req: Request) {
   try {
     const admin = await requireAdmin();
@@ -94,14 +112,80 @@ export async function POST(req: Request) {
 
     const supabase = supabaseAdmin();
 
-    const body = (await req.json().catch(() => ({}))) as {
-      label?: string;
-      api_key?: string; // opzionale: key manuale
-      rotate?: boolean; // opzionale
-    };
+    const body = (await req.json().catch(() => ({}))) as RotateBody | ProvisionBody;
 
-    const label = String(body.label || "rotated").trim() || "rotated";
-    const manual = String(body.api_key || "").trim();
+    // =========================
+    // PROVISION (QR token)
+    // =========================
+    if ((body as any)?.action === "provision") {
+      const b = body as ProvisionBody;
+
+      const ttl = Math.max(1, Math.min(1440, Number(b.ttl_minutes ?? 30))); // 1..1440 min
+      const maxUses = Math.max(1, Math.min(20, Number(b.max_uses ?? 1))); // 1..20
+      const deviceId = String(b.device_id || "").trim() || null;
+      const label = String(b.label || "").trim().slice(0, 80) || "doorcheck";
+
+      // serve una key attiva
+      const { data: activeRow, error: aErr } = await supabase
+        .from("door_api_keys")
+        .select("id, api_key")
+        .eq("active", true)
+        .is("revoked_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (aErr) throw new Error(aErr.message);
+      if (!activeRow?.api_key) {
+        return NextResponse.json({ ok: false, error: "No active API key" }, { status: 400 });
+      }
+
+      const token = genTokenHex(24);
+      const expiresAt = new Date(Date.now() + ttl * 60 * 1000).toISOString();
+
+      const { error: insErr } = await supabase.from("door_provision_tokens").insert({
+        token,
+        api_key_id: (activeRow as any).id,
+        api_key: (activeRow as any).api_key,
+        expires_at: expiresAt,
+        max_uses: maxUses,
+        uses: 0,
+        created_by: admin.email,
+        device_id: deviceId,
+        label,
+      });
+
+      if (insErr) throw new Error(insErr.message);
+
+      const base =
+        (process.env.NEXT_PUBLIC_SITE_URL || "").trim() ||
+        (process.env.SITE_URL || "").trim() ||
+        ""; // se vuoto, ritorniamo path relativo
+
+      const path = `/doorcheck?provision=${encodeURIComponent(token)}${
+        deviceId ? `&device_id=${encodeURIComponent(deviceId)}` : ""
+      }`;
+
+      const provision_url = base ? `${base}${path}` : path;
+
+      return NextResponse.json({
+        ok: true,
+        provision_url,
+        token, // utile in debug interno (se non lo vuoi, lo tolgo)
+        expires_at: expiresAt,
+        max_uses: maxUses,
+        device_id: deviceId,
+        label,
+      });
+    }
+
+    // =========================
+    // ROTATE (default/backward compatible)
+    // =========================
+    const b = body as RotateBody;
+
+    const label = String(b.label || "rotated").trim() || "rotated";
+    const manual = String(b.api_key || "").trim();
     const nextKey = manual || genKey(28);
 
     // 1) disattiva tutte le key attive

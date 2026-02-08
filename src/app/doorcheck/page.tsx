@@ -59,7 +59,6 @@ type AttendanceResp =
         limit: number;
         offset: number;
         tickets_filtered_count: number;
-        // opzionale: se non lo mandi dal backend lo calcolo io
         has_more?: boolean;
         tickets: Array<{
           id: string;
@@ -188,7 +187,7 @@ export default function DoorCheckPage() {
   const [attErr, setAttErr] = useState<string | null>(null);
   const [attData, setAttData] = useState<AttendanceResp | null>(null);
 
-  // ✅ offsets separati (prima era il punto debole)
+  // ✅ offsets separati
   const [ticketsOffset, setTicketsOffset] = useState(0);
   const [checkinsOffset, setCheckinsOffset] = useState(0);
   const [attLimit] = useState(200);
@@ -246,12 +245,14 @@ export default function DoorCheckPage() {
     };
   }, [scanOpen]);
 
+const LS_KEY_DEVICE = "doorcheck_device_id";
   useEffect(() => {
     try {
       setPinOk(localStorage.getItem(LS_KEY) === "1");
     } catch {
       setPinOk(false);
     }
+
     try {
       const k = localStorage.getItem(LS_KEY_API) || "";
       setApiKey(k);
@@ -260,7 +261,77 @@ export default function DoorCheckPage() {
       setApiKey("");
       setApiKeyOk(false);
     }
+    try {
+    const did = (localStorage.getItem(LS_KEY_DEVICE) || "").trim();
+    if (did) setDeviceId(did);
+  } catch {}
+
   }, []);
+
+  // ✅ AUTO-PROVISION: se arrivi con /doorcheck?provision=TOKEN (&device_id=...)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const u = new URL(window.location.href);
+    const token = (u.searchParams.get("provision") || "").trim();
+    if (!token) return;
+
+    // device_id: se presente in URL lo usiamo; altrimenti proviamo a usare quello del campo deviceId
+    const deviceFromUrl = (u.searchParams.get("device_id") || "").trim();
+    const did = deviceFromUrl || (deviceId || "").trim() || null;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const r = await fetch("/api/doorcheck/provision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ token, device_id: did }),
+        });
+
+        const j = await r.json();
+
+        if (!r.ok || !j?.ok) {
+          const msg = String(j?.error || "Provision failed");
+          alert(`❌ Provisioning non riuscito: ${msg}`);
+          return;
+        }
+
+        const api_key = String(j.api_key || "").trim();
+        if (!api_key) {
+          alert("❌ Provisioning: api_key mancante");
+          return;
+        }
+
+        try {
+          localStorage.setItem(LS_KEY_API, api_key);
+        } catch {}
+
+        if (cancelled) return;
+
+        setApiKey(api_key);
+        setApiKeyOk(true);
+        setRes(null);
+        setLastDeniedCode(null);
+
+        // pulisci URL (token one-shot, non deve restare)
+        u.searchParams.delete("provision");
+        u.searchParams.delete("device_id");
+        window.history.replaceState({}, "", u.pathname + (u.search ? u.search : ""));
+
+        alert("✅ Door API Key installata su questo dispositivo.");
+      } catch (e: any) {
+        alert(`❌ Provisioning errore rete: ${e?.message || "Errore"}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId]);
 
   useEffect(() => {
     return () => stopScanner();
@@ -298,7 +369,6 @@ export default function DoorCheckPage() {
           .filter((x: PublicEvent) => !!x.id);
 
         if (!cancelled) {
-          // ✅ ordine alfabetico eventi (se vuoi): commenta se preferisci per data
           mapped.sort((a, b) => (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" }));
 
           setEvents(mapped);
@@ -616,7 +686,6 @@ export default function DoorCheckPage() {
 
       if (!r.ok || !j?.ok) throw new Error((j as any)?.error || "Errore caricamento presenze");
 
-      // ✅ calcolo has_more se il backend non lo manda
       if (j.ok && j.tickets_payload && typeof j.tickets_payload.has_more === "undefined") {
         j.tickets_payload.has_more = (j.tickets_payload.tickets?.length ?? 0) >= attLimit;
       }
@@ -627,11 +696,9 @@ export default function DoorCheckPage() {
       setAttData((prev) => {
         if (reset || !prev || !("ok" in prev) || !prev.ok) return j;
 
-        // append paging in modo safe
         const next = j as any;
         const old = prev as any;
 
-        // tickets append
         if (old.tickets_payload && next.tickets_payload) {
           next.tickets_payload.tickets = [
             ...(old.tickets_payload.tickets || []),
@@ -639,7 +706,6 @@ export default function DoorCheckPage() {
           ];
         }
 
-        // checkins append
         if (old.checkins_payload && next.checkins_payload) {
           next.checkins_payload.checkins = [
             ...(old.checkins_payload.checkins || []),
@@ -650,7 +716,6 @@ export default function DoorCheckPage() {
         return next;
       });
 
-      // increment offset basato su quanto è tornato davvero
       if (scope === "checkins") {
         const got = (j as any).checkins_payload?.checkins?.length ?? 0;
         setCheckinsOffset((reset ? 0 : checkinsOffset) + got);
@@ -665,7 +730,6 @@ export default function DoorCheckPage() {
     }
   }
 
-  // reload attendance quando cambia tab / kind / query debounced (se drawer aperto)
   useEffect(() => {
     if (!attOpen) return;
     loadAttendance(true);
@@ -689,7 +753,7 @@ export default function DoorCheckPage() {
   }, [attData, attLoading]);
 
   return (
-    <main className="min-h-screen bg-black text-white p-6">
+  <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-2xl mx-auto">
         <header className="flex items-start justify-between gap-4">
           <div>
@@ -1386,3 +1450,4 @@ export default function DoorCheckPage() {
     </main>
   );
 }
+
