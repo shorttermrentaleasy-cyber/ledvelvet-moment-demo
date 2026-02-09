@@ -60,14 +60,9 @@ function asString(v: any): string {
   return String(v).trim();
 }
 
-function toHumanMessage(input: {
-  kind?: string;
-  status?: string;
-  reason?: string;
-}): string {
+function toHumanMessage(input: { kind?: string; status?: string; reason?: string }): string {
   const reason = (input.reason || "").trim();
 
-  // Messaggi operativi chiari (MVP)
   switch (reason) {
     case "missing_ticket":
       return "Accesso negato: socio trovato, ma manca un biglietto valido per questo evento.";
@@ -81,7 +76,6 @@ function toHumanMessage(input: {
       break;
   }
 
-  // fallback soft
   const status = (input.status || "").toLowerCase();
   if (status.includes("already")) return "Già entrato (check-in già registrato).";
   if (status.includes("denied")) return "Accesso negato.";
@@ -107,7 +101,6 @@ function getXceedRawField(raw: any, keys: string[]): string | null {
 /**
  * API KEY (DB ONLY)
  * Usa solo: public.door_api_keys(api_key text, active boolean)
- * RLS admin-only: con SERVICE_ROLE bypassa.
  */
 async function isDoorApiKeyValid(supabase: ReturnType<typeof supabaseAdmin>, apiKey: string) {
   const k = (apiKey || "").trim();
@@ -288,20 +281,32 @@ async function resolveMemberByEmailOrPhone(
   return null;
 }
 
-async function memberHasTicketForEvent(
+/**
+ * ✅ Ticket check “disponibile” per socio: deve esistere un ticket NON ancora consumato (checkin_id IS NULL)
+ * Match: buyer_*_norm preferiti, fallback email/phone.
+ */
+async function memberHasAvailableTicketForEvent(
   supabase: ReturnType<typeof supabaseAdmin>,
   eventId: string,
   email: string | null,
   phone: string | null
 ): Promise<boolean> {
-  // se non ho contatti, non posso verificare
-  if (!email && !phone) return false;
+  const e = normalizeEmail(email);
+  const p = normalizePhone(phone);
+  if (!e && !p) return false;
 
-  // MVP: match su xceed_tickets (email/phone) per event_id
-  let q = supabase.from("xceed_tickets").select("id").eq("event_id", eventId).limit(1);
+  let q = supabase
+    .from("xceed_tickets")
+    .select("id")
+    .eq("event_id", eventId)
+    .is("checkin_id", null)
+    .limit(1);
 
-  if (email) q = q.ilike("email", email);
-  if (!email && phone) q = q.eq("phone", phone);
+  if (e) {
+    q = q.or(`buyer_email_norm.eq.${e},email.ilike.${e}`);
+  } else if (p) {
+    q = q.or(`buyer_phone_norm.eq.${p},phone.eq.${p}`);
+  }
 
   const { data, error } = await q;
   if (error) throw new Error(error.message);
@@ -309,9 +314,75 @@ async function memberHasTicketForEvent(
 }
 
 /**
+ * ✅ Bridge ETS -> Ticket:
+ * Se evento richiede ticket, collega un ticket NON usato (checkin_id NULL) a questo checkin_id.
+ * Match: buyer_*_norm preferiti, fallback email/phone.
+ */
+async function linkMemberTicketToCheckin(params: {
+  supabase: ReturnType<typeof supabaseAdmin>;
+  eventId: string;
+  checkinId: string;
+  email: string | null;
+  phone: string | null;
+}) {
+  const { supabase, eventId, checkinId, email, phone } = params;
+  if (!checkinId) return;
+
+  // 1) match per email
+  const e = normalizeEmail(email);
+  if (e) {
+    const { data: t, error: tErr } = await supabase
+      .from("xceed_tickets")
+      .select("id")
+      .eq("event_id", eventId)
+      .is("checkin_id", null)
+      .or(`buyer_email_norm.eq.${e},email.ilike.${e}`)
+      .order("imported_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (tErr) throw new Error(tErr.message);
+
+    if ((t as any)?.id) {
+      const { error: updErr } = await supabase
+        .from("xceed_tickets")
+        .update({ checkin_id: checkinId })
+        .eq("id", (t as any).id);
+
+      if (updErr) throw new Error(updErr.message);
+      return;
+    }
+  }
+
+  // 2) fallback per phone
+  const p = normalizePhone(phone);
+  if (p) {
+    const { data: t, error: tErr } = await supabase
+      .from("xceed_tickets")
+      .select("id")
+      .eq("event_id", eventId)
+      .is("checkin_id", null)
+      .or(`buyer_phone_norm.eq.${p},phone.eq.${p}`)
+      .order("imported_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (tErr) throw new Error(tErr.message);
+
+    if ((t as any)?.id) {
+      const { error: updErr } = await supabase
+        .from("xceed_tickets")
+        .update({ checkin_id: checkinId })
+        .eq("id", (t as any).id);
+
+      if (updErr) throw new Error(updErr.message);
+      return;
+    }
+  }
+}
+
+/**
  * ✅ Legacy domain table (PRODUZIONE): public.legacy_people
- * - questa è l'UNICA tabella per persone NON socie (SRL/XCEED non ETS/manual)
- * - members_legacy_staging resta SOLO staging/import e NON va mai usata qui
  */
 async function upsertLegacyPerson(
   supabase: ReturnType<typeof supabaseAdmin>,
@@ -543,8 +614,41 @@ export async function POST(req: Request) {
     // A) tessera socio (ETS)
     const member = await findMemberByBarcodeOrCard(supabase, qrRaw);
     if (member) {
+      // ✅ IMPORTANT: prima anti-duplicato (così non neghi a uno già entrato)
+      const alreadyId = await memberAlreadyCheckedIn(supabase, eventId, member.id);
+      if (alreadyId) {
+        // ✅ se evento richiede ticket, prova comunque a “chiudere” il ticket collegandolo (utile se prima era entrato via ETS senza bridging)
+        if (policy.require_ticket) {
+          await linkMemberTicketToCheckin({
+            supabase,
+            eventId,
+            checkinId: alreadyId,
+            email: normalizeEmail(member.email),
+            phone: normalizePhone(member.phone),
+          });
+        }
+
+        const resp: any = {
+          ok: true,
+          allowed: true,
+          kind: "ETS",
+          status: "Already Checked IN",
+          member_id: member.id,
+          display_name: member.display_name,
+          checkin_id: alreadyId,
+        };
+        resp.message = toHumanMessage(resp);
+        return NextResponse.json(resp);
+      }
+
+      // ✅ se richiede ticket: deve esistere un ticket NON ancora consumato
       if (policy.require_ticket) {
-        const hasTicket = await memberHasTicketForEvent(supabase, eventId, member.email, member.phone);
+        const hasTicket = await memberHasAvailableTicketForEvent(
+          supabase,
+          eventId,
+          normalizeEmail(member.email),
+          normalizePhone(member.phone)
+        );
         if (!hasTicket) {
           const resp: any = {
             ok: true,
@@ -558,21 +662,6 @@ export async function POST(req: Request) {
           resp.message = toHumanMessage(resp);
           return NextResponse.json(resp);
         }
-      }
-
-      const alreadyId = await memberAlreadyCheckedIn(supabase, eventId, member.id);
-      if (alreadyId) {
-        const resp: any = {
-          ok: true,
-          allowed: true,
-          kind: "ETS",
-          status: "Already Checked IN",
-          member_id: member.id,
-          display_name: member.display_name,
-          checkin_id: alreadyId,
-        };
-        resp.message = toHumanMessage(resp);
-        return NextResponse.json(resp);
       }
 
       const { data: ins, error: insErr } = await supabase
@@ -591,13 +680,26 @@ export async function POST(req: Request) {
 
       if (insErr) throw new Error(insErr.message);
 
+      const newCheckinId = (ins as any)?.id || null;
+
+      // ✅ NEW: bridge ETS -> ticket (fa sparire “da entrare” nei biglietti)
+      if (policy.require_ticket && newCheckinId) {
+        await linkMemberTicketToCheckin({
+          supabase,
+          eventId,
+          checkinId: newCheckinId,
+          email: normalizeEmail(member.email),
+          phone: normalizePhone(member.phone),
+        });
+      }
+
       const resp: any = {
         ok: true,
         allowed: true,
         kind: "ETS",
         status: "checked_in",
         member_id: member.id,
-        checkin_id: (ins as any)?.id || null,
+        checkin_id: newCheckinId,
         display_name: member.display_name,
       };
       resp.message = toHumanMessage(resp);
@@ -624,7 +726,8 @@ export async function POST(req: Request) {
       const offerTitle =
         getXceedRawField(raw, ["Offer title", "Offer Title", "offer_title", "offerTitle"]) || null;
       const offerDescription =
-        getXceedRawField(raw, ["Offer Description", "Offer description", "offer_description", "offerDescription"]) || null;
+        getXceedRawField(raw, ["Offer Description", "Offer description", "offer_description", "offerDescription"]) ||
+        null;
 
       const ticket_transaction_id = asString((ticket as any).transaction_id) || null;
       const ticket_booking_date = (ticket as any).booking_date || null;
@@ -732,7 +835,10 @@ export async function POST(req: Request) {
 
         if (insErr) throw new Error(insErr.message);
 
-        await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
+        await supabase
+          .from("xceed_tickets")
+          .update({ checkin_id: (ins as any)?.id || null })
+          .eq("id", (ticket as any).id);
 
         const resp: any = {
           ok: true,
@@ -806,7 +912,7 @@ export async function POST(req: Request) {
           result: "allowed",
           reason: policy.require_ticket ? "xceed_ok_ticket_ok" : "xceed_ok",
           method: "xceed_qr",
-          kind: "SRL",
+          kind: "XCEED",
           scanned_code: qrRaw,
         })
         .select("id")

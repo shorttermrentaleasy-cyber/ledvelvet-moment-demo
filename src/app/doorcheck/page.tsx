@@ -6,6 +6,7 @@ import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
 const DOOR_PIN = "1979";
 const LS_KEY = "doorcheck_pin_ok";
 const LS_KEY_API = "doorcheck_api_key";
+const LS_KEY_DEVICE = "doorcheck_device_id";
 
 type DoorcheckOkResponse = {
   ok: true;
@@ -52,7 +53,19 @@ type AttendanceResp =
         tickets_total: number;
         tickets_checked_in: number;
         tickets_missing: number;
+
+        checkins_total?: number;
+        checkins_allowed?: number;
+        checkins_denied?: number;
+
+        checkins_allowed_by_kind?: {
+          ETS?: number;
+          XCEED?: number;
+          SRL?: number;
+          UNKNOWN?: number;
+        };
       };
+
       tickets_payload?: {
         view: "missing" | "entered" | "all";
         q: string;
@@ -73,6 +86,7 @@ type AttendanceResp =
           booking_date: string | null;
         }>;
       };
+
       checkins_payload?: {
         kind: string; // ALL/ETS/SRL/XCEED
         q: string;
@@ -245,7 +259,6 @@ export default function DoorCheckPage() {
     };
   }, [scanOpen]);
 
-const LS_KEY_DEVICE = "doorcheck_device_id";
   useEffect(() => {
     try {
       setPinOk(localStorage.getItem(LS_KEY) === "1");
@@ -261,11 +274,11 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
       setApiKey("");
       setApiKeyOk(false);
     }
-    try {
-    const did = (localStorage.getItem(LS_KEY_DEVICE) || "").trim();
-    if (did) setDeviceId(did);
-  } catch {}
 
+    try {
+      const did = (localStorage.getItem(LS_KEY_DEVICE) || "").trim();
+      if (did) setDeviceId(did);
+    } catch {}
   }, []);
 
   // ✅ AUTO-PROVISION: se arrivi con /doorcheck?provision=TOKEN (&device_id=...)
@@ -276,7 +289,6 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
     const token = (u.searchParams.get("provision") || "").trim();
     if (!token) return;
 
-    // device_id: se presente in URL lo usiamo; altrimenti proviamo a usare quello del campo deviceId
     const deviceFromUrl = (u.searchParams.get("device_id") || "").trim();
     const did = deviceFromUrl || (deviceId || "").trim() || null;
 
@@ -316,7 +328,6 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
         setRes(null);
         setLastDeniedCode(null);
 
-        // pulisci URL (token one-shot, non deve restare)
         u.searchParams.delete("provision");
         u.searchParams.delete("device_id");
         window.history.replaceState({}, "", u.pathname + (u.search ? u.search : ""));
@@ -388,7 +399,7 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pinOk]);
+  }, [pinOk, selectedEventId]);
 
   function checkPin() {
     if (pin.trim() === DOOR_PIN) {
@@ -596,7 +607,7 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
 
     try {
       video.setAttribute("playsinline", "true");
-      video.playsInline = true;
+      (video as any).playsInline = true;
       video.muted = true;
       video.autoplay = true;
 
@@ -644,6 +655,15 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
     setAttErr(null);
   }
 
+  // ✅ IMPORTANTE: summary deve essere SEMPRE completo (non dipendere da view=missing)
+  async function fetchAttendanceSummary(eid: string) {
+    const url = `/api/admin/attendance?event_id=${encodeURIComponent(eid)}&limit=1&offset=0&scope=both&view=all`;
+    const r = await fetch(url, { cache: "no-store" });
+    const j = (await r.json()) as AttendanceResp;
+    if (!r.ok || !j?.ok) throw new Error((j as any)?.error || "Errore summary presenze");
+    return j as Extract<AttendanceResp, { ok: true }>;
+  }
+
   async function loadAttendance(reset = true) {
     const eid = eventId.trim();
     if (!eid) {
@@ -665,16 +685,18 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
 
     setAttLoading(true);
     setAttErr(null);
-    if (reset) {
-      resetAttendanceStateForNewQuery();
-    }
+    if (reset) resetAttendanceStateForNewQuery();
 
     try {
+      // 1) prendi sempre summary globale
+      const summaryResp = await fetchAttendanceSummary(eid);
+
+      // 2) poi prendi il payload del tab corrente (paginato)
       let url = `/api/admin/attendance?event_id=${encodeURIComponent(eid)}&limit=${attLimit}&offset=${off}&scope=${scope}`;
 
       if (scope === "tickets") {
         if (attTab === "missing") url += `&view=missing`;
-        else url += `&view=all`;
+        else url += `&view=all`; // tickets tab
         if (q) url += `&q=${encodeURIComponent(q)}`;
       } else {
         url += `&kind=${encodeURIComponent(attKind)}`;
@@ -682,28 +704,36 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
       }
 
       const r = await fetch(url, { cache: "no-store" });
-      const j = (await r.json()) as AttendanceResp;
+      const payloadResp = (await r.json()) as AttendanceResp;
 
-      if (!r.ok || !j?.ok) throw new Error((j as any)?.error || "Errore caricamento presenze");
+      if (!r.ok || !payloadResp?.ok) throw new Error((payloadResp as any)?.error || "Errore caricamento presenze");
 
-      if (j.ok && j.tickets_payload && typeof j.tickets_payload.has_more === "undefined") {
-        j.tickets_payload.has_more = (j.tickets_payload.tickets?.length ?? 0) >= attLimit;
+      // 3) merge: summary/event da summaryResp, payload da payloadResp
+      const merged: AttendanceResp = {
+        ok: true,
+        event: (summaryResp as any).event,
+        summary: (summaryResp as any).summary,
+        ...(payloadResp as any).tickets_payload ? { tickets_payload: (payloadResp as any).tickets_payload } : {},
+        ...(payloadResp as any).checkins_payload ? { checkins_payload: (payloadResp as any).checkins_payload } : {},
+      } as any;
+
+      // has_more fallback
+      if ((merged as any).tickets_payload && typeof (merged as any).tickets_payload.has_more === "undefined") {
+        (merged as any).tickets_payload.has_more = (((merged as any).tickets_payload.tickets?.length ?? 0) as number) >= attLimit;
       }
-      if (j.ok && j.checkins_payload && typeof j.checkins_payload.has_more === "undefined") {
-        j.checkins_payload.has_more = (j.checkins_payload.checkins?.length ?? 0) >= attLimit;
+      if ((merged as any).checkins_payload && typeof (merged as any).checkins_payload.has_more === "undefined") {
+        (merged as any).checkins_payload.has_more =
+          (((merged as any).checkins_payload.checkins?.length ?? 0) as number) >= attLimit;
       }
 
       setAttData((prev) => {
-        if (reset || !prev || !("ok" in prev) || !prev.ok) return j;
+        if (reset || !prev || !("ok" in prev) || !prev.ok) return merged;
 
-        const next = j as any;
         const old = prev as any;
+        const next = merged as any;
 
         if (old.tickets_payload && next.tickets_payload) {
-          next.tickets_payload.tickets = [
-            ...(old.tickets_payload.tickets || []),
-            ...(next.tickets_payload.tickets || []),
-          ];
+          next.tickets_payload.tickets = [...(old.tickets_payload.tickets || []), ...(next.tickets_payload.tickets || [])];
         }
 
         if (old.checkins_payload && next.checkins_payload) {
@@ -717,10 +747,10 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
       });
 
       if (scope === "checkins") {
-        const got = (j as any).checkins_payload?.checkins?.length ?? 0;
+        const got = ((merged as any).checkins_payload?.checkins?.length ?? 0) as number;
         setCheckinsOffset((reset ? 0 : checkinsOffset) + got);
       } else {
-        const got = (j as any).tickets_payload?.tickets?.length ?? 0;
+        const got = ((merged as any).tickets_payload?.tickets?.length ?? 0) as number;
         setTicketsOffset((reset ? 0 : ticketsOffset) + got);
       }
     } catch (e: any) {
@@ -753,7 +783,7 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
   }, [attData, attLoading]);
 
   return (
-  <main className="min-h-screen bg-black text-white p-6">
+    <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-2xl mx-auto">
         <header className="flex items-start justify-between gap-4">
           <div>
@@ -845,7 +875,6 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
                     setRes(null);
                     setManualOpen(false);
                     setLastDeniedCode(null);
-                    // reset drawer
                     setAttData(null);
                     setTicketsOffset(0);
                     setCheckinsOffset(0);
@@ -884,7 +913,13 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
                   <div className="text-xs text-white/60 mb-1">device_id</div>
                   <input
                     value={deviceId}
-                    onChange={(e) => setDeviceId(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDeviceId(v);
+                      try {
+                        localStorage.setItem(LS_KEY_DEVICE, v.trim());
+                      } catch {}
+                    }}
                     placeholder="ipad-ingresso-1"
                     className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/30"
                   />
@@ -1282,16 +1317,29 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
 
                       <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                          <div className="text-xs text-white/60">Tickets</div>
-                          <div className="text-lg font-semibold">{(attData as any).summary?.tickets_total ?? 0}</div>
+                          <div className="text-xs text-white/60">Entrati (totali)</div>
+                          <div className="text-lg font-semibold">{(attData as any).summary?.checkins_allowed ?? 0}</div>
                         </div>
+
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                          <div className="text-xs text-white/60">Entrati (ticket)</div>
-                          <div className="text-lg font-semibold">{(attData as any).summary?.tickets_checked_in ?? 0}</div>
+                          <div className="text-xs text-white/60">ETS</div>
+                          <div className="text-lg font-semibold">
+                            {(attData as any).summary?.checkins_allowed_by_kind?.ETS ?? 0}
+                          </div>
                         </div>
+
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                          <div className="text-xs text-white/60">Da entrare</div>
-                          <div className="text-lg font-semibold">{(attData as any).summary?.tickets_missing ?? 0}</div>
+                          <div className="text-xs text-white/60">XCEED</div>
+                          <div className="text-lg font-semibold">
+                            {(attData as any).summary?.checkins_allowed_by_kind?.XCEED ?? 0}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                          <div className="text-xs text-white/60">SRL</div>
+                          <div className="text-lg font-semibold">
+                            {(attData as any).summary?.checkins_allowed_by_kind?.SRL ?? 0}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1450,4 +1498,3 @@ const LS_KEY_DEVICE = "doorcheck_device_id";
     </main>
   );
 }
-

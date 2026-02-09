@@ -23,10 +23,17 @@ export async function GET(req: Request) {
     const supabase = supabaseAdmin();
     const { searchParams } = new URL(req.url);
 
-    const onlyDated = searchParams.get("only_dated") === "1";
-    const onlyFuture = searchParams.get("only_future") === "1";
+    // ✅ default operativo: solo eventi "utili" (upcoming) + con data
+    // - puoi forzare a 0 passando ?only_future=0&only_dated=0
+    const onlyDated =
+      searchParams.has("only_dated") ? searchParams.get("only_dated") === "1" : true;
+
+    const onlyFuture =
+      searchParams.has("only_future") ? searchParams.get("only_future") === "1" : true;
+
     const q = (searchParams.get("q") || "").trim();
-    const limit = clampInt(searchParams.get("limit"), 1000, 1, 2000); // 800/1000 ok
+
+    const limit = clampInt(searchParams.get("limit"), 200, 1, 2000);
 
     let query = supabase
       .from("events")
@@ -36,20 +43,17 @@ export async function GET(req: Request) {
     if (onlyDated) query = query.not("starts_at", "is", null);
 
     if (onlyFuture) {
-      // confronto in ISO (Supabase timestamptz ok)
       const nowIso = new Date().toISOString();
       query = query.gte("starts_at", nowIso);
     }
 
     if (q) {
-      // ricerca su più campi (ilike)
-      // NB: usa or() con sintassi Supabase
       const esc = q.replace(/,/g, "\\,");
       query = query.or(`name.ilike.%${esc}%,city.ilike.%${esc}%,venue.ilike.%${esc}%`);
     }
 
-    // ✅ ordine alfabetico (come richiesto)
-    query = query.order("name", { ascending: true }).order("starts_at", { ascending: true });
+    // ✅ ordine operativo: per data (poi nome come tie-break)
+    query = query.order("starts_at", { ascending: true }).order("name", { ascending: true });
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
@@ -64,8 +68,29 @@ export async function GET(req: Request) {
       xceed_url: e.xceed_url || null,
     }));
 
+    // ✅ debug leggero per capire mismatch DB / filtri (NON mostra segreti)
+    const supabaseUrlHost = (() => {
+      try {
+        const u = process.env.SUPABASE_URL || "";
+        return u ? new URL(u).host : null;
+      } catch {
+        return null;
+      }
+    })();
+
     return NextResponse.json(
-      { ok: true, events },
+      {
+        ok: true,
+        events,
+        debug: {
+          count: events.length,
+          onlyDated,
+          onlyFuture,
+          limit,
+          q,
+          supabase_url_host: supabaseUrlHost,
+        },
+      },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (e: any) {

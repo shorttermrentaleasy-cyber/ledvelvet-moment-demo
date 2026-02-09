@@ -137,7 +137,51 @@ export async function GET(req: Request) {
     if (evErr) throw new Error(evErr.message);
     if (!ev) return json(false, { error: "Event not found" }, 404);
 
-    // 2) SUMMARY (sempre)
+    // ✅ NEW: CHECKINS SUMMARY (totale entrati reali)
+    const { count: checkins_total, error: chkTotErr } = await supabase
+      .from("checkins")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event_id);
+
+    if (chkTotErr) throw new Error(chkTotErr.message);
+
+    const { count: checkins_allowed, error: chkAllowErr } = await supabase
+      .from("checkins")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event_id)
+      .eq("result", "allowed");
+
+    if (chkAllowErr) throw new Error(chkAllowErr.message);
+
+    // ✅ NEW (opzionale ma utile): breakdown per kind
+    const { count: checkins_ets_allowed, error: chkEtsErr } = await supabase
+      .from("checkins")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event_id)
+      .eq("result", "allowed")
+      .eq("kind", "ETS");
+
+    if (chkEtsErr) throw new Error(chkEtsErr.message);
+
+    const { count: checkins_xceed_allowed, error: chkXcErr } = await supabase
+      .from("checkins")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event_id)
+      .eq("result", "allowed")
+      .eq("kind", "XCEED");
+
+    if (chkXcErr) throw new Error(chkXcErr.message);
+
+    const { count: checkins_srl_allowed, error: chkSrlErr } = await supabase
+      .from("checkins")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event_id)
+      .eq("result", "allowed")
+      .eq("kind", "SRL");
+
+    if (chkSrlErr) throw new Error(chkSrlErr.message);
+
+    // 2) TICKETS SUMMARY (come prima)
     const { count: tickets_total, error: ctAllErr } = await supabase
       .from("xceed_tickets")
       .select("id", { count: "exact", head: true })
@@ -257,8 +301,7 @@ export async function GET(req: Request) {
         };
       } else {
         // ✅ SEARCH: fetch “ampio”, enrich, filter, poi slice(offset..offset+limit)
-        // (MVP pragmatico; evita join complessi)
-        const maxScan = Math.min(5000, Math.max(offset + limit * 6, 800)); // aumenta se serve
+        const maxScan = Math.min(5000, Math.max(offset + limit * 6, 800));
         const { data: rawScan, error: scanErr } = await cq.range(0, maxScan - 1);
         if (scanErr) throw new Error(scanErr.message);
 
@@ -281,11 +324,9 @@ export async function GET(req: Request) {
           limit,
           offset,
           has_more,
-          checkins_filtered_count: null, // non affidabile con search client-side
+          checkins_filtered_count: null,
           checkins: page,
           last_checkins: last20,
-          // opzionale debug: total risultati filtrati (se vuoi)
-          // filtered_total: filtered.length,
         };
       }
     }
@@ -299,6 +340,16 @@ export async function GET(req: Request) {
         require_membership: !!(ev as any).require_membership,
       },
       summary: {
+        // ✅ NEW: presenze reali (checkins)
+        checkins_total: Number(checkins_total || 0),
+        checkins_allowed: Number(checkins_allowed || 0),
+        checkins_allowed_by_kind: {
+          ETS: Number(checkins_ets_allowed || 0),
+          XCEED: Number(checkins_xceed_allowed || 0),
+          SRL: Number(checkins_srl_allowed || 0),
+        },
+
+        // esistente: biglietti (xceed_tickets)
         tickets_total: total,
         tickets_checked_in: checked,
         tickets_missing: missingCount,
