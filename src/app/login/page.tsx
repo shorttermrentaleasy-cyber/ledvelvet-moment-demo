@@ -20,7 +20,7 @@ export default function LoginPage({ searchParams }: { searchParams?: { err?: str
   const [email, setEmail] = useState("");
   const [loadingCsrf, setLoadingCsrf] = useState(true);
 
-  const callbackUrl = "/login";
+  const callbackUrl = "/gate";
   const err = searchParams?.err || "";
   const nextAuthError = (searchParams as any)?.error || "";
   const isDenied = err === "not_allowed" || nextAuthError === "AccessDenied";

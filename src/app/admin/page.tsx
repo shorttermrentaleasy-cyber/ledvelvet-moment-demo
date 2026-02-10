@@ -40,32 +40,35 @@ export default async function AdminHomePage() {
           <Card title="Hero" desc="Titolo, sottotitolo e stato Hero" href="/admin/hero" />
           <Card title="Events" desc="Crea e modifica eventi" href="/admin/events" />
 
-          {/* DeepDive */}
+          <Card
+            title="Xceed Import"
+            desc="Import biglietti e presenze da Xceed"
+            href="/admin/xceed-import"
+          />
+
           <Card title="DeepDive" desc="Experience / contenuti evento" href="/admin/deepdive" />
-
           <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
-
-          {/* DoorCheck */}
           <Card title="DoorCheck" desc="Scanner accessi staff" href="/doorcheck" />
-
-          {/* Associati */}
           <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" />
 
-          {/* ✅ PATCH MINIMA: Ambient Playlist (link Airtable) */}
           <ExternalCard
             title="Ambient Playlist (Hero)"
             desc="Gestione musica ambient Hero (Airtable)"
             href="https://airtable.com/appkpUBdMSN1oY4TI/pagCqw9rn03EsYAfo"
           />
 
-          {/* ✅ NUOVO: Door API Key su Supabase (no codice) */}
-          <Card title="Door API Key" desc="Gestione chiave DoorCheck (admin)" href="/admin/settings/door-api" />
-
+          <Card
+            title="Door API Key"
+            desc="Gestione chiave DoorCheck (admin)"
+            href="/admin/settings/door-api"
+          />
 
           <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
         </div>
 
-        <p style={styles.note}>Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.</p>
+        <p style={styles.note}>
+          Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.
+        </p>
       </div>
     </main>
   );
@@ -99,7 +102,6 @@ function Card({
   );
 }
 
-/* Card esterna (Airtable / Supabase) */
 function ExternalCard({
   title,
   desc,
@@ -110,7 +112,12 @@ function ExternalCard({
   href: string;
 }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ textDecoration: "none" }}
+    >
       <div style={styles.card}>
         <div style={styles.cardTitle}>{title}</div>
         <div style={styles.cardDesc}>{desc}</div>

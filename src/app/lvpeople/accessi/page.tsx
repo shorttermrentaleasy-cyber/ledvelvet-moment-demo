@@ -6,134 +6,473 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const dynamic = "force-dynamic";
 
+type MemberRow = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+  legacy: boolean;
+  legacy_barcode: string | null;
+  created_at: string;
+};
+
+type WallyRow = {
+  id: string;
+  barcode: string;
+  full_name: string | null;
+  email: string | null;
+  status: string | null;
+  raw: any;
+  updated_at: string;
+};
+
+// NB: events può arrivare come ARRAY oppure OGGETTO (PostgREST embed)
+type EventEmbed =
+  | {
+      name: string | null;
+      city: string | null;
+      venue: string | null;
+      start_at: string | null;
+    }
+  | {
+      name: string | null;
+      city: string | null;
+      venue: string | null;
+      start_at: string | null;
+    }[]
+  | null
+  | undefined;
+
 type AccessRow = {
   id: string;
-  checkin_at: string;
+  checkin_at: string | null; // timestamptz
+  created_at: string | null; // timestamptz (fallback)
   result: "allowed" | "denied";
   reason: string | null;
   method: string | null;
-  events: {
-    name: string;
-    city: string | null;
-    venue: string | null;
-  }[]; // ✅ ARRAY (corretto)
+  kind: string | null;
+  scanned_code: string | null;
+  events: EventEmbed;
 };
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
-  if (!url || !key) throw new Error("Missing Supabase env vars");
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
+  if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+function fmtDateTimeIT(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("it-IT", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
+}
+
+function getRawField(raw: any, key: string) {
+  if (!raw || typeof raw !== "object") return "";
+  const v = raw[key];
+  return v === null || v === undefined ? "" : String(v).trim();
+}
+
+function computeMemberStatus(args: { legacy: boolean; hasActiveMembership: boolean }) {
+  if (args.legacy) return "LEGACY" as const;
+  if (args.hasActiveMembership) return "ATTIVO" as const;
+  return "SCADUTO" as const;
+}
+
+function pickEvent(a: AccessRow) {
+  const evAny = (a as any).events as EventEmbed;
+  if (!evAny) return null;
+  if (Array.isArray(evAny)) return evAny[0] || null;
+  return evAny;
+}
+
+function pickWhen(a: AccessRow) {
+  // priorità: checkin_at -> created_at -> event.start_at
+  const ev = pickEvent(a);
+  return (a.checkin_at || a.created_at || ev?.start_at || null) as string | null;
 }
 
 export default async function LVPeopleAccessiPage() {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email?.toLowerCase().trim();
-  if (!email) redirect("/admin/login");
+
+  // entrypoint unico
+  if (!email) redirect("/login");
 
   const supabase = getSupabaseAdmin();
 
-  // 1) trova socio
-  const { data: member } = await supabase
+  // 1) trova socio (LV People usa members)
+  const { data: member, error: memberErr } = await supabase
     .from("members")
-    .select("id")
+    .select("id, first_name, last_name, email, phone, legacy, legacy_barcode, created_at")
     .ilike("email", email)
+    .maybeSingle<MemberRow>();
+
+  if (memberErr) {
+    return (
+      <main className="min-h-screen bg-[#070812] text-white p-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+            <div className="text-xl font-semibold">LV People — Accessi</div>
+            <div className="mt-3 text-red-200 text-sm">Errore: {memberErr.message}</div>
+            <a href="/lvpeople" className="mt-4 inline-block text-sm text-white/70 hover:text-white">
+              ← Torna alla tessera
+            </a>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!member) {
+    redirect("/lvpeople");
+  }
+
+  // 2) membership attiva (se esiste)
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: activeMembership } = await supabase
+    .from("memberships")
+    .select("id, member_id, status, start_date, end_date")
+    .eq("member_id", member.id)
+    .eq("status", "active")
+    .or(`end_date.is.null,end_date.gte.${today}`)
+    .order("start_date", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
-  if (!member) redirect("/lvpeople");
+  const hasActiveMembership = !!activeMembership;
+  const status = computeMemberStatus({ legacy: member.legacy, hasActiveMembership });
 
-  // 2) carica ultimi accessi
-  const { data } = await supabase
+  // 3) Wallyfor raw: per barcode (se presente) altrimenti per email
+  let wally: WallyRow | null = null;
+  if ((member.legacy_barcode || "").trim()) {
+    const { data } = await supabase
+      .from("wallyfor_members")
+      .select("id, barcode, full_name, email, status, raw, updated_at")
+      .eq("barcode", (member.legacy_barcode || "").trim())
+      .maybeSingle<WallyRow>();
+    wally = (data as any) || null;
+  } else {
+    const { data } = await supabase
+      .from("wallyfor_members")
+      .select("id, barcode, full_name, email, status, raw, updated_at")
+      .ilike("email", email)
+      .maybeSingle<WallyRow>();
+    wally = (data as any) || null;
+  }
+
+  const raw = wally?.raw || null;
+
+  const codiceGruppo = getRawField(raw, "codiceGruppo") || "— (placeholder)";
+  const validita = getRawField(raw, "Anno validità tessera") || wally?.status || "—";
+  const emissione = getRawField(raw, "Emissione") || "—";
+  const scadenza = getRawField(raw, "Scadenza") || "—";
+  const barcode = wally?.barcode || (member.legacy_barcode || "") || "—";
+
+  // anagrafica (da raw)
+  const sesso = getRawField(raw, "Sesso") || "—";
+  const dataNascita = getRawField(raw, "Data di nascita") || "—";
+  const comune = getRawField(raw, "Comune") || "—";
+  const provincia = getRawField(raw, "Provincia") || "—";
+  const indirizzo = getRawField(raw, "Indirizzo") || "—";
+  const comuneNascita = getRawField(raw, "Comunedinascita") || "—";
+  const provNascita = getRawField(raw, "Provinciadinascita") || "—";
+  const cf = getRawField(raw, "Codice fiscale") || "—";
+  const consensoPromo = getRawField(raw, "Consenso invio promo") || "—";
+
+  // 4) carica ultimi accessi (past inclusi)
+  const { data: accessData } = await supabase
     .from("checkins")
     .select(
       `
-      id,
-      checkin_at,
-      result,
-      reason,
-      method,
-      events (
-        name,
-        city,
-        venue
-      )
-    `
+        id,
+        checkin_at,
+        created_at,
+        result,
+        reason,
+        method,
+        kind,
+        scanned_code,
+        events (
+          name,
+          city,
+          venue,
+          start_at
+        )
+      `
     )
     .eq("member_id", member.id)
     .order("checkin_at", { ascending: false })
-    .limit(20);
+    .limit(30);
 
-  // ✅ Cast corretto
-  const accessi = (data ?? []) as AccessRow[];
+  const accessi = (accessData ?? []) as AccessRow[];
+
+  // metriche
+  const accessCount = accessi.length;
+  const lastAccess = accessi.length > 0 ? pickWhen(accessi[0]) : null;
+
+  // “LISTA”: numero eventi distinti (dedupe su name+start_at+venue)
+  const distinctEventKeys = new Set<string>();
+  for (const a of accessi) {
+    const ev = pickEvent(a);
+    const key = `${ev?.name || ""}__${ev?.start_at || ""}__${ev?.venue || ""}`;
+    if (ev?.name) distinctEventKeys.add(key);
+  }
+  const listaCount = distinctEventKeys.size;
+
+  const displayName = `${member.first_name} ${member.last_name}`.trim() || "Socio";
 
   return (
-    <main className="min-h-screen bg-black text-white p-6">
-      <div className="max-w-3xl mx-auto">
-        <header className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Storico accessi</h1>
-          <a
-            href="/lvpeople"
-            className="text-sm text-white/70 hover:text-white"
-          >
-            ← Torna alla tessera
-          </a>
-        </header>
+    <main className="min-h-screen text-white">
+      <div className="min-h-screen bg-[#070812] relative overflow-hidden">
+        <div
+          className="pointer-events-none absolute -top-40 -left-40 h-[520px] w-[520px] rounded-full blur-2xl opacity-60"
+          style={{ background: "radial-gradient(circle, rgba(255,0,199,0.22), transparent 62%)" }}
+        />
+        <div
+          className="pointer-events-none absolute -bottom-48 -right-48 h-[680px] w-[680px] rounded-full blur-2xl opacity-60"
+          style={{ background: "radial-gradient(circle, rgba(0,255,209,0.18), transparent 62%)" }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black" />
 
-        <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-          {accessi.length === 0 ? (
-            <p className="text-white/70 text-sm">
-              Nessun accesso registrato.
-            </p>
-          ) : (
-            <ul className="divide-y divide-white/10">
-              {accessi.map((a) => {
-                const event = a.events?.[0]; // ✅ primo evento
+        <div className="relative z-10 p-6">
+          <div className="max-w-5xl mx-auto">
+            <header className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-xs tracking-[0.26em] uppercase text-white/60">LV People</div>
+                <h1 className="mt-1 text-2xl font-semibold">Eventi partecipati</h1>
+                <p className="mt-1 text-sm text-white/65">Timeline personale (past inclusi) + profilo tessera.</p>
+              </div>
 
-                return (
-                  <li key={a.id} className="py-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <div className="font-semibold">
-                          {event?.name ?? "Evento"}
-                        </div>
-                        <div className="text-xs text-white/60">
-                          {new Date(a.checkin_at).toLocaleString("it-IT")}
-                          {event?.city ? ` · ${event.city}` : ""}
-                        </div>
-                        {a.reason && (
-                          <div className="mt-1 text-xs text-white/50">
-                            Motivo: {a.reason}
-                          </div>
-                        )}
+              <a
+                href="/lvpeople"
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-4 py-2 text-sm text-white/80 hover:text-white hover:bg-white/5 transition"
+              >
+                ← Torna alla tessera
+              </a>
+            </header>
+
+            {/* TOP (lasciato com’è) */}
+            <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_20px_80px_rgba(0,0,0,0.60)] overflow-hidden">
+              <div className="p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                    <div className="text-xs tracking-[0.26em] uppercase text-white/55">Profilo</div>
+                    <div className="mt-2 text-xl font-semibold">{displayName}</div>
+                    <div className="mt-1 text-sm text-white/70 break-words">{member.email || "—"}</div>
+                    <div className="mt-1 text-sm text-white/70 break-words">
+                      {member.phone || getRawField(raw, "Telefono") || "—"}
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <div className="text-xs tracking-[0.22em] uppercase text-white/55">Gruppo</div>
+                        <div className="mt-1 text-sm font-semibold text-white/90">{codiceGruppo}</div>
+                        <div className="mt-1 text-xs text-white/55">Validità: {validita}</div>
                       </div>
-
-                      <div className="text-right">
-                        <span
-                          className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
-                            a.result === "allowed"
-                              ? "bg-white text-black"
-                              : "bg-red-500 text-white"
-                          }`}
-                        >
-                          {a.result === "allowed"
-                            ? "CONSENTITO"
-                            : "NEGATO"}
-                        </span>
-                        {a.method && (
-                          <div className="mt-1 text-xs text-white/50">
-                            {a.method}
-                          </div>
-                        )}
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <div className="text-xs tracking-[0.22em] uppercase text-white/55">Tessera</div>
+                        <div className="mt-1 text-xs text-white/60">Barcode:</div>
+                        <div className="mt-1 font-mono text-xs text-white break-all">{barcode}</div>
+                        <div className="mt-2 text-xs text-white/55">
+                          Emissione: {emissione} · Scadenza: {scadenza}
+                        </div>
                       </div>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+
+                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/15 p-4">
+                      <div className="text-xs tracking-[0.22em] uppercase text-white/55">Anagrafica (da Wallyfor raw)</div>
+                      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                        <div className="text-white/70">
+                          Sesso: <span className="text-white/90">{sesso}</span>
+                        </div>
+                        <div className="text-white/70">
+                          Data nascita: <span className="text-white/90">{dataNascita}</span>
+                        </div>
+                        <div className="text-white/70">
+                          Comune: <span className="text-white/90">{comune}</span>
+                        </div>
+                        <div className="text-white/70">
+                          Provincia: <span className="text-white/90">{provincia}</span>
+                        </div>
+                        <div className="text-white/70">
+                          Indirizzo: <span className="text-white/90">{indirizzo}</span>
+                        </div>
+                        <div className="text-white/70">
+                          Comune nascita: <span className="text-white/90">{comuneNascita}</span>
+                        </div>
+                        <div className="text-white/70">
+                          Prov. nascita: <span className="text-white/90">{provNascita}</span>
+                        </div>
+                        <div className="text-white/70">
+                          CF: <span className="text-white/90">{cf}</span>
+                        </div>
+                        <div className="text-white/70">
+                          Consenso promo: <span className="text-white/90">{consensoPromo}</span>
+                        </div>
+                      </div>
+                      <div className="mt-3 text-xs text-white/45">Se qualche campo è vuoto dipende dall’export Wallyfor (raw).</div>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-xs tracking-[0.26em] uppercase text-white/55">Stato</div>
+
+                        <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2">
+                          <span
+                            className={[
+                              "h-2 w-2 rounded-full",
+                              status === "ATTIVO" ? "bg-emerald-300" : status === "LEGACY" ? "bg-cyan-300" : "bg-rose-300",
+                            ].join(" ")}
+                          />
+                          <span className="text-sm font-semibold">{status}</span>
+                        </div>
+
+                        <div className="mt-3 text-sm text-white/70">
+                          Iscritto: <span className="text-white/85">{fmtDateTimeIT(member.created_at)}</span>
+                        </div>
+                        <div className="mt-1 text-sm text-white/70">
+                          Ultimo accesso: <span className="text-white/85">{lastAccess ? fmtDateTimeIT(lastAccess) : "—"}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-xs text-white/45 text-right">
+                        <div>Place order: coming soon</div>
+                        <div className="mt-1">Fonte anagrafica: Wallyfor raw</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-4 max-w-sm">
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                        <div className="text-xs tracking-[0.22em] uppercase text-white/55">Accessi</div>
+                        <div className="mt-2 text-3xl font-extrabold">{accessCount}</div>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                        <div className="text-xs tracking-[0.22em] uppercase text-white/55">Lista</div>
+                        <div className="mt-2 text-3xl font-extrabold">{listaCount}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 text-xs text-white/50">
+                      Nota: nome evento / luogo / data arrivano dal join <span className="font-mono">checkins → events</span>.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* TIMELINE (qui il fix vero) */}
+            <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_20px_80px_rgba(0,0,0,0.60)] overflow-hidden">
+              <div className="p-6 border-b border-white/10">
+                <div className="text-xs tracking-[0.26em] uppercase text-white/55">Timeline</div>
+                <h2 className="mt-2 text-xl font-semibold">Eventi partecipati (past inclusi)</h2>
+                <p className="mt-1 text-sm text-white/65">Nome evento · luogo · data evento · check-in · esito · motivo · metodo</p>
+              </div>
+
+              <div className="p-6">
+                {accessi.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-white/70">Nessun accesso registrato.</div>
+                ) : (
+                  <ul className="space-y-3">
+                    {accessi.map((a) => {
+                      const ev = pickEvent(a);
+                      const evName = ev?.name || "Evento";
+                      const where = [ev?.venue, ev?.city].filter(Boolean).join(" · ");
+                      const whenEvent = ev?.start_at || null;
+                      const whenCheckin = pickWhen(a);
+
+                      const ok = a.result === "allowed";
+                      const badgeBorder = ok ? "border-emerald-300/30" : "border-rose-300/30";
+                      const badgeBg = ok ? "bg-emerald-300/10" : "bg-rose-300/10";
+                      const badgeText = ok ? "text-emerald-100" : "text-rose-100";
+
+                      const method = (a.method || "").toUpperCase() || "—";
+                      const reason = a.reason || "—";
+
+                      return (
+                        <li key={a.id} className="rounded-2xl border border-white/10 bg-black/20 p-5 hover:bg-white/5 transition">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="h-2 w-2 rounded-full bg-cyan-300 shrink-0" />
+                                <div className="font-semibold truncate">{evName}</div>
+                              </div>
+
+                              <div className="mt-1 text-sm text-white/70">
+                                {where ? <span className="text-white/60">{where}</span> : <span className="text-white/50">Luogo: —</span>}
+                              </div>
+
+                              <div className="mt-2 text-xs text-white/55">
+                                Data evento: <span className="text-white/75">{fmtDateTimeIT(whenEvent)}</span>
+                                <span className="text-white/35"> · </span>
+                                Check-in: <span className="text-white/75">{fmtDateTimeIT(whenCheckin)}</span>
+                              </div>
+
+                              <div className="mt-2 text-xs text-white/55">
+                                Motivo: <span className="text-white/75">{reason}</span>
+                              </div>
+
+                              <div className="mt-1 text-xs text-white/45">
+                                Metodo: <span className="font-mono text-white/60">{method}</span>
+                                {a.kind ? <span className="text-white/35"> · </span> : null}
+                                {a.kind ? <span className="text-white/55">{a.kind}</span> : null}
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span
+                                className={[
+                                  "inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold border",
+                                  badgeBorder,
+                                  badgeBg,
+                                  badgeText,
+                                ].join(" ")}
+                              >
+                                {ok ? "CONSENTITO" : "NEGATO"}
+                              </span>
+
+                              {a.scanned_code ? (
+                                <div className="mt-2 text-[11px] font-mono text-white/40 max-w-[220px] break-all">{a.scanned_code}</div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+
+                <div className="mt-6 flex items-center justify-between gap-4">
+                  <a
+                    href="/lvpeople"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-4 py-2 text-xs tracking-[0.22em] uppercase text-white/80 hover:text-white hover:bg-white/5 transition"
+                  >
+                    ← Torna alla tessera
+                  </a>
+
+                  <div className="text-xs text-white/40">Solo tu e lo staff autorizzato potete vedere questi dati.</div>
+                </div>
+              </div>
+            </section>
+
+            <div className="mt-6 text-xs text-white/35">
+              Debug: join checkins→events (name/start_at/venue/city) + checkin_at/created_at come fallback.
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   );
