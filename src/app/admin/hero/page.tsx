@@ -5,6 +5,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AdminTopbarClient from "../AdminTopbarClient";
 
+const HERO_DRIVE_FOLDER_URL =
+  "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
+
+const YT_STUDIO_VIDEOS_URL =
+  "https://studio.youtube.com/channel/UCfQf25gurELioXHUNN8fSNQ/videos/";
+
 type HeroRec = {
   id: string;
   title: string;
@@ -72,7 +78,7 @@ export default function AdminHeroPage() {
         const subtitle = pickField(fields, ["Subtitle", "subtitle", "HERO Subtitle", "Hero Subtitle"]) ?? "";
         const active = asBool(pickField(fields, ["Active", "active", "IsActive", "isActive"]) ?? false);
 
-        // ✅ exact Airtable field names (as you said)
+        // ✅ exact Airtable field names
         const videoUrl = pickField(fields, ["videoUrl"]) ?? "";
         const posterUrl = pickField(fields, ["posterUrl"]) ?? "";
         const imageUrl = pickField(fields, ["imageUrl"]) ?? "";
@@ -104,7 +110,6 @@ export default function AdminHeroPage() {
       setError(null);
       setOkMsg(null);
 
-      // ✅ NOW we send also the 3 link fields
       const payload = {
         id: hero.id,
         title: hero.title || "",
@@ -200,6 +205,7 @@ export default function AdminHeroPage() {
   };
   const label: CSSProperties = { fontSize: 13, opacity: 0.85, marginBottom: 6, display: "block" };
   const grid: CSSProperties = { marginTop: 16, display: "grid", gap: 12 };
+  const help: CSSProperties = { fontSize: 12, opacity: 0.65, marginTop: 6, lineHeight: 1.35 };
 
   return (
     <main style={pageStyle}>
@@ -208,7 +214,9 @@ export default function AdminHeroPage() {
       <div style={wrap}>
         <div style={panel}>
           <h1 style={{ margin: 0, fontSize: 22 }}>Hero</h1>
-          <p style={{ marginTop: 6, opacity: 0.7, fontSize: 13 }}>Gestione contenuti HERO (Title, Subtitle, Active).</p>
+          <p style={{ marginTop: 6, opacity: 0.7, fontSize: 13 }}>
+            Gestione contenuti HERO (Title, Subtitle, Active).
+          </p>
 
           {loading && <p style={{ opacity: 0.75 }}>Caricamento…</p>}
           {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
@@ -229,11 +237,28 @@ export default function AdminHeroPage() {
                         value={hero.videoUrl}
                         onChange={(e) => setHero((h) => ({ ...h, videoUrl: e.target.value }))}
                       />
+
+                      {/* ✅ utile per vedere subito cosa c'è */}
                       {hero.videoUrl ? (
-                        <a href={hero.videoUrl} target="_blank" rel="noreferrer" style={btnMini}>
+                        <a href={hero.videoUrl} target="_blank" rel="noreferrer" style={btnMini} title="Apri il video attuale">
                           Open ↗
                         </a>
                       ) : null}
+
+                      {/* ✅ shortcut per caricare/trovare il video e poi incollare il link */}
+                      <a
+                        href={YT_STUDIO_VIDEOS_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={btnMini}
+                        title="Apri YouTube Studio (carica/gestisci video)"
+                      >
+                        YouTube Studio
+                      </a>
+                    </div>
+                    <div style={help}>
+                      Usa questo campo se vuoi la <b>Hero con video</b>. Incolla un link video (es. MP4 / link video)
+                      e il sito userà quel contenuto come Hero.
                     </div>
                   </div>
 
@@ -245,11 +270,26 @@ export default function AdminHeroPage() {
                         value={hero.posterUrl}
                         onChange={(e) => setHero((h) => ({ ...h, posterUrl: e.target.value }))}
                       />
+
                       {hero.posterUrl ? (
-                        <a href={hero.posterUrl} target="_blank" rel="noreferrer" style={btnMini}>
+                        <a href={hero.posterUrl} target="_blank" rel="noreferrer" style={btnMini} title="Apri l'immagine poster attuale">
                           Open ↗
                         </a>
                       ) : null}
+
+                      <a
+                        href={HERO_DRIVE_FOLDER_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={btnMini}
+                        title="Apri cartella Drive (Hero assets)"
+                      >
+                        Apri Drive
+                      </a>
+                    </div>
+                    <div style={help}>
+                      <b>Copertina del video</b> (poster). Serve quando la Hero è video: mostra un’immagine pulita mentre il video
+                      carica o se l’autoplay non parte (Safari/iOS).
                     </div>
                   </div>
 
@@ -261,16 +301,31 @@ export default function AdminHeroPage() {
                         value={hero.imageUrl}
                         onChange={(e) => setHero((h) => ({ ...h, imageUrl: e.target.value }))}
                       />
+
                       {hero.imageUrl ? (
-                        <a href={hero.imageUrl} target="_blank" rel="noreferrer" style={btnMini}>
+                        <a href={hero.imageUrl} target="_blank" rel="noreferrer" style={btnMini} title="Apri l'immagine hero attuale">
                           Open ↗
                         </a>
                       ) : null}
+
+                      <a
+                        href={HERO_DRIVE_FOLDER_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={btnMini}
+                        title="Apri cartella Drive (Hero assets)"
+                      >
+                        Apri Drive
+                      </a>
+                    </div>
+                    <div style={help}>
+                      <b>Hero immagine</b>: usala se vuoi una Hero statica (senza video) oppure come <b>fallback</b> se il video non è disponibile.
+                      Se vuoi SOLO immagine, lascia <b>videoUrl</b> vuoto e compila solo questo.
                     </div>
                   </div>
 
                   <div style={{ fontSize: 12, opacity: 0.6 }}>
-                    Nota: questi tre campi vengono ora salvati anche dall’admin (PATCH).
+                    Regola pratica: <b>Video Hero</b> = videoUrl + posterUrl (imageUrl opzionale). <b>Immagine Hero</b> = solo imageUrl.
                   </div>
                 </div>
               </div>

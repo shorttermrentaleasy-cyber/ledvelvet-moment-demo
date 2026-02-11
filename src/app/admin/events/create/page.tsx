@@ -1,6 +1,11 @@
 "use client";
 
-const HERO_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
+const HERO_DRIVE_FOLDER_URL =
+  "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
+
+// ✅ nuovo: link YouTube Studio (upload teaser/aftermovie)
+const YT_STUDIO_VIDEOS_URL =
+  "https://studio.youtube.com/channel/UCfQf25gurELioXHUNN8fSNQ/videos/";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -355,28 +360,46 @@ export default function AdminCreateEventPage() {
             <Field label="Ticket URL">
               <input name="TicketUrl" value={form.TicketUrl} onChange={onChange} style={styles.input} />
             </Field>
-            <Field label="Hero Google Drive URL (o direct image URL)">
-  		<div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-   		 <input
-    	  name="HeroImageUrl"
-    	  value={form.HeroImageUrl}
-    	  onChange={onChange}
-    	  style={{ ...styles.input, flex: 1 }}
-    	/>
-    	<a
-    	  href={HERO_DRIVE_FOLDER_URL}
-    	  target="_blank"
-     	 rel="noreferrer"
-     	 style={styles.driveBtn}
-     	 title="Apri la cartella Drive dove caricare le immagini Hero"
-   	 >
-    	  Apri Drive
-   	 </a>
-  	</div>
-	</Field>
 
+            <Field label="Hero Google Drive URL (o direct image URL)">
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <input
+                  name="HeroImageUrl"
+                  value={form.HeroImageUrl}
+                  onChange={onChange}
+                  style={{ ...styles.input, flex: 1 }}
+                />
+                <a
+                  href={HERO_DRIVE_FOLDER_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={styles.driveBtn}
+                  title="Apri la cartella Drive dove caricare le immagini Hero"
+                >
+                  Apri Drive
+                </a>
+              </div>
+            </Field>
+
+            {/* ✅ PATCH MINIMA: Teaser + bottone YouTube Studio */}
             <Field label="Teaser URL (YouTube)">
-              <input name="TeaserUrl" value={form.TeaserUrl} onChange={onChange} style={styles.input} />
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <input
+                  name="TeaserUrl"
+                  value={form.TeaserUrl}
+                  onChange={onChange}
+                  style={{ ...styles.input, flex: 1 }}
+                />
+                <a
+                  href={YT_STUDIO_VIDEOS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={styles.ytBtn}
+                  title="Apri YouTube Studio per caricare o gestire i video"
+                >
+                  YouTube Studio
+                </a>
+              </div>
             </Field>
 
             <Field label="Aftermovie URL (YouTube)">
@@ -496,19 +519,32 @@ const styles: Record<string, React.CSSProperties> = {
     colorScheme: "dark",
   },
 
-driveBtn: {
-  height: 40,
-  padding: "0 14px",
-  borderRadius: 12,
-  border: "1px solid rgba(0,255,209,0.55)",
-  background: "rgba(0,0,0,0.22)",
-  color: "rgba(255,255,255,0.92)",
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
-  whiteSpace: "nowrap",
-},
+  driveBtn: {
+    height: 40,
+    padding: "0 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(0,255,209,0.55)",
+    background: "rgba(0,0,0,0.22)",
+    color: "rgba(255,255,255,0.92)",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    whiteSpace: "nowrap",
+  },
 
+  // ✅ nuovo bottone YouTube Studio
+  ytBtn: {
+    height: 40,
+    padding: "0 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.22)",
+    background: "rgba(255,255,255,0.06)",
+    color: "rgba(255,255,255,0.92)",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    whiteSpace: "nowrap",
+  },
 
   textarea: {
     minHeight: 110,

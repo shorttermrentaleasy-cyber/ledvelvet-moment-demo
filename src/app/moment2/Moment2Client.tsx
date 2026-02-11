@@ -1,10 +1,7 @@
 "use client";
 
-import { Suspense } from "react";
-import Moment2Client from "./Moment2Client";
-import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import DeepDiveOverlay from "./DeepDiveOverlay";
 
 type Level = "BASE" | "VIP" | "FOUNDER";
@@ -35,8 +32,10 @@ type EventItem = {
   date: string;
   phase: "upcoming" | "past";
   ticketUrl?: string;
-// ✅ NEW: notes (Airtable "Notes")
+
+  // Airtable "Notes"
   notes?: string;
+
   teaserUrl?: string;
   aftermovieUrl?: string;
   featured?: boolean;
@@ -68,6 +67,9 @@ type HeroPublic = {
   title: string;
   subtitle: string;
   active: boolean;
+  videoUrl?: string; // mp4 OR youtube link
+  posterUrl?: string;
+  imageUrl?: string;
 };
 
 const SOCIALS = {
@@ -83,7 +85,6 @@ function normalizeSponsors(v: any): SponsorRef[] {
   if (!Array.isArray(v)) return [];
   if (v.length === 0) return [];
 
-  // Case: array of objects (preferred). We only render human labels.
   if (typeof v[0] === "object" && v[0]) {
     return v
       .map((x: any) => {
@@ -95,7 +96,6 @@ function normalizeSponsors(v: any): SponsorRef[] {
         let label = rawLabel;
         if (!label || looksLikeAirtableRecordId(label)) label = fallbackLabel;
 
-        // Final guard: never show Airtable record IDs as labels
         if (!label || looksLikeAirtableRecordId(label)) return null;
 
         return {
@@ -108,16 +108,11 @@ function normalizeSponsors(v: any): SponsorRef[] {
       .filter((s: any): s is SponsorRef => !!s && !!s.id && !!s.label);
   }
 
-  // Case: array of strings (record IDs) -> never render
   return [];
 }
 
 function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
-}
-
-function formatEUR(n: number) {
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
 }
 
 function isValidEmail(v: string) {
@@ -131,7 +126,9 @@ function normalizePhone(raw: string) {
   if (digits.length < 6) return "";
   return cleaned;
 }
+
 const firstStr = (v: any) => (Array.isArray(v) ? String(v[0] ?? "").trim() : String(v ?? "").trim());
+
 function fmtDateIT(v: string) {
   if (!v) return "";
   const d = new Date(v);
@@ -194,6 +191,11 @@ function youTubeEmbedUrl(urlRaw: string, autoplayMuted = true): string | null {
   return `${base}?${params.toString()}`;
 }
 
+function looksLikeMp4(url: string): boolean {
+  const s = (url || "").trim().toLowerCase();
+  return !!s && (s.includes(".mp4") || s.endsWith(".mp4"));
+}
+
 function Marquee({ text }: { text: string }) {
   return (
     <div className="border-t border-[var(--red-accent)] bg-[var(--red-accent)] text-black overflow-hidden whitespace-nowrap">
@@ -214,7 +216,6 @@ function Marquee({ text }: { text: string }) {
     </div>
   );
 }
-
 export default function Moment2() {
   const HERO_MODE = (process.env.NEXT_PUBLIC_HERO_MODE === "event" ? "event" : "mp4") as "mp4" | "event";
 
@@ -236,9 +237,9 @@ export default function Moment2() {
     heroVideoWebm: "",
   };
 
-  // --- URL-driven Experience overlay (so Back returns to the exact Experience) ---
   const router = useRouter();
   const sp = useSearchParams();
+
   const experienceSlug = sp.get("experience");
   const ticketUrlQ = sp.get("ticketUrl") || "";
   const cityQ = sp.get("city") || "";
@@ -248,7 +249,11 @@ export default function Moment2() {
     title: "",
     subtitle: "",
     active: true,
+    videoUrl: "",
+    posterUrl: "",
+    imageUrl: "",
   });
+
   const [deepDiveOpen, setDeepDiveOpen] = useState<{
     slug?: string;
     ticketUrl?: string;
@@ -256,18 +261,13 @@ export default function Moment2() {
     dateLabel?: string;
   } | null>(null);
 
-  // Keep overlay state in sync with ?experience=... in the URL
   useEffect(() => {
-    if (experienceSlug) {
-      setDeepDiveOpen((prev) => ({ ...(prev || {}), slug: experienceSlug }));
-    } else {
-      setDeepDiveOpen(null);
-    }
+    if (experienceSlug) setDeepDiveOpen((prev) => ({ ...(prev || {}), slug: experienceSlug }));
+    else setDeepDiveOpen(null);
   }, [experienceSlug]);
 
   const [user, setUser] = useState<{ email: string | null; level?: Level; kyc?: boolean }>({ email: null });
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [showKyc, setShowKyc] = useState(false);
   const [selectedSize, setSelectedSize] = useState<Record<string, string>>({});
   const [showCart, setShowCart] = useState(false);
   const [cartTimerMin, setCartTimerMin] = useState(10);
@@ -302,14 +302,32 @@ export default function Moment2() {
     sort?: number;
   };
 
-  const [musicOpen, setMusicOpen] = useState(false);
   const [musicMinimized, setMusicMinimized] = useState(true);
   const [ambientTracks, setAmbientTracks] = useState<AmbientTrack[]>([]);
   const [ambientIdx, setAmbientIdx] = useState(0);
   const [ambientPlaying, setAmbientPlaying] = useState(false);
   const ambientAudioRef = useRef<HTMLAudioElement | null>(null);
-
   const ambientCurrent = ambientTracks[ambientIdx] || null;
+  const [ambientDur, setAmbientDur] = useState(0);
+  const [ambientT, setAmbientT] = useState(0);
+  const ambientShouldAutoplayRef = useRef(false);
+
+
+function fmtTime(sec: number) {
+  if (!sec || !isFinite(sec)) return "0:00";
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+function ambientSeek(next: number) {
+  const a = ambientAudioRef.current;
+  if (!a || !isFinite(next)) return;
+  a.currentTime = Math.max(0, Math.min(next, a.duration || next));
+  setAmbientT(a.currentTime || 0);
+}
+
 
   useEffect(() => {
     let cancelled = false;
@@ -339,59 +357,74 @@ export default function Moment2() {
   }, []);
 
   useEffect(() => {
-    const a = ambientAudioRef.current;
-    if (!a) return;
+  const a = ambientAudioRef.current;
+  if (!a) return;
 
-    if (ambientCurrent?.audio_url) {
-      // update source and reset playing state (iOS safe)
-      a.src = ambientCurrent.audio_url;
-      try {
-        a.load();
-      } catch {}
+  if (ambientCurrent?.audio_url) {
+    a.src = ambientCurrent.audio_url;
+    try { a.load(); } catch {}
+
+    // ✅ auto-continue
+    if (ambientShouldAutoplayRef.current) {
+      a.play()
+        .then(() => setAmbientPlaying(true))
+        .catch(() => setAmbientPlaying(false));
+    } else {
+      setAmbientPlaying(false);
     }
-    setAmbientPlaying(false);
-  }, [ambientCurrent?.audio_url]);
-
-  function ambientPlay() {
-    const a = ambientAudioRef.current;
-    if (!a || !ambientCurrent?.audio_url) return;
-    a.play()
-      .then(() => setAmbientPlaying(true))
-      .catch(() => {
-        // iOS may block if not triggered by user gesture
-        setAmbientPlaying(false);
-      });
   }
+}, [ambientCurrent?.audio_url]);
 
-  function ambientPause() {
-    const a = ambientAudioRef.current;
-    if (!a) return;
-    a.pause();
-    setAmbientPlaying(false);
-  }
+
+ function ambientPlay() {
+  const a = ambientAudioRef.current;
+  if (!a || !ambientCurrent?.audio_url) return;
+
+  ambientShouldAutoplayRef.current = true;
+
+  a.play()
+    .then(() => setAmbientPlaying(true))
+    .catch(() => {
+      setAmbientPlaying(false);
+      // se qui fallisce, è blocco browser: serve tap utente
+    });
+}
+
+function ambientPause() {
+  const a = ambientAudioRef.current;
+  if (!a) return;
+
+  ambientShouldAutoplayRef.current = false;
+  a.pause();
+  setAmbientPlaying(false);
+}
+
+
+
 
   function ambientToggle() {
     if (ambientPlaying) ambientPause();
     else ambientPlay();
   }
 
-  function ambientNext() {
-    if (!ambientTracks.length) return;
-    const next = ambientIdx + 1 < ambientTracks.length ? ambientIdx + 1 : 0;
-    setAmbientIdx(next);
-    setAmbientPlaying(false);
-  }
+function ambientNext() {
+  if (!ambientTracks.length) return;
+  const next = ambientIdx + 1 < ambientTracks.length ? ambientIdx + 1 : 0;
+  setAmbientIdx(next);
+}
 
-  function ambientPrev() {
-    if (!ambientTracks.length) return;
-    const prev = ambientIdx - 1 >= 0 ? ambientIdx - 1 : ambientTracks.length - 1;
-    setAmbientIdx(prev);
-    setAmbientPlaying(false);
-  }
+function ambientPrev() {
+  if (!ambientTracks.length) return;
+  const prev = ambientIdx - 1 >= 0 ? ambientIdx - 1 : ambientTracks.length - 1;
+  setAmbientIdx(prev);
+}
+
+
+
+
 
   const [eventsReloadTick, setEventsReloadTick] = useState(0);
   const [events, setEvents] = useState<EventItem[]>([]);
-
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsErr, setEventsErr] = useState<string | null>(null);
 
@@ -433,10 +466,14 @@ export default function Moment2() {
         if (!r.ok || !j?.ok || !j?.hero) return;
 
         const h = j.hero;
+
         setHeroPublic({
           title: String(h.title || ""),
           subtitle: String(h.subtitle || "Ethereal clubbing in unconventional places"),
           active: Boolean(h.active),
+          videoUrl: String(h.videoUrl || ""),
+          posterUrl: String(h.posterUrl || ""),
+          imageUrl: String(h.imageUrl || ""),
         });
       } catch {}
     }
@@ -453,7 +490,8 @@ export default function Moment2() {
     async function loadEvents() {
       setEventsLoading(true);
       setEventsErr(null);
-      // ✅ ADD THIS: session cache (avoid reload after back)
+
+      // ✅ session cache (avoid reload after back)
       try {
         const cached = sessionStorage.getItem("lv_public_events_v2");
         if (cached) {
@@ -489,13 +527,11 @@ export default function Moment2() {
               date: e.date || e["date"] || "",
               phase,
               ticketUrl: e.ticketUrl || e["Ticket Url"] || "",
- // ✅ NEW: Notes dal backoffice (Airtable "Notes")
-  notes: (e.notes || e["Notes"] || "").toString(),
+              notes: (e.notes || e["Notes"] || "").toString(),
               teaserUrl: e.teaserUrl || e["Teaser"] || "",
               aftermovieUrl: e.aftermovieUrl || e["Aftermovie"] || "",
               featured: Boolean(e.featured),
               heroOnly: Boolean((e.heroOnly ?? e.HeroOnly ?? e["HeroOnly"]) as any),
-
               heroTitle: e.heroTitle || e["Hero Title"] || "",
               heroSubtitle: e["Hero Subtitle"] || e.heroSubtitle || "",
               deepdiveSlug: firstStr(e.deepdive_slug) || firstStr(e.DeepDiveSlug) || firstStr(e.DEEP_DIVE_SLUG),
@@ -510,15 +546,7 @@ export default function Moment2() {
           .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
         setEvents(norm);
-        console.log(
-          "deepdive check",
-          norm.slice(0, 5).map((e) => ({
-            slug: e.deepdiveSlug,
-            published: (e as any).deepdivePublished,
-          }))
-        );
 
-        // ✅ ADD THIS: save cache
         try {
           sessionStorage.setItem("lv_public_events_v2", JSON.stringify(norm));
         } catch {}
@@ -631,7 +659,6 @@ export default function Moment2() {
       return [...c, { sku: p.sku, name: p.name, price: p.price, qty: 1, size: chosen }];
     });
   }
-
   async function submitSponsorRequest() {
     setSponsorSentOk(null);
     setSponsorSentErr(null);
@@ -714,17 +741,27 @@ export default function Moment2() {
     return years;
   }, [pastByYear]);
 
+  const tier = user.level || (user.email ? "BASE" : undefined);
+  const tierLabel = tier ? `SOCIO ${tier}` : "VISITATORE";
+
   const heroTitle = heroPublic.active ? heroPublic.title.trim() : "";
   const heroSubtitle = heroPublic.active ? heroPublic.subtitle.trim() : "";
 
-  const heroEvent = null as any;
-  const heroYouTube = useMemo(() => {
-    if (HERO_MODE !== "event") return null;
-    return null;
-  }, [HERO_MODE]);
+  const heroPosterResolved = (heroPublic.posterUrl || heroPublic.imageUrl || brand.heroPoster || "").trim();
+  const heroImageResolved = (heroPublic.imageUrl || brand.heroPoster || "").trim();
 
-  const tier = user.level || (user.email ? "BASE" : undefined);
-  const tierLabel = tier ? `SOCIO ${tier}` : "VISITATORE";
+  const heroMp4Resolved = useMemo(() => {
+    if (HERO_MODE !== "mp4") return "";
+    const v = (heroPublic.videoUrl || "").trim();
+    return v && looksLikeMp4(v) ? v : brand.heroVideoMp4;
+  }, [HERO_MODE, heroPublic.videoUrl]);
+
+  const heroYouTubeResolved = useMemo(() => {
+    if (HERO_MODE !== "event") return null;
+    const v = (heroPublic.videoUrl || "").trim();
+    if (!v) return null;
+    return youTubeEmbedUrl(v, true);
+  }, [HERO_MODE, heroPublic.videoUrl]);
 
   return (
     <div
@@ -740,7 +777,7 @@ export default function Moment2() {
         ["--red-accent" as any]: palette.redAccent,
       }}
     >
-      {/* Sticky header: SOLIDO, sempre visibile */}
+      {/* Sticky header */}
       <div className="sticky top-0 z-[999] border-b border-white/10 bg-[var(--surface)]">
         <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-xs tracking-wide">
           <div className="flex items-center gap-2 text-[var(--muted)]">
@@ -845,172 +882,242 @@ export default function Moment2() {
         </div>
       </div>
 
-{/* Ambient music player (Airtable MP3) */}
-{ambientTracks.length > 0 ? (
-  <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[60] w-[calc(100vw-16px)] sm:w-[520px]">
-    <style>{`
-      .lv-audio::-webkit-media-controls-panel {
-        background-color: rgba(0,0,0,0.55);
-      }
-      .lv-audio::-webkit-media-controls-enclosure {
-        border-radius: 14px;
-        background-color: rgba(0,0,0,0.55);
-      }
-      .lv-audio::-webkit-media-controls-timeline,
-      .lv-audio::-webkit-media-controls-volume-slider {
-        filter: brightness(1.35) contrast(1.25);
-      }
-      .lv-audio::-webkit-media-controls-play-button,
-      .lv-audio::-webkit-media-controls-mute-button,
-      .lv-audio::-webkit-media-controls-current-time-display,
-      .lv-audio::-webkit-media-controls-time-remaining-display {
-        filter: brightness(1.25);
-      }
-    `}</style>
+      {/* Ambient music player */}
+      {ambientTracks.length > 0 ? (
+        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[60] w-[calc(100vw-16px)] sm:w-[520px]">
+          <style>{`
+            .lv-audio::-webkit-media-controls-panel { background-color: rgba(0,0,0,0.55); }
+            .lv-audio::-webkit-media-controls-enclosure { border-radius: 14px; background-color: rgba(0,0,0,0.55); }
+            .lv-audio::-webkit-media-controls-timeline,
+            .lv-audio::-webkit-media-controls-volume-slider { filter: brightness(1.8) contrast(1.4); }
+            .lv-audio::-webkit-media-controls-play-button,
+            .lv-audio::-webkit-media-controls-mute-button,
+            .lv-audio::-webkit-media-controls-current-time-display,
+            .lv-audio::-webkit-media-controls-time-remaining-display { filter: brightness(1.25); }
+          `}</style>
 
-    <div className="border border-white/15 bg-black/75 backdrop-blur-md rounded-2xl overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
-      {/* HEADER */}
-      <div className="px-3 py-2 flex items-center justify-between border-b border-white/10">
-        {/* Title – nascosto su mobile */}
-        <div className="hidden sm:block min-w-0">
-          <div className="text-[10px] tracking-[0.32em] uppercase text-white/70">
-            Ambient Music
-          </div>
-          <div className="mt-1 text-[12px] text-white/90 truncate">
-            {ambientCurrent?.title || "—"}
-            {ambientCurrent?.artist ? (
-              <span className="text-white/55"> · {ambientCurrent.artist}</span>
-            ) : null}
-          </div>
-        </div>
+          <div className="border border-white/15 bg-black/75 backdrop-blur-md rounded-2xl overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
+           
+     
+   <div className="px-3 py-2 flex items-center gap-3 border-b border-white/10">
+  {/* Track title inline (slim) */}
+  <div className="min-w-0 flex-1">
+    <div className="text-[10px] tracking-[0.32em] uppercase text-white/70">Ambient Music</div>
+    <div className="mt-1 text-[12px] text-white/90 truncate">
+      {ambientCurrent?.title || "—"}
+      {ambientCurrent?.artist ? <span className="text-white/55"> · {ambientCurrent.artist}</span> : null}
+    </div>
+  </div>
 
-        {/* CONTROLS */}
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-          <button
-            onClick={ambientPrev}
-            className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
-            aria-label="Prev"
-          >
-            ◀
-          </button>
+  {/* Controls aligned right */}
+  <div className="flex items-center gap-2 shrink-0">
+    <button
+      onClick={ambientPrev}
+      className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+      aria-label="Prev"
+      type="button"
+    >
+      ◀
+    </button>
 
-          <button
-            onClick={ambientToggle}
-            className="h-10 w-10 rounded-full border border-white/25 bg-white/10 text-white"
-            aria-label="Play Pause"
-          >
-            ⏯
-          </button>
+    <button
+      onClick={ambientToggle}
+      className="h-10 w-10 rounded-full border border-white/25 bg-white/10 text-white"
+      aria-label="Play Pause"
+      type="button"
+    >
+      {ambientPlaying ? "❚❚" : "▶"}
+    </button>
 
-          <button
-            onClick={ambientNext}
-            className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
-            aria-label="Next"
-          >
-            ▶
-          </button>
+    <button
+      onClick={ambientNext}
+      className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+      aria-label="Next"
+      type="button"
+    >
+      ▶
+    </button>
 
-          <button
-            onClick={() => setMusicMinimized(v => !v)}
-            className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/70"
-            aria-label="Open"
-          >
-            ⌄
-          </button>
+    <button
+      onClick={() => setMusicMinimized((v) => !v)}
+      className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/70"
+      aria-label="Open"
+      type="button"
+    >
+      ⌄
+    </button>
 
-          <button
-            onClick={() => {
-              setMusicMinimized(true);
-              ambientPause();
-            }}
-            className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/60"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
+    <button
+      onClick={() => {
+        setMusicMinimized(true);
+        ambientPause();
+      }}
+      className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/60"
+      aria-label="Close"
+      type="button"
+    >
+      ✕
+    </button>
+  </div>
+</div>
 
-      {/* BODY */}
-      <div
-        className="overflow-hidden"
-        style={{
-          maxHeight: musicMinimized ? 0 : 140,
-          opacity: musicMinimized ? 0 : 1,
-          transition: "max-height 220ms ease, opacity 160ms ease",
-          pointerEvents: musicMinimized ? "none" : "auto",
-        }}
-      >
-        <div className="px-3 py-2 bg-black/40">
-          <audio
-            className="lv-audio"
-            ref={ambientAudioRef}
-            src={ambientCurrent?.audio_url || ""}
-            preload="metadata"
-            controls
-            crossOrigin="anonymous"
-            onEnded={ambientNext}
-            style={{ width: "100%", display: "block", borderRadius: 14 }}
-          />
-        </div>
+
+            <div
+              className="overflow-hidden"
+              style={{
+                maxHeight: musicMinimized ? 0 : 140,
+                opacity: musicMinimized ? 0 : 1,
+                transition: "max-height 220ms ease, opacity 160ms ease",
+                pointerEvents: musicMinimized ? "none" : "auto",
+              }}
+            >
+              <div className="px-3 py-2 bg-[rgba(147,11,12,0.35)] border-t border-white/15">
+
+                {/* AUDIO ELEMENT (hidden, we control it) */}
+<audio
+  ref={ambientAudioRef}
+  src={ambientCurrent?.audio_url || ""}
+  preload="metadata"
+  crossOrigin="anonymous"
+
+ onEnded={() => {
+    // ✅ se stava suonando, continua col prossimo
+    ambientShouldAutoplayRef.current = true;
+    ambientNext();
+  }}
+
+  onLoadedMetadata={(e) => {
+    const a = e.currentTarget;
+    setAmbientDur(a.duration || 0);
+    setAmbientT(a.currentTime || 0);
+  }}
+  onTimeUpdate={(e) => {
+    const a = e.currentTarget;
+    setAmbientT(a.currentTime || 0);
+  }}
+  style={{ display: "none" }}
+/>
+
+{/* EXPANDED UI */}
+<div className="flex gap-3 items-start">
+  {/* Cover (from Airtable) */}
+  <div className="shrink-0 w-14 h-14 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+    {ambientCurrent?.cover_url ? (
+      <img
+        src={ambientCurrent.cover_url}
+        alt={ambientCurrent.title || "cover"}
+        className="w-full h-full object-cover"
+        loading="lazy"
+      />
+    ) : (
+      <div className="w-full h-full bg-white/5" />
+    )}
+  </div>
+
+  {/* Track + progress */}
+  <div className="min-w-0 flex-1">
+    <div className="text-[12px] text-white/90 truncate">
+      {ambientCurrent?.title || "—"}
+      {ambientCurrent?.artist ? <span className="text-white/55"> · {ambientCurrent.artist}</span> : null}
+    </div>
+
+    <div className="mt-2">
+      {/* Progress bar */}
+      <input
+        type="range"
+        min={0}
+        max={Math.max(1, Math.floor(ambientDur || 0))}
+        value={Math.floor(ambientT || 0)}
+        onChange={(e) => ambientSeek(Number(e.target.value))}
+        className="w-full lv-range"
+      />
+
+      <div className="mt-1 flex items-center justify-between text-[11px] text-white/60 tabular-nums">
+        <span>{fmtTime(ambientT)}</span>
+        <span>{fmtTime(ambientDur)}</span>
       </div>
     </div>
   </div>
-) : null}
+</div>
 
-    
+<style>{`
+  .lv-range {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 10px;
+    background: rgba(255,255,255,0.10);
+    border-radius: 999px;
+    outline: none;
+    border: 1px solid rgba(255,255,255,0.14);
+  }
+  .lv-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.95);
+    border: 2px solid rgba(147,11,12,0.95);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+    cursor: pointer;
+  }
+  .lv-range::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.95);
+    border: 2px solid rgba(147,11,12,0.95);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+    cursor: pointer;
+  }
+`}</style>
 
-      {/* HERO (NERO) */}
+
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* HERO — ✅ RIPULITO: UN SOLO BLOCCO (no duplicati) */}
       <section id="home" className="relative h-[100svh] w-full bg-black">
         <div className="absolute inset-0">
-          {HERO_MODE === "mp4" ? (
-            <video
-              ref={heroVideoRef}
-              className="absolute inset-0 z-20 h-full w-full object-cover"
-              poster={brand.heroPoster}
-              autoPlay
-              loop
-              muted={muted}
-              playsInline
-              preload="metadata"
-            >
-              <source src={brand.heroVideoMp4} type="video/mp4" />
-              {brand.heroVideoWebm ? <source src={brand.heroVideoWebm} type="video/webm" /> : null}
-            </video>
-          ) : heroYouTube ? (
+          {heroYouTubeResolved ? (
             <iframe
               className="absolute inset-0 z-30 h-full w-full"
-              src={heroYouTube}
+              src={heroYouTubeResolved}
               title="LedVelvet"
               loading="lazy"
               allow="autoplay, accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
               referrerPolicy="strict-origin-when-cross-origin"
             />
-          ) : heroEvent ? (
-            <img src={brand.heroPoster} alt="LedVelvet" className="absolute inset-0 z-20 h-full w-full object-cover" loading="eager" />
-          ) : (
+          ) : heroMp4Resolved ? (
             <video
               ref={heroVideoRef}
               className="absolute inset-0 z-20 h-full w-full object-cover"
-              poster={brand.heroPoster}
+              poster={heroPosterResolved || brand.heroPoster}
               autoPlay
               loop
               muted={muted}
               playsInline
               preload="metadata"
-              onEnded={(e) => {
-                const v = e.currentTarget;
-                v.currentTime = 0;
-                v.play().catch(() => {});
-              }}
             >
-              <source src={brand.heroVideoMp4} type="video/mp4" />
+              <source src={heroMp4Resolved} type="video/mp4" />
               {brand.heroVideoWebm ? <source src={brand.heroVideoWebm} type="video/webm" /> : null}
             </video>
+          ) : (
+            <img
+              src={heroImageResolved || brand.heroPoster}
+              alt="LedVelvet"
+              className="absolute inset-0 z-20 h-full w-full object-cover"
+              loading="eager"
+            />
           )}
 
-          <img src={brand.heroPoster} alt="LedVelvet" className="absolute inset-0 z-0 h-full w-full object-cover" loading="eager" />
+          {/* base poster sempre sotto */}
+          <img src={heroPosterResolved || brand.heroPoster} alt="LedVelvet" className="absolute inset-0 z-0 h-full w-full object-cover" loading="eager" />
+
           <div className="pointer-events-none absolute inset-0 z-40 bg-gradient-to-t from-black/95 via-black/55 to-black/10" />
           <div
             className="pointer-events-none absolute inset-0 z-40 opacity-60"
@@ -1048,9 +1155,13 @@ export default function Moment2() {
           </div>
         </div>
 
-        {HERO_MODE === "mp4" ? (
+        {!heroYouTubeResolved ? (
           <div className="absolute left-3 right-3 bottom-3 z-50 bg-black/45 px-3 py-2 flex items-center justify-end gap-2 border border-white/10">
-            <button className="px-3 py-1.5 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase" onClick={toggleMute} type="button">
+            <button
+              className="px-3 py-1.5 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase"
+              onClick={toggleMute}
+              type="button"
+            >
               {muted ? "Unmute" : "Mute"}
             </button>
             <button
@@ -1068,7 +1179,7 @@ export default function Moment2() {
 
       <Marquee text="Next Event · LedVelvet · Immersive Experience · Music · Atmosphere ·" />
 
-      {/* UPCOMING (ROSSO) */}
+      {/* UPCOMING */}
       <section id="eventi" className="py-16 bg-[var(--red-dark)]">
         <div className="w-full px-[6%]">
           <div className="text-[11px] tracking-[0.26em] uppercase text-white/80">Next</div>
@@ -1103,6 +1214,7 @@ export default function Moment2() {
                     })()}
                     <div className="pointer-events-none absolute inset-0 z-30 bg-gradient-to-t from-black/90 via-black/35 to-black/10" />
                   </div>
+
                   <div className="p-6">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-xs tracking-[0.22em] uppercase text-white/75">{tag}</div>
@@ -1111,14 +1223,11 @@ export default function Moment2() {
                         {e.deepdiveSlug && e.deepdivePublished ? (
                           <button
                             onClick={() => {
-                              if (!e.deepdiveSlug) return;
-
                               const params = new URLSearchParams(sp.toString());
-                              params.set("experience", e.deepdiveSlug);
+                              params.set("experience", e.deepdiveSlug!);
                               params.set("ticketUrl", e.ticketUrl || "");
                               params.set("city", e.city || "");
                               params.set("dateLabel", fmtDateIT(e.date));
-
                               router.replace(`/moment2?${params.toString()}`, { scroll: false });
                             }}
                             className="px-4 py-2 bg-white/10 border border-white/25 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/40"
@@ -1148,19 +1257,21 @@ export default function Moment2() {
                     <div className="mt-2 text-sm text-white/80">
                       {e.city} • {fmtDateIT(e.date)}
                     </div>
-{e.notes ? (
-  <div
-    className="mt-3 text-sm text-white/75 leading-relaxed"
-    style={{
-      display: "-webkit-box",
-      WebkitLineClamp: 3 as any,
-      WebkitBoxOrient: "vertical" as any,
-      overflow: "hidden",
-    }}
-  >
-    {e.notes}
-  </div>
-) : null}
+
+                    {e.notes ? (
+                      <div
+                        className="mt-3 text-sm text-white/75 leading-relaxed"
+                        style={{
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3 as any,
+                          WebkitBoxOrient: "vertical" as any,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {e.notes}
+                      </div>
+                    ) : null}
+
                     {e.sponsors && e.sponsors.length > 0 ? (
                       <div className="mt-4">
                         <div className="text-[10px] tracking-[0.26em] uppercase text-white/75">Sponsors</div>
@@ -1202,7 +1313,7 @@ export default function Moment2() {
 
       <Marquee text="Past Events · Aftermovies · LedVelvet ·" />
 
-      {/* PAST (NERO) */}
+      {/* PAST */}
       <section id="past" className="py-16 bg-[var(--bg)]">
         <div className="w-full px-[6%]">
           <div className="text-[11px] tracking-[0.26em] uppercase text-white/70">Recap</div>
@@ -1217,13 +1328,7 @@ export default function Moment2() {
             ) : (
               pastYears.map((year) => (
                 <details key={year} className="lv-details border border-white/12 bg-white/5">
-                  <summary
-                    className="
-                      lv-summary
-                      cursor-pointer select-none px-6 py-4 flex items-center justify-between gap-4
-                      text-red-300 hover:text-red-100 transition-colors
-                    "
-                  >
+                  <summary className="lv-summary cursor-pointer select-none px-6 py-4 flex items-center justify-between gap-4 text-red-300 hover:text-red-100 transition-colors">
                     <div className="flex items-center gap-3">
                       <div className="text-xs tracking-[0.22em] uppercase text-white/70">Year</div>
                       <div className="text-lg font-semibold text-white">{year}</div>
@@ -1231,7 +1336,6 @@ export default function Moment2() {
                         {(pastByYear[year]?.length || 0)} event{(pastByYear[year]?.length || 0) === 1 ? "" : "s"}
                       </div>
                     </div>
-
                     <div className="lv-open text-xs tracking-[0.18em] uppercase">OPEN</div>
                   </summary>
 
@@ -1268,14 +1372,11 @@ export default function Moment2() {
                                   {e.deepdiveSlug && e.deepdivePublished ? (
                                     <button
                                       onClick={() => {
-                                        if (!e.deepdiveSlug) return;
-
                                         const params = new URLSearchParams(sp.toString());
-                                        params.set("experience", e.deepdiveSlug);
+                                        params.set("experience", e.deepdiveSlug!);
                                         params.set("ticketUrl", e.ticketUrl || "");
                                         params.set("city", e.city || "");
                                         params.set("dateLabel", fmtDateIT(e.date));
-
                                         router.replace(`/moment2?${params.toString()}`, { scroll: false });
                                       }}
                                       className="px-4 py-2 bg-white/10 border border-white/25 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/40"
@@ -1298,23 +1399,26 @@ export default function Moment2() {
                                   )}
                                 </div>
                               </div>
+
                               <h3 className="text-xl font-semibold mt-3 text-white">{e.name}</h3>
                               <div className="mt-2 text-sm text-white/70">
                                 {e.city} • {fmtDateIT(e.date)}
                               </div>
-{e.notes ? (
-  <div
-    className="mt-3 text-sm text-white/70 leading-relaxed"
-    style={{
-      display: "-webkit-box",
-      WebkitLineClamp: 3 as any,
-      WebkitBoxOrient: "vertical" as any,
-      overflow: "hidden",
-    }}
-  >
-    {e.notes}
-  </div>
-) : null}
+
+                              {e.notes ? (
+                                <div
+                                  className="mt-3 text-sm text-white/70 leading-relaxed"
+                                  style={{
+                                    display: "-webkit-box",
+                                    WebkitLineClamp: 3 as any,
+                                    WebkitBoxOrient: "vertical" as any,
+                                    overflow: "hidden",
+                                  }}
+                                >
+                                  {e.notes}
+                                </div>
+                              ) : null}
+
                               {e.sponsors && e.sponsors.length > 0 ? (
                                 <div className="mt-4">
                                   <div className="text-[10px] tracking-[0.26em] uppercase text-white/70">Sponsors</div>
@@ -1361,9 +1465,7 @@ export default function Moment2() {
         <style suppressHydrationWarning>{`
           #past details > summary::-webkit-details-marker { display:none; }
           #past details > summary { list-style:none; }
-
           #past .lv-details { border-radius: 0px; }
-
           #past .lv-summary {
             position: relative;
             background: rgba(0,0,0,0.18);
@@ -1383,7 +1485,6 @@ export default function Moment2() {
             );
             opacity: 0.85;
           }
-
           #past details[open] .lv-summary {
             color: #ff2b2b;
             background: rgba(0,0,0,0.28);
@@ -1393,9 +1494,7 @@ export default function Moment2() {
             color: #ff2b2b;
             letter-spacing: 0.22em;
           }
-
           #past .lv-open { color: rgba(255,255,255,0.72); }
-
           #past .lv-content {
             overflow: hidden;
             max-height: 0px;
@@ -1411,10 +1510,9 @@ export default function Moment2() {
         `}</style>
       </section>
 
-      {/* Marquee tra Past (nero) e Sponsor (rosso) */}
       <Marquee text="Sponsor · Partnerships · LedVelvet ·" />
 
-      {/* SPONSOR REQUEST (ROSSO) - FORM IDENTICA */}
+      {/* SPONSOR REQUEST */}
       <section id="sponsor" className="py-16 bg-[var(--red-dark)]">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-[11px] tracking-[0.26em] uppercase text-white/80">Partnership</div>
@@ -1508,6 +1606,7 @@ export default function Moment2() {
                 >
                   {sponsorSending ? "Invio..." : "Invia richiesta"}
                 </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1548,6 +1647,7 @@ export default function Moment2() {
           </div>
         </div>
       </footer>
+
       {/* Deep Dive Overlay */}
       <DeepDiveOverlay
         slug={deepDiveOpen?.slug || null}
@@ -1568,3 +1668,4 @@ export default function Moment2() {
     </div>
   );
 }
+
