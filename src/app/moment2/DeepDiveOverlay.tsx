@@ -65,7 +65,6 @@ function getYouTubeId(urlRaw: string): string | null {
 function ytEmbed(url: string) {
   const id = getYouTubeId(url);
   if (!id) return "";
-  // privacy-friendly
   return `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`;
 }
 
@@ -74,19 +73,14 @@ function asString(v: any): string {
   if (typeof v === "string") return v.trim();
   if (typeof v === "number" || typeof v === "boolean") return String(v).trim();
   if (Array.isArray(v)) return asString(v[0]);
-  if (typeof v === "object") {
-    // single select Airtable spesso {name:"..."} o {value:"..."}
-    return asString(v.name ?? v.value ?? v.slug ?? v.url ?? v.id);
-  }
+  if (typeof v === "object") return asString(v.name ?? v.value ?? v.slug ?? v.url ?? v.id);
   return String(v).trim();
 }
 
 function asUrl(v: any): string {
-  // stringa URL
   const s = asString(v);
   if (s && /^https?:\/\//i.test(s)) return s;
 
-  // attachment singolo o array attachment
   if (Array.isArray(v)) {
     const first = v.find(Boolean);
     return asUrl(first);
@@ -95,7 +89,7 @@ function asUrl(v: any): string {
     const u = asString((v as AirtableAttachment).url);
     if (u && /^https?:\/\//i.test(u)) return u;
   }
-  return s; // potrebbe essere path relativo
+  return s;
 }
 
 function asUrlArray(v: any): string[] {
@@ -103,7 +97,6 @@ function asUrlArray(v: any): string[] {
   if (typeof v === "string") {
     const s = v.trim();
     if (!s) return [];
-    // se qualcuno ha incollato URL separati da newline/virgola
     if (s.includes("\n") || s.includes(",")) {
       return s
         .split(/[\n,]/g)
@@ -121,7 +114,6 @@ function asUrlArray(v: any): string[] {
   }
 
   if (typeof v === "object") {
-    // single attachment object
     const u = asUrl(v);
     return u ? [u] : [];
   }
@@ -134,7 +126,6 @@ function asStringArray(v: any): string[] {
   if (typeof v === "string") {
     const s = v.trim();
     if (!s) return [];
-    // supporta "a, b, c" o newline
     if (s.includes("\n") || s.includes(",")) {
       return s
         .split(/[\n,]/g)
@@ -179,10 +170,12 @@ function Pill({ children, tone }: { children: React.ReactNode; tone: "sound" | "
 
 function SectionCard({ label, title, children }: { label: string; title?: string; children: React.ReactNode }) {
   return (
-    <article className="rounded-2xl border border-white/10 bg-white/5 p-6">
+    <article className="rounded-2xl border border-white/10 bg-white/5 p-6 overflow-x-hidden">
       <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">{label}</div>
       {title ? <h3 className="mt-2 text-xl font-semibold text-white">{title}</h3> : null}
-      <div className="mt-4 text-white/85 leading-relaxed whitespace-pre-line">{children}</div>
+      <div className="mt-4 text-white/85 leading-relaxed whitespace-pre-line break-words [overflow-wrap:anywhere]">
+        {children}
+      </div>
     </article>
   );
 }
@@ -209,6 +202,10 @@ export default function DeepDiveOverlay({
 
   const [returnTo, setReturnTo] = useState<string>("");
 
+  // ✅ gallery lightbox
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
   const stopMood = useCallback(() => {
     const el = moodAudioRef.current;
     if (!el) return;
@@ -230,9 +227,7 @@ export default function DeepDiveOverlay({
 
     el.play()
       .then(() => setIsMoodPlaying(true))
-      .catch(() => {
-        // autoplay policies: silent
-      });
+      .catch(() => {});
   }, [isMoodPlaying, stopMood]);
 
   const handleClose = useCallback(() => {
@@ -252,22 +247,28 @@ export default function DeepDiveOverlay({
     };
   }, [open]);
 
-  // esc close
+  // esc close (overlay)
   useEffect(() => {
     if (!open) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") handleClose();
+      if (ev.key === "Escape") {
+        if (lightboxOpen) {
+          setLightboxOpen(false);
+          return;
+        }
+        handleClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, handleClose]);
+  }, [open, handleClose, lightboxOpen]);
 
   // build returnTo with experience param
   useEffect(() => {
     if (!open || !slug) return;
     try {
       const u = new URL(window.location.href);
-      u.searchParams.set("experience", slug);
+      u.searchParams.set("experience", String(slug));
       setReturnTo(u.pathname + "?" + u.searchParams.toString() + (u.hash || ""));
     } catch {
       setReturnTo(window.location.pathname + window.location.search + window.location.hash);
@@ -280,12 +281,12 @@ export default function DeepDiveOverlay({
   }, [returnTo]);
 
   const slugToString = useCallback((v: any): string => {
-  if (!v) return "";
-  if (typeof v === "string") return v.trim();
-  if (Array.isArray(v)) return slugToString(v[0]);
-  if (typeof v === "object") return slugToString(v.slug ?? v.value ?? v.name ?? v.id);
-  return String(v).trim();
-}, []);
+    if (!v) return "";
+    if (typeof v === "string") return v.trim();
+    if (Array.isArray(v)) return slugToString(v[0]);
+    if (typeof v === "object") return slugToString(v.slug ?? v.value ?? v.name ?? v.id);
+    return String(v).trim();
+  }, []);
 
   // load deepdive
   useEffect(() => {
@@ -324,6 +325,13 @@ export default function DeepDiveOverlay({
     stopMood();
   }, [slug, open, stopMood]);
 
+  // ✅ close lightbox on slug change / close
+  useEffect(() => {
+    if (!open) return;
+    setLightboxOpen(false);
+    setLightboxIndex(0);
+  }, [open, slug]);
+
   const title = useMemo(() => {
     const t = asString(data?.title_override);
     return t ? t : "Led Velvet Event";
@@ -353,24 +361,54 @@ export default function DeepDiveOverlay({
   const lineup = asString(data?.lineup_text);
   const invite = asString(data?.invite_text);
 
+  const openLightbox = useCallback((idx: number) => {
+    setLightboxIndex(Math.max(0, idx));
+    setLightboxOpen(true);
+  }, []);
+
+  const closeLightbox = useCallback(() => {
+    setLightboxOpen(false);
+  }, []);
+
+  const nextImg = useCallback(() => {
+    if (!gallery?.length) return;
+    setLightboxIndex((i) => (i + 1) % gallery.length);
+  }, [gallery]);
+
+  const prevImg = useCallback(() => {
+    if (!gallery?.length) return;
+    setLightboxIndex((i) => (i - 1 + gallery.length) % gallery.length);
+  }, [gallery]);
+
+  // ✅ arrow navigation in lightbox
+  useEffect(() => {
+    if (!open || !lightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") nextImg();
+      if (e.key === "ArrowLeft") prevImg();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, lightboxOpen, nextImg, prevImg]);
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[999]" style={{ ["--red-acc" as any]: "#930b0c" }}>
+    <div className="fixed inset-0 z-[999] overflow-hidden" style={{ ["--red-acc" as any]: "#930b0c" }}>
       <div className="absolute inset-0 bg-black/85" onClick={handleClose} aria-hidden="true" />
 
-      <div className="absolute inset-0 flex justify-center">
-        <div className="relative w-full max-w-5xl h-full bg-[#0B0B0C]">
+      <div className="absolute inset-0 flex justify-center overflow-hidden">
+        <div className="relative w-full max-w-5xl h-full bg-[#0B0B0C] overflow-hidden">
           <div className="sticky top-0 z-10 border-b border-[var(--red-acc)]/30 bg-[#0B0B0C]">
-            <div className="px-6 py-4 flex items-center justify-between gap-4">
+            <div className="px-6 py-4 flex items-center justify-between gap-4 min-w-0">
               <div className="min-w-0">
-                <div className="text-[11px] tracking-[0.22em] uppercase text-white/60">
+                <div className="text-[11px] tracking-[0.22em] uppercase text-white/60 break-words [overflow-wrap:anywhere]">
                   {city ? city : "Led Velvet"} {dateLabel ? `• ${dateLabel}` : ""}
                 </div>
                 <div className="text-sm md:text-base font-medium text-white truncate">{title}</div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-none">
                 {ticketUrl ? (
                   <a
                     href={ticketUrl}
@@ -392,18 +430,24 @@ export default function DeepDiveOverlay({
             </div>
           </div>
 
-          <div className="h-[calc(100%-60px)] overflow-y-auto">
-            <div className="px-6 py-8">
+          <div className="h-[calc(100%-60px)] overflow-y-auto overflow-x-hidden">
+            <div className="px-6 py-8 overflow-x-hidden">
               {loading ? (
                 <div className="text-white/70">Caricamento…</div>
               ) : err ? (
-                <div className="text-red-300">{err}</div>
+                <div className="text-red-300 break-words [overflow-wrap:anywhere]">{err}</div>
               ) : data ? (
-                <div className="grid gap-6 md:grid-cols-2 md:items-center">
-                  <div>
-                    <h1 className="text-4xl md:text-5xl font-semibold leading-tight">{title}</h1>
+                <div className="grid gap-6 md:grid-cols-2 md:items-center min-w-0">
+                  <div className="min-w-0">
+                    <h1 className="text-4xl md:text-5xl font-semibold leading-tight break-words [overflow-wrap:anywhere]">
+                      {title}
+                    </h1>
 
-                    {subtitle ? <p className="mt-4 max-w-xl text-base md:text-lg text-white/80 whitespace-pre-line">{subtitle}</p> : null}
+                    {subtitle ? (
+                      <p className="mt-4 max-w-xl text-base md:text-lg text-white/80 whitespace-pre-line break-words [overflow-wrap:anywhere]">
+                        {subtitle}
+                      </p>
+                    ) : null}
 
                     <div className="mt-6 flex flex-wrap gap-3">
                       <a
@@ -487,7 +531,7 @@ export default function DeepDiveOverlay({
                     ) : null}
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden min-w-0">
                     {heroType === "youtube" && heroYouTube ? (
                       <iframe
                         className="w-full aspect-video"
@@ -509,23 +553,56 @@ export default function DeepDiveOverlay({
               ) : null}
 
               {data ? (
-                <section className="mt-10 grid gap-8">
+                <section className="mt-10 grid gap-8 overflow-x-hidden">
                   {concept ? <SectionCard label="Concept">{concept}</SectionCard> : null}
                   {placeStory ? <SectionCard label="Luogo">{placeStory}</SectionCard> : null}
                   {lineup ? <SectionCard label="Line-up">{lineup}</SectionCard> : null}
 
                   {gallery?.length ? (
-                    <article className="rounded-2xl border border-white/10 bg-white/5 p-6">
-                      <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Gallery</div>
-                      <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <article className="rounded-2xl border border-white/10 bg-white/5 p-6 overflow-x-hidden">
+                      <div className="flex items-center justify-between gap-3 min-w-0">
+                        <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Gallery</div>
+                        <div className="text-[11px] tracking-[0.18em] uppercase text-white/40 flex-none">
+                          {gallery.length} shots
+                        </div>
+                      </div>
+
+                      {/* ✅ scroller orizzontale NATIVO (no wheel hack) */}
+                      <div
+                        className={[
+                          "mt-4 flex gap-3 overflow-x-auto overflow-y-hidden pb-2",
+                          "snap-x snap-mandatory",
+                          "overscroll-x-contain",
+                        ].join(" ")}
+                        style={{
+                          WebkitOverflowScrolling: "touch",
+                          touchAction: "pan-x",
+                        }}
+                      >
                         {gallery.map((url, i) => (
-                          <img
+                          <button
                             key={`g-${i}`}
-                            src={url}
-                            alt={`Gallery ${i + 1}`}
-                            className="w-full h-44 object-cover rounded-xl border border-white/10"
-                            loading="lazy"
-                          />
+                            type="button"
+                            onClick={() => openLightbox(i)}
+                            className={[
+                              "group relative flex-none snap-start overflow-hidden rounded-xl border border-white/10 bg-black/20",
+                              "focus:outline-none focus:ring-2 focus:ring-[var(--red-acc)]/60",
+                              "w-60 h-40 md:w-72 md:h-48",
+                            ].join(" ")}
+                            aria-label={`Apri immagine ${i + 1} di ${gallery.length}`}
+                          >
+                            <img
+                              src={url}
+                              alt={`Gallery ${i + 1}`}
+                              className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.03] group-hover:opacity-95"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+                            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition">
+                              <span className="text-[10px] tracking-[0.22em] uppercase text-white/80">Shot {i + 1}</span>
+                              <span className="text-[10px] tracking-[0.22em] uppercase text-white/80">View</span>
+                            </div>
+                          </button>
                         ))}
                       </div>
                     </article>
@@ -537,6 +614,70 @@ export default function DeepDiveOverlay({
               ) : null}
             </div>
           </div>
+
+          {/* ✅ Lightbox */}
+          {lightboxOpen && gallery?.length ? (
+            <div className="fixed inset-0 z-[1000]">
+              <div className="absolute inset-0 bg-black/90" onClick={closeLightbox} aria-hidden="true" />
+
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div
+                  className="relative w-full max-w-5xl"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Gallery lightbox"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[11px] tracking-[0.22em] uppercase text-white/60">
+                      {lightboxIndex + 1} / {gallery.length}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeLightbox}
+                      className="px-3 py-2 bg-white/10 border border-white/20 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/35"
+                    >
+                      ✕ Close
+                    </button>
+                  </div>
+
+                  <div className="relative rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+                    <img
+                      src={gallery[lightboxIndex]}
+                      alt={`Gallery ${lightboxIndex + 1}`}
+                      className="w-full max-h-[75vh] object-contain bg-black/40"
+                      loading="eager"
+                    />
+
+                    {gallery.length > 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={prevImg}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 border border-white/15 px-3 py-2 text-white/90 hover:bg-black/55"
+                          aria-label="Immagine precedente"
+                        >
+                          ‹
+                        </button>
+                        <button
+                          type="button"
+                          onClick={nextImg}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 border border-white/15 px-3 py-2 text-white/90 hover:bg-black/55"
+                          aria-label="Immagine successiva"
+                        >
+                          ›
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 text-[11px] tracking-[0.18em] uppercase text-white/40">
+                    Tip: frecce ← → per navigare, ESC per chiudere
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
