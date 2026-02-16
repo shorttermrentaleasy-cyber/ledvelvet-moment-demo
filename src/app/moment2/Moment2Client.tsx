@@ -501,6 +501,8 @@ const HERO_MODE = "mp4" as const;
   const [events, setEvents] = useState<EventItem[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsErr, setEventsErr] = useState<string | null>(null);
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -1381,20 +1383,46 @@ const HERO_MODE = "mp4" as const;
                       {e.city} • {fmtDateIT(e.date)}
                     </div>
 
-                    {e.notes ? (
-                      <div
-                        className="mt-3 text-sm text-white/75 leading-relaxed"
-                        style={{
-                          display: "-webkit-box",
-                          WebkitLineClamp: 3 as any,
-                          WebkitBoxOrient: "vertical" as any,
-                          overflow: "hidden",
-                        }}
-                      >
-                        {e.notes}
-                      </div>
-                    ) : null}
+            {e.notes ? (
+  <div className="mt-3">
+    <div className="relative">
+      <div
+        className="text-sm text-white/75 leading-relaxed"
+        style={
+          expandedNotes[e.id]
+            ? {}
+            : {
+                display: "-webkit-box",
+                WebkitLineClamp: 3 as any,
+                WebkitBoxOrient: "vertical" as any,
+                overflow: "hidden",
+              }
+        }
+      >
+        {e.notes}
+      </div>
 
+      {/* fade “instagram” SOLO quando è chiuso e SOLO su mobile */}
+      {!expandedNotes[e.id] ? (
+        <div className="md:hidden pointer-events-none absolute left-0 right-0 bottom-0 h-10 bg-gradient-to-t from-black/70 to-transparent" />
+      ) : null}
+    </div>
+
+    {e.notes.length > 160 ? (
+      <button
+        type="button"
+        onClick={() => setExpandedNotes((prev) => ({ ...prev, [e.id]: !prev[e.id] }))}
+        className="mt-2 text-xs uppercase tracking-[0.18em] text-white/60 hover:text-white"
+      >
+        {expandedNotes[e.id] ? "Mostra meno" : "Continua a leggere"}
+      </button>
+    ) : null}
+  </div>
+) : null}
+
+            
+            
+            
                     {e.sponsors && e.sponsors.length > 0 ? (
                       <div className="mt-4">
                         <div className="text-[10px] tracking-[0.26em] uppercase text-white/75">Sponsors</div>
@@ -1528,19 +1556,43 @@ const HERO_MODE = "mp4" as const;
                                 {e.city} • {fmtDateIT(e.date)}
                               </div>
 
-                              {e.notes ? (
-                                <div
-                                  className="mt-3 text-sm text-white/70 leading-relaxed"
-                                  style={{
-                                    display: "-webkit-box",
-                                    WebkitLineClamp: 3 as any,
-                                    WebkitBoxOrient: "vertical" as any,
-                                    overflow: "hidden",
-                                  }}
-                                >
-                                  {e.notes}
-                                </div>
-                              ) : null}
+                           {e.notes ? (
+  <div className="mt-3">
+    <div className="relative">
+      <div
+        className="text-sm text-white/75 leading-relaxed"
+        style={
+          expandedNotes[e.id]
+            ? {}
+            : {
+                display: "-webkit-box",
+                WebkitLineClamp: 3 as any,
+                WebkitBoxOrient: "vertical" as any,
+                overflow: "hidden",
+              }
+        }
+      >
+        {e.notes}
+      </div>
+
+      {/* fade “instagram” SOLO quando è chiuso e SOLO su mobile */}
+      {!expandedNotes[e.id] ? (
+        <div className="md:hidden pointer-events-none absolute left-0 right-0 bottom-0 h-10 bg-gradient-to-t from-black/70 to-transparent" />
+      ) : null}
+    </div>
+
+    {e.notes.length > 160 ? (
+      <button
+        type="button"
+        onClick={() => setExpandedNotes((prev) => ({ ...prev, [e.id]: !prev[e.id] }))}
+        className="mt-2 text-xs uppercase tracking-[0.18em] text-white/60 hover:text-white"
+      >
+        {expandedNotes[e.id] ? "Mostra meno" : "Continua a leggere"}
+      </button>
+    ) : null}
+  </div>
+) : null}
+
 
                               {e.sponsors && e.sponsors.length > 0 ? (
                                 <div className="mt-4">
