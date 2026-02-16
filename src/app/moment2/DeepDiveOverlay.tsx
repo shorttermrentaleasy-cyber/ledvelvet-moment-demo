@@ -430,7 +430,7 @@ export default function DeepDiveOverlay({
             </div>
           </div>
 
-          <div className="h-[calc(100%-60px)] overflow-y-auto overflow-x-hidden">
+          <div className="h-[calc(100%-60px)] overflow-y-auto overflow-x-hidden pb-28">
             <div className="px-6 py-8 overflow-x-hidden">
               {loading ? (
                 <div className="text-white/70">Caricamento…</div>
@@ -567,7 +567,6 @@ export default function DeepDiveOverlay({
                         </div>
                       </div>
 
-                      {/* ✅ scroller orizzontale NATIVO (no wheel hack) */}
                       <div
                         className={[
                           "mt-4 flex gap-3 overflow-x-auto overflow-y-hidden pb-2",
@@ -609,6 +608,18 @@ export default function DeepDiveOverlay({
                   ) : null}
 
                   {invite ? <SectionCard label="Invito">{invite}</SectionCard> : null}
+
+                  {/* ✅ BACK in fondo (leggero) */}
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={handleClose}
+                      className="w-full md:w-auto px-6 py-3 rounded-full border border-white/20 bg-white/5 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/35"
+                    >
+                      ← Torna indietro
+                    </button>
+                  </div>
+
                   <div className="h-16" />
                 </section>
               ) : null}
@@ -628,51 +639,71 @@ export default function DeepDiveOverlay({
                   aria-label="Gallery lightbox"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-[11px] tracking-[0.22em] uppercase text-white/60">
-                      {lightboxIndex + 1} / {gallery.length}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closeLightbox}
-                      className="px-3 py-2 bg-white/10 border border-white/20 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/35"
-                    >
-                      ✕ Close
-                    </button>
-                  </div>
-
                   <div className="relative rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
                     <img
                       src={gallery[lightboxIndex]}
                       alt={`Gallery ${lightboxIndex + 1}`}
-                      className="w-full max-h-[75vh] object-contain bg-black/40"
+                      className="w-full max-h-[78vh] object-contain bg-black/40"
                       loading="eager"
                     />
 
-                    {gallery.length > 1 ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={prevImg}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 border border-white/15 px-3 py-2 text-white/90 hover:bg-black/55"
-                          aria-label="Immagine precedente"
-                        >
-                          ‹
-                        </button>
-                        <button
-                          type="button"
-                          onClick={nextImg}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 border border-white/15 px-3 py-2 text-white/90 hover:bg-black/55"
-                          aria-label="Immagine successiva"
-                        >
-                          ›
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
+                    {/* ✅ BOTTOM TOOLBAR: prev / counter / next + close (safe-area) */}
+                    <div
+                      className="absolute inset-x-0 bottom-0"
+                      style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
+                    >
+                      <div className="px-4 pt-10 pb-3 bg-gradient-to-t from-black/90 via-black/45 to-transparent">
+                        <div className="flex items-center justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={prevImg}
+                            disabled={gallery.length <= 1}
+                            className={[
+                              "px-4 py-2 rounded-full border text-xs tracking-[0.18em] uppercase",
+                              gallery.length > 1
+                                ? "bg-white/10 border-white/25 text-white hover:bg-white/15 hover:border-white/40"
+                                : "bg-white/5 border-white/10 text-white/30 cursor-not-allowed",
+                            ].join(" ")}
+                            aria-label="Immagine precedente"
+                          >
+                            ‹ Prev
+                          </button>
 
-                  <div className="mt-3 text-[11px] tracking-[0.18em] uppercase text-white/40">
-                    Tip: frecce ← → per navigare, ESC per chiudere
+                          <div className="text-[11px] tracking-[0.22em] uppercase text-white/70 tabular-nums">
+                            {lightboxIndex + 1} / {gallery.length}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={nextImg}
+                              disabled={gallery.length <= 1}
+                              className={[
+                                "px-4 py-2 rounded-full border text-xs tracking-[0.18em] uppercase",
+                                gallery.length > 1
+                                  ? "bg-white/10 border-white/25 text-white hover:bg-white/15 hover:border-white/40"
+                                  : "bg-white/5 border-white/10 text-white/30 cursor-not-allowed",
+                              ].join(" ")}
+                              aria-label="Immagine successiva"
+                            >
+                              Next ›
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={closeLightbox}
+                              className="px-4 py-2 rounded-full bg-white/10 border border-white/25 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/40"
+                            >
+                              ✕ Close
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 text-[11px] tracking-[0.18em] uppercase text-white/45">
+                          Tip: frecce ← → per navigare, ESC per chiudere
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
