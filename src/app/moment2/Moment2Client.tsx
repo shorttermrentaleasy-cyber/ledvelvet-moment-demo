@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -144,6 +145,12 @@ function getYearSafe(dateStr: string): number | null {
   return m ? Number(m[0]) : null;
 }
 
+function safeTimeMs(dateStr: string): number {
+  if (!dateStr) return Number.POSITIVE_INFINITY;
+  const t = new Date(dateStr).getTime();
+  return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+}
+
 function getYouTubeId(urlRaw: string): string | null {
   const url = (urlRaw || "").trim();
   if (!url) return null;
@@ -196,6 +203,83 @@ function looksLikeMp4(url: string): boolean {
   return !!s && (s.includes(".mp4") || s.endsWith(".mp4"));
 }
 
+// ---- Social icons (NO lucide-react) ----
+function SocialIcon({
+  href,
+  label,
+  children,
+}: {
+  href: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={label}
+      title={label}
+      className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/15 text-white/70 hover:text-[var(--red-accent)] hover:border-white/30 hover:bg-white/10 transition"
+    >
+      <span className="w-4 h-4 block">{children}</span>
+    </a>
+  );
+}
+
+function IconInstagram() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M7.5 2.8h9A4.7 4.7 0 0 1 21.2 7.5v9a4.7 4.7 0 0 1-4.7 4.7h-9a4.7 4.7 0 0 1-4.7-4.7v-9A4.7 4.7 0 0 1 7.5 2.8Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M12 16.3a4.3 4.3 0 1 0 0-8.6 4.3 4.3 0 0 0 0 8.6Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path d="M17.2 6.9h.01" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconTikTok() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M14 3v11.2a3.8 3.8 0 1 1-3.3-3.8"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 6.2c1.1 1.7 2.6 2.7 4.5 2.8"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconTelegram() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M21.5 4.6 3.2 11.5c-.9.3-.9 1.6.1 1.9l4.7 1.5 1.8 5.4c.3.9 1.5 1 2 .2l2.9-4 4.7 3.4c.7.5 1.7.1 1.9-.8l2.5-14.6c.2-1-.8-1.8-1.8-1.4Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M8 14.9 19.7 7.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Marquee({ text }: { text: string }) {
   return (
     <div className="border-t border-[var(--red-accent)] bg-[var(--red-accent)] text-black overflow-hidden whitespace-nowrap">
@@ -216,9 +300,9 @@ function Marquee({ text }: { text: string }) {
     </div>
   );
 }
+const SHOW_TOP_BAR = false; // <-- cambia a true quando vuoi rivederla
 export default function Moment2() {
-  const HERO_MODE = (process.env.NEXT_PUBLIC_HERO_MODE === "event" ? "event" : "mp4") as "mp4" | "event";
-
+const HERO_MODE = "mp4" as const;
   const palette = {
     bg: "#050505",
     surface: "#080808",
@@ -312,22 +396,20 @@ export default function Moment2() {
   const [ambientT, setAmbientT] = useState(0);
   const ambientShouldAutoplayRef = useRef(false);
 
+  function fmtTime(sec: number) {
+    if (!sec || !isFinite(sec)) return "0:00";
+    const s = Math.max(0, Math.floor(sec));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, "0")}`;
+  }
 
-function fmtTime(sec: number) {
-  if (!sec || !isFinite(sec)) return "0:00";
-  const s = Math.max(0, Math.floor(sec));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, "0")}`;
-}
-
-function ambientSeek(next: number) {
-  const a = ambientAudioRef.current;
-  if (!a || !isFinite(next)) return;
-  a.currentTime = Math.max(0, Math.min(next, a.duration || next));
-  setAmbientT(a.currentTime || 0);
-}
-
+  function ambientSeek(next: number) {
+    const a = ambientAudioRef.current;
+    if (!a || !isFinite(next)) return;
+    a.currentTime = Math.max(0, Math.min(next, a.duration || next));
+    setAmbientT(a.currentTime || 0);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -357,71 +439,63 @@ function ambientSeek(next: number) {
   }, []);
 
   useEffect(() => {
-  const a = ambientAudioRef.current;
-  if (!a) return;
+    const a = ambientAudioRef.current;
+    if (!a) return;
 
-  if (ambientCurrent?.audio_url) {
-    a.src = ambientCurrent.audio_url;
-    try { a.load(); } catch {}
+    if (ambientCurrent?.audio_url) {
+      a.src = ambientCurrent.audio_url;
+      try {
+        a.load();
+      } catch {}
 
-    // ✅ auto-continue
-    if (ambientShouldAutoplayRef.current) {
-      a.play()
-        .then(() => setAmbientPlaying(true))
-        .catch(() => setAmbientPlaying(false));
-    } else {
-      setAmbientPlaying(false);
+      if (ambientShouldAutoplayRef.current) {
+        a.play()
+          .then(() => setAmbientPlaying(true))
+          .catch(() => setAmbientPlaying(false));
+      } else {
+        setAmbientPlaying(false);
+      }
     }
+  }, [ambientCurrent?.audio_url]);
+
+  function ambientPlay() {
+    const a = ambientAudioRef.current;
+    if (!a || !ambientCurrent?.audio_url) return;
+
+    ambientShouldAutoplayRef.current = true;
+
+    a.play()
+      .then(() => setAmbientPlaying(true))
+      .catch(() => {
+        setAmbientPlaying(false);
+      });
   }
-}, [ambientCurrent?.audio_url]);
 
+  function ambientPause() {
+    const a = ambientAudioRef.current;
+    if (!a) return;
 
- function ambientPlay() {
-  const a = ambientAudioRef.current;
-  if (!a || !ambientCurrent?.audio_url) return;
-
-  ambientShouldAutoplayRef.current = true;
-
-  a.play()
-    .then(() => setAmbientPlaying(true))
-    .catch(() => {
-      setAmbientPlaying(false);
-      // se qui fallisce, è blocco browser: serve tap utente
-    });
-}
-
-function ambientPause() {
-  const a = ambientAudioRef.current;
-  if (!a) return;
-
-  ambientShouldAutoplayRef.current = false;
-  a.pause();
-  setAmbientPlaying(false);
-}
-
-
-
+    ambientShouldAutoplayRef.current = false;
+    a.pause();
+    setAmbientPlaying(false);
+  }
 
   function ambientToggle() {
     if (ambientPlaying) ambientPause();
     else ambientPlay();
   }
 
-function ambientNext() {
-  if (!ambientTracks.length) return;
-  const next = ambientIdx + 1 < ambientTracks.length ? ambientIdx + 1 : 0;
-  setAmbientIdx(next);
-}
+  function ambientNext() {
+    if (!ambientTracks.length) return;
+    const next = ambientIdx + 1 < ambientTracks.length ? ambientIdx + 1 : 0;
+    setAmbientIdx(next);
+  }
 
-function ambientPrev() {
-  if (!ambientTracks.length) return;
-  const prev = ambientIdx - 1 >= 0 ? ambientIdx - 1 : ambientTracks.length - 1;
-  setAmbientIdx(prev);
-}
-
-
-
-
+  function ambientPrev() {
+    if (!ambientTracks.length) return;
+    const prev = ambientIdx - 1 >= 0 ? ambientIdx - 1 : ambientTracks.length - 1;
+    setAmbientIdx(prev);
+  }
 
   const [eventsReloadTick, setEventsReloadTick] = useState(0);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -454,6 +528,14 @@ function ambientPrev() {
     };
   }, []);
 
+  // ✅ HERO robust: j.hero OR j.booklet.hero OR j.data.hero
+  function extractHero(j: any): any | null {
+    if (j?.hero) return j.hero;
+    if (j?.booklet?.hero) return j.booklet.hero;
+    if (j?.data?.hero) return j.data.hero;
+    return null;
+  }
+
   useEffect(() => {
     let alive = true;
 
@@ -463,17 +545,18 @@ function ambientPrev() {
         const j = await r.json();
         if (!alive) return;
 
-        if (!r.ok || !j?.ok || !j?.hero) return;
+        if (!r.ok || !j?.ok) return;
 
-        const h = j.hero;
+        const h = extractHero(j);
+        if (!h) return;
 
         setHeroPublic({
           title: String(h.title || ""),
           subtitle: String(h.subtitle || "Ethereal clubbing in unconventional places"),
           active: Boolean(h.active),
-          videoUrl: String(h.videoUrl || ""),
-          posterUrl: String(h.posterUrl || ""),
-          imageUrl: String(h.imageUrl || ""),
+          videoUrl: String(h.videoUrl || h.video_url || ""),
+          posterUrl: String(h.posterUrl || h.poster_url || ""),
+          imageUrl: String(h.imageUrl || h.image_url || ""),
         });
       } catch {}
     }
@@ -543,7 +626,8 @@ function ambientPrev() {
             };
           })
           .filter((x) => x.name)
-          .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+          // keep global sort desc (past)
+          .sort((a, b) => safeTimeMs(b.date) - safeTimeMs(a.date));
 
         setEvents(norm);
 
@@ -659,6 +743,7 @@ function ambientPrev() {
       return [...c, { sku: p.sku, name: p.name, price: p.price, qty: 1, size: chosen }];
     });
   }
+
   async function submitSponsorRequest() {
     setSponsorSentOk(null);
     setSponsorSentErr(null);
@@ -714,7 +799,14 @@ function ambientPrev() {
     }
   }
 
-  const upcomingEvents = events.filter((e) => e.phase === "upcoming" && !e.heroOnly);
+  // ✅ UPCOMING sorted by nearest date first (asc)
+  const upcomingEvents = useMemo(() => {
+    return events
+      .filter((e) => e.phase === "upcoming" && !e.heroOnly)
+      .slice()
+      .sort((a, b) => safeTimeMs(a.date) - safeTimeMs(b.date));
+  }, [events]);
+
   const pastEvents = events.filter((e) => e.phase === "past" && !e.heroOnly);
 
   const pastByYear = useMemo(() => {
@@ -725,7 +817,7 @@ function ambientPrev() {
       (map[key] ||= []).push(e);
     }
     for (const k of Object.keys(map)) {
-      map[k] = [...map[k]].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+      map[k] = [...map[k]].sort((a, b) => safeTimeMs(b.date) - safeTimeMs(a.date));
     }
     return map;
   }, [pastEvents]);
@@ -750,18 +842,11 @@ function ambientPrev() {
   const heroPosterResolved = (heroPublic.posterUrl || heroPublic.imageUrl || brand.heroPoster || "").trim();
   const heroImageResolved = (heroPublic.imageUrl || brand.heroPoster || "").trim();
 
-  const heroMp4Resolved = useMemo(() => {
-    if (HERO_MODE !== "mp4") return "";
-    const v = (heroPublic.videoUrl || "").trim();
-    return v && looksLikeMp4(v) ? v : brand.heroVideoMp4;
-  }, [HERO_MODE, heroPublic.videoUrl]);
+  const heroMp4Resolved = (heroPublic.videoUrl || "").trim();
 
-  const heroYouTubeResolved = useMemo(() => {
-    if (HERO_MODE !== "event") return null;
-    const v = (heroPublic.videoUrl || "").trim();
-    if (!v) return null;
-    return youTubeEmbedUrl(v, true);
-  }, [HERO_MODE, heroPublic.videoUrl]);
+  
+  console.log("HERO videoUrl from API:", heroPublic.videoUrl);
+  console.log("HERO resolved mp4:", heroMp4Resolved);
 
   return (
     <div
@@ -777,110 +862,123 @@ function ambientPrev() {
         ["--red-accent" as any]: palette.redAccent,
       }}
     >
-      {/* Sticky header */}
-      <div className="sticky top-0 z-[999] border-b border-white/10 bg-[var(--surface)]">
-        <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-xs tracking-wide">
-          <div className="flex items-center gap-2 text-[var(--muted)]">
-            <span className="uppercase">Cart reserved for</span>
-            <span className="font-medium">·</span>
-            <button
-              className="underline underline-offset-4 hover:text-[var(--text)]"
-              onClick={() => setCartTimerMin((m) => (m >= 30 ? 10 : m + 5))}
-              type="button"
-            >
-              Add time
-            </button>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="uppercase text-[var(--muted)]">{tierLabel}</span>
-            <button
-              className="px-3 py-1 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10"
-              onClick={() => setShowCart(true)}
-              type="button"
-            >
-              Cart
-            </button>
-          </div>
-        </div>
+    
+     {/* Sticky header */}
+<div className="sticky top-0 z-[999] border-b border-white/10 bg-[var(--surface)]">
 
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <img src={brand.logo} alt="LedVelvet" className="w-10 h-10 rounded-full border border-white/10" />
-            <div className="leading-tight">
-              <div className="text-sm font-semibold">LedVelvet</div>
-              <div className="text-xs text-white/60 tracking-[0.18em] uppercase">Moment 2</div>
-            </div>
-          </div>
+  {SHOW_TOP_BAR && (
+    <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-xs tracking-wide">
+      <div className="flex items-center gap-2 text-[var(--muted)]">
+        <span className="uppercase">Cart reserved for</span>
+        <span className="font-medium">·</span>
+        <button
+          className="underline underline-offset-4 hover:text-[var(--text)]"
+          onClick={() => setCartTimerMin((m) => (m >= 30 ? 10 : m + 5))}
+          type="button"
+        >
+          Add time
+        </button>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="uppercase text-[var(--muted)]">{tierLabel}</span>
+        <button
+          className="px-3 py-1 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10"
+          onClick={() => setShowCart(true)}
+          type="button"
+        >
+          Cart
+        </button>
+      </div>
+    </div>
+  )}
 
-          <nav className="hidden md:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
-            <a href="#home" className="hover:text-[var(--text)]">
-              Home
-            </a>
-            <a href="#eventi" className="hover:text-[var(--text)]">
-              Upcoming
-            </a>
-            <a href="#past" className="hover:text-[var(--text)]">
-              Past
-            </a>
-            <a href="#sponsor" className="hover:text-[var(--text)]">
-              Sponsor
-            </a>
-            <a href="/about" className="hover:text-[var(--text)]">
-              About
-            </a>
-          </nav>
-
-          <div className="flex items-center gap-2">
-            {!user.email ? (
-              <a
-                href="/login"
-                className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
-              >
-                Accedi
-              </a>
-            ) : (
-              <div className="flex items-center gap-2">
-                <select
-                  className="bg-transparent rounded-full px-3 py-2 text-xs tracking-[0.18em] uppercase border border-white/15 text-[var(--text)]"
-                  value={user.level || "BASE"}
-                  onChange={(e) => setUser((u) => ({ ...u, level: e.target.value as Level }))}
-                >
-                  <option value="BASE">BASE</option>
-                  <option value="VIP">VIP</option>
-                  <option value="FOUNDER">FOUNDER</option>
-                </select>
-                <button
-                  onClick={() => setUser({ email: null })}
-                  className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
-                  type="button"
-                >
-                  Esci
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="md:hidden border-t border-white/10">
-          <div className="max-w-6xl mx-auto px-4 py-2 flex gap-5 overflow-x-auto text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
-            <a href="#home" className="shrink-0 hover:text-[var(--text)]">
-              Home
-            </a>
-            <a href="#eventi" className="shrink-0 hover:text-[var(--text)]">
-              Upcoming
-            </a>
-            <a href="#past" className="shrink-0 hover:text-[var(--text)]">
-              Past
-            </a>
-            <a href="#sponsor" className="shrink-0 hover:text-[var(--text)]">
-              Sponsor
-            </a>
-            <a href="/about" className="shrink-0 hover:text-[var(--text)]">
-              About
-            </a>
-          </div>
+  <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-6">
+    <div className="flex items-center gap-3">
+      <img src={brand.logo} alt="LedVelvet" className="w-10 h-10 rounded-full border border-white/10" />
+      <div className="leading-tight">
+        <div className="text-sm font-semibold">LedVelvet</div>
+        <div className="text-xs text-white/60 tracking-[0.18em] uppercase">
+          ETHERAL CLUBBING
         </div>
       </div>
+    </div>
+
+    <nav className="hidden md:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
+      <a href="#home" className="hover:text-[var(--text)]">Home</a>
+      <a href="#eventi" className="hover:text-[var(--text)]">Upcoming</a>
+      <a href="#past" className="hover:text-[var(--text)]">Past</a>
+      <a href="#sponsor" className="hover:text-[var(--text)]">Sponsor</a>
+      <a href="/about" className="hover:text-[var(--text)]">About</a>
+    </nav>
+
+    <div className="flex items-center gap-2">
+      <div className="hidden md:flex items-center gap-2">
+        <SocialIcon href={SOCIALS.instagram} label="Instagram">
+          <IconInstagram />
+        </SocialIcon>
+        <SocialIcon href={SOCIALS.tiktok} label="TikTok">
+          <IconTikTok />
+        </SocialIcon>
+        <SocialIcon href={SOCIALS.telegram} label="Telegram">
+          <IconTelegram />
+        </SocialIcon>
+      </div>
+
+      {!user.email ? (
+        <a
+          href="/login"
+          className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
+        >
+          Accedi
+        </a>
+      ) : (
+        <div className="flex items-center gap-2">
+          <select
+            className="bg-transparent rounded-full px-3 py-2 text-xs tracking-[0.18em] uppercase border border-white/15 text-[var(--text)]"
+            value={user.level || "BASE"}
+            onChange={(e) => setUser((u) => ({ ...u, level: e.target.value as Level }))}
+          >
+            <option value="BASE">BASE</option>
+            <option value="VIP">VIP</option>
+            <option value="FOUNDER">FOUNDER</option>
+          </select>
+          <button
+            onClick={() => setUser({ email: null })}
+            className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
+            type="button"
+          >
+            Esci
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <div className="md:hidden border-t border-white/10">
+    <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
+      <div className="flex gap-5 overflow-x-auto text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
+        <a href="#home" className="shrink-0 hover:text-[var(--text)]">Home</a>
+        <a href="#eventi" className="shrink-0 hover:text-[var(--text)]">Upcoming</a>
+        <a href="#past" className="shrink-0 hover:text-[var(--text)]">Past</a>
+        <a href="#sponsor" className="shrink-0 hover:text-[var(--text)]">Sponsor</a>
+        <a href="/about" className="shrink-0 hover:text-[var(--text)]">About</a>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <SocialIcon href={SOCIALS.instagram} label="Instagram">
+          <IconInstagram />
+        </SocialIcon>
+        <SocialIcon href={SOCIALS.tiktok} label="TikTok">
+          <IconTikTok />
+        </SocialIcon>
+        <SocialIcon href={SOCIALS.telegram} label="Telegram">
+          <IconTelegram />
+        </SocialIcon>
+      </div>
+    </div>
+  </div>
+
+</div>
 
       {/* Ambient music player */}
       {ambientTracks.length > 0 ? (
@@ -897,70 +995,65 @@ function ambientPrev() {
           `}</style>
 
           <div className="border border-white/15 bg-black/75 backdrop-blur-md rounded-2xl overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
-           
-     
-   <div className="px-3 py-2 flex items-center gap-3 border-b border-white/10">
-  {/* Track title inline (slim) */}
-  <div className="min-w-0 flex-1">
-    <div className="text-[10px] tracking-[0.32em] uppercase text-white/70">Ambient Music</div>
-    <div className="mt-1 text-[12px] text-white/90 truncate">
-      {ambientCurrent?.title || "—"}
-      {ambientCurrent?.artist ? <span className="text-white/55"> · {ambientCurrent.artist}</span> : null}
-    </div>
-  </div>
+            <div className="px-3 py-2 flex items-center gap-3 border-b border-white/10">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] tracking-[0.32em] uppercase text-white/70">Ambient Music</div>
+                <div className="mt-1 text-[12px] text-white/90 truncate">
+                  {ambientCurrent?.title || "—"}
+                  {ambientCurrent?.artist ? <span className="text-white/55"> · {ambientCurrent.artist}</span> : null}
+                </div>
+              </div>
 
-  {/* Controls aligned right */}
-  <div className="flex items-center gap-2 shrink-0">
-    <button
-      onClick={ambientPrev}
-      className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
-      aria-label="Prev"
-      type="button"
-    >
-      ◀
-    </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={ambientPrev}
+                  className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+                  aria-label="Prev"
+                  type="button"
+                >
+                  ◀
+                </button>
 
-    <button
-      onClick={ambientToggle}
-      className="h-10 w-10 rounded-full border border-white/25 bg-white/10 text-white"
-      aria-label="Play Pause"
-      type="button"
-    >
-      {ambientPlaying ? "❚❚" : "▶"}
-    </button>
+                <button
+                  onClick={ambientToggle}
+                  className="h-10 w-10 rounded-full border border-white/25 bg-white/10 text-white"
+                  aria-label="Play Pause"
+                  type="button"
+                >
+                  {ambientPlaying ? "❚❚" : "▶"}
+                </button>
 
-    <button
-      onClick={ambientNext}
-      className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
-      aria-label="Next"
-      type="button"
-    >
-      ▶
-    </button>
+                <button
+                  onClick={ambientNext}
+                  className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/85"
+                  aria-label="Next"
+                  type="button"
+                >
+                  ▶
+                </button>
 
-    <button
-      onClick={() => setMusicMinimized((v) => !v)}
-      className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/70"
-      aria-label="Open"
-      type="button"
-    >
-      ⌄
-    </button>
+                <button
+                  onClick={() => setMusicMinimized((v) => !v)}
+                  className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/70"
+                  aria-label="Open"
+                  type="button"
+                >
+                  ⌄
+                </button>
 
-    <button
-      onClick={() => {
-        setMusicMinimized(true);
-        ambientPause();
-      }}
-      className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/60"
-      aria-label="Close"
-      type="button"
-    >
-      ✕
-    </button>
-  </div>
-</div>
-
+                <button
+                  onClick={() => {
+                    setMusicMinimized(true);
+                    ambientPause();
+                  }}
+                  className="h-9 w-9 rounded-full border border-white/20 hover:bg-white/10 text-white/60"
+                  aria-label="Close"
+                  type="button"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
 
             <div
               className="overflow-hidden"
@@ -972,141 +1065,121 @@ function ambientPrev() {
               }}
             >
               <div className="px-3 py-2 bg-[rgba(147,11,12,0.35)] border-t border-white/15">
+                <audio
+                  ref={ambientAudioRef}
+                  src={ambientCurrent?.audio_url || ""}
+                  preload="metadata"
+                  crossOrigin="anonymous"
+                  onEnded={() => {
+                    ambientShouldAutoplayRef.current = true;
+                    ambientNext();
+                  }}
+                  onLoadedMetadata={(e) => {
+                    const a = e.currentTarget;
+                    setAmbientDur(a.duration || 0);
+                    setAmbientT(a.currentTime || 0);
+                  }}
+                  onTimeUpdate={(e) => {
+                    const a = e.currentTarget;
+                    setAmbientT(a.currentTime || 0);
+                  }}
+                  style={{ display: "none" }}
+                />
 
-                {/* AUDIO ELEMENT (hidden, we control it) */}
-<audio
-  ref={ambientAudioRef}
-  src={ambientCurrent?.audio_url || ""}
-  preload="metadata"
-  crossOrigin="anonymous"
+                <div className="flex gap-3 items-start">
+                  <div className="shrink-0 w-14 h-14 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                    {ambientCurrent?.cover_url ? (
+                      <img
+                        src={ambientCurrent.cover_url}
+                        alt={ambientCurrent.title || "cover"}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-white/5" />
+                    )}
+                  </div>
 
- onEnded={() => {
-    // ✅ se stava suonando, continua col prossimo
-    ambientShouldAutoplayRef.current = true;
-    ambientNext();
-  }}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] text-white/90 truncate">
+                      {ambientCurrent?.title || "—"}
+                      {ambientCurrent?.artist ? <span className="text-white/55"> · {ambientCurrent.artist}</span> : null}
+                    </div>
 
-  onLoadedMetadata={(e) => {
-    const a = e.currentTarget;
-    setAmbientDur(a.duration || 0);
-    setAmbientT(a.currentTime || 0);
-  }}
-  onTimeUpdate={(e) => {
-    const a = e.currentTarget;
-    setAmbientT(a.currentTime || 0);
-  }}
-  style={{ display: "none" }}
-/>
+                    <div className="mt-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.max(1, Math.floor(ambientDur || 0))}
+                        value={Math.floor(ambientT || 0)}
+                        onChange={(e) => ambientSeek(Number(e.target.value))}
+                        className="w-full lv-range"
+                      />
 
-{/* EXPANDED UI */}
-<div className="flex gap-3 items-start">
-  {/* Cover (from Airtable) */}
-  <div className="shrink-0 w-14 h-14 rounded-xl overflow-hidden border border-white/15 bg-black/40">
-    {ambientCurrent?.cover_url ? (
-      <img
-        src={ambientCurrent.cover_url}
-        alt={ambientCurrent.title || "cover"}
-        className="w-full h-full object-cover"
-        loading="lazy"
-      />
-    ) : (
-      <div className="w-full h-full bg-white/5" />
-    )}
-  </div>
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-white/60 tabular-nums">
+                        <span>{fmtTime(ambientT)}</span>
+                        <span>{fmtTime(ambientDur)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-  {/* Track + progress */}
-  <div className="min-w-0 flex-1">
-    <div className="text-[12px] text-white/90 truncate">
-      {ambientCurrent?.title || "—"}
-      {ambientCurrent?.artist ? <span className="text-white/55"> · {ambientCurrent.artist}</span> : null}
-    </div>
-
-    <div className="mt-2">
-      {/* Progress bar */}
-      <input
-        type="range"
-        min={0}
-        max={Math.max(1, Math.floor(ambientDur || 0))}
-        value={Math.floor(ambientT || 0)}
-        onChange={(e) => ambientSeek(Number(e.target.value))}
-        className="w-full lv-range"
-      />
-
-      <div className="mt-1 flex items-center justify-between text-[11px] text-white/60 tabular-nums">
-        <span>{fmtTime(ambientT)}</span>
-        <span>{fmtTime(ambientDur)}</span>
-      </div>
-    </div>
-  </div>
-</div>
-
-<style>{`
-  .lv-range {
-    -webkit-appearance: none;
-    appearance: none;
-    height: 10px;
-    background: rgba(255,255,255,0.10);
-    border-radius: 999px;
-    outline: none;
-    border: 1px solid rgba(255,255,255,0.14);
-  }
-  .lv-range::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.95);
-    border: 2px solid rgba(147,11,12,0.95);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
-    cursor: pointer;
-  }
-  .lv-range::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.95);
-    border: 2px solid rgba(147,11,12,0.95);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
-    cursor: pointer;
-  }
-`}</style>
-
-
+                <style>{`
+                  .lv-range {
+                    -webkit-appearance: none;
+                    appearance: none;
+                    height: 10px;
+                    background: rgba(255,255,255,0.10);
+                    border-radius: 999px;
+                    outline: none;
+                    border: 1px solid rgba(255,255,255,0.14);
+                  }
+                  .lv-range::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    appearance: none;
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 999px;
+                    background: rgba(255,255,255,0.95);
+                    border: 2px solid rgba(147,11,12,0.95);
+                    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+                    cursor: pointer;
+                  }
+                  .lv-range::-moz-range-thumb {
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 999px;
+                    background: rgba(255,255,255,0.95);
+                    border: 2px solid rgba(147,11,12,0.95);
+                    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+                    cursor: pointer;
+                  }
+                `}</style>
               </div>
             </div>
           </div>
         </div>
       ) : null}
 
-      {/* HERO — ✅ RIPULITO: UN SOLO BLOCCO (no duplicati) */}
+      {/* HERO — ✅ RIPULITO: UN SOLO BLOCCO */}
       <section id="home" className="relative h-[100svh] w-full bg-black">
         <div className="absolute inset-0">
-          {heroYouTubeResolved ? (
-            <iframe
-              className="absolute inset-0 z-30 h-full w-full"
-              src={heroYouTubeResolved}
-              title="LedVelvet"
-              loading="lazy"
-              allow="autoplay, accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              referrerPolicy="strict-origin-when-cross-origin"
-            />
-          ) : heroMp4Resolved ? (
-            <video
-              ref={heroVideoRef}
-              className="absolute inset-0 z-20 h-full w-full object-cover"
-              poster={heroPosterResolved || brand.heroPoster}
-              autoPlay
-              loop
-              muted={muted}
-              playsInline
-              preload="metadata"
-            >
-              <source src={heroMp4Resolved} type="video/mp4" />
-              {brand.heroVideoWebm ? <source src={brand.heroVideoWebm} type="video/webm" /> : null}
-            </video>
-          ) : (
+          {heroMp4Resolved ? (
+  		<video
+   	 	key={heroMp4Resolved}   // 👈 QUESTA RIGA È LA CHIAVE
+    	ref={heroVideoRef}
+    	className="absolute inset-0 z-20 h-full w-full object-cover"
+    	poster={heroPosterResolved || brand.heroPoster}
+    	autoPlay
+    	loop
+    	muted={muted}
+    	playsInline
+    	preload="metadata"
+  	>
+    	<source src={heroMp4Resolved} type="video/mp4" />
+  </video>
+) : (
+
             <img
               src={heroImageResolved || brand.heroPoster}
               alt="LedVelvet"
@@ -1116,7 +1189,12 @@ function ambientPrev() {
           )}
 
           {/* base poster sempre sotto */}
-          <img src={heroPosterResolved || brand.heroPoster} alt="LedVelvet" className="absolute inset-0 z-0 h-full w-full object-cover" loading="eager" />
+          <img
+            src={heroPosterResolved || brand.heroPoster}
+            alt="LedVelvet"
+            className="absolute inset-0 z-0 h-full w-full object-cover"
+            loading="eager"
+          />
 
           <div className="pointer-events-none absolute inset-0 z-40 bg-gradient-to-t from-black/95 via-black/55 to-black/10" />
           <div
@@ -1155,26 +1233,26 @@ function ambientPrev() {
           </div>
         </div>
 
-        {!heroYouTubeResolved ? (
-          <div className="absolute left-3 right-3 bottom-3 z-50 bg-black/45 px-3 py-2 flex items-center justify-end gap-2 border border-white/10">
-            <button
-              className="px-3 py-1.5 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase"
-              onClick={toggleMute}
-              type="button"
-            >
-              {muted ? "Unmute" : "Mute"}
-            </button>
-            <button
-              className="px-3 py-1.5 border border-white/20 hover:bg-white/10 text-[11px] tracking-[0.18em] uppercase"
-              onClick={requestHeroFullscreen}
-              type="button"
-            >
-              Fullscreen
-            </button>
-          </div>
-        ) : null}
-
         {fsErr ? <div className="absolute left-3 right-3 bottom-3 z-50 bg-black/60 px-3 py-2 text-xs text-white/80">{fsErr}</div> : null}
+{/* HERO controls */}
+<div className="absolute right-4 bottom-4 z-[60] flex items-center gap-2">
+  <button
+    type="button"
+    onClick={toggleMute}
+    className="px-3 py-2 rounded-full border border-white/20 bg-black/40 text-white text-xs tracking-[0.18em] uppercase hover:bg-black/55"
+  >
+    {muted ? "Unmute" : "Mute"}
+  </button>
+
+  <button
+    type="button"
+    onClick={requestHeroFullscreen}
+    className="px-3 py-2 rounded-full border border-white/20 bg-black/40 text-white text-xs tracking-[0.18em] uppercase hover:bg-black/55"
+  >
+    Fullscreen
+  </button>
+</div>
+
       </section>
 
       <Marquee text="Next Event · LedVelvet · Immersive Experience · Music · Atmosphere ·" />
@@ -1628,23 +1706,13 @@ function ambientPrev() {
         </div>
       </section>
 
-      {/* Footer */}
+      {/* Footer (socials moved to header) */}
       <footer className="border-t border-white/10 py-10 bg-[var(--bg)]">
         <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <p className="text-xs tracking-[0.22em] uppercase text-white/60">
             © <span suppressHydrationWarning>{new Date().getFullYear()}</span> LedVelvet APS • Privacy • Cookie • Termini
           </p>
-          <div className="flex gap-4 text-xs tracking-[0.22em] uppercase text-white/60">
-            <a className="hover:text-white" href={SOCIALS.instagram} target="_blank" rel="noreferrer">
-              Instagram
-            </a>
-            <a className="hover:text-white" href={SOCIALS.tiktok} target="_blank" rel="noreferrer">
-              TikTok
-            </a>
-            <a className="hover:text-white" href={SOCIALS.telegram} target="_blank" rel="noreferrer">
-              Telegram
-            </a>
-          </div>
+          <div className="text-xs tracking-[0.22em] uppercase text-white/40">Follow us on Instagram · TikTok · Telegram</div>
         </div>
       </footer>
 
@@ -1668,4 +1736,3 @@ function ambientPrev() {
     </div>
   );
 }
-

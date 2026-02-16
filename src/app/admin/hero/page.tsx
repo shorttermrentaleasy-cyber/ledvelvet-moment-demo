@@ -1,25 +1,16 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AdminTopbarClient from "../AdminTopbarClient";
-
-const HERO_DRIVE_FOLDER_URL =
-  "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
-
-const YT_STUDIO_VIDEOS_URL =
-  "https://studio.youtube.com/channel/UCfQf25gurELioXHUNN8fSNQ/videos/";
 
 type HeroRec = {
   id: string;
   title: string;
   subtitle: string;
   active: boolean;
-
-  videoUrl: string;
-  posterUrl: string;
-  imageUrl: string;
+  videoUrl: string; // URL pubblico Supabase (readonly lato admin, lo imposta il server)
 };
 
 function asBool(v: any): boolean {
@@ -40,9 +31,19 @@ function asString(v: any): string {
   return String(v);
 }
 
+function withCacheBuster(url: string, stamp?: number) {
+  const u = (url || "").trim();
+  if (!u) return "";
+  // se già ha v= lascialo, altrimenti aggiungilo
+  if (/\bv=\d+\b/.test(u)) return u;
+  const sep = u.includes("?") ? "&" : "?";
+  return `${u}${sep}v=${stamp ?? Date.now()}`;
+}
+
 export default function AdminHeroPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
@@ -53,9 +54,10 @@ export default function AdminHeroPage() {
     subtitle: "",
     active: false,
     videoUrl: "",
-    posterUrl: "",
-    imageUrl: "",
   });
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [muted, setMuted] = useState(true);
 
   const canSubmit = useMemo(() => !loading && !saving && !!hero.id, [loading, saving, hero.id]);
 
@@ -68,7 +70,6 @@ export default function AdminHeroPage() {
 
         const r = await fetch("/api/admin/hero", { cache: "no-store" });
         const j = await r.json().catch(() => ({}));
-
         if (!r.ok || j?.ok === false) throw new Error(j?.error || "Errore caricamento HERO");
 
         const rec = j.hero ?? j.data ?? j;
@@ -78,19 +79,15 @@ export default function AdminHeroPage() {
         const subtitle = pickField(fields, ["Subtitle", "subtitle", "HERO Subtitle", "Hero Subtitle"]) ?? "";
         const active = asBool(pickField(fields, ["Active", "active", "IsActive", "isActive"]) ?? false);
 
-        // ✅ exact Airtable field names
-        const videoUrl = pickField(fields, ["videoUrl"]) ?? "";
-        const posterUrl = pickField(fields, ["posterUrl"]) ?? "";
-        const imageUrl = pickField(fields, ["imageUrl"]) ?? "";
+        const rawVideoUrl = pickField(fields, ["videoUrl", "VideoUrl", "video_url"]) ?? "";
+        const videoUrl = withCacheBuster(asString(rawVideoUrl));
 
         setHero({
           id: rec.id ?? fields.id ?? "",
           title: String(title ?? ""),
           subtitle: String(subtitle ?? ""),
           active,
-          videoUrl: asString(videoUrl),
-          posterUrl: asString(posterUrl),
-          imageUrl: asString(imageUrl),
+          videoUrl,
         });
       } catch (e: any) {
         setError(e?.message || "Errore");
@@ -100,6 +97,17 @@ export default function AdminHeroPage() {
     }
     load();
   }, []);
+
+  useEffect(() => {
+    // reset player quando cambia URL
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = true;
+    setMuted(true);
+    try {
+      v.load();
+    } catch {}
+  }, [hero.videoUrl]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -116,8 +124,6 @@ export default function AdminHeroPage() {
         subtitle: hero.subtitle || "",
         active: !!hero.active,
         videoUrl: hero.videoUrl || "",
-        posterUrl: hero.posterUrl || "",
-        imageUrl: hero.imageUrl || "",
       };
 
       const r = await fetch("/api/admin/hero", {
@@ -136,26 +142,94 @@ export default function AdminHeroPage() {
       const subtitle = pickField(fields, ["Subtitle", "subtitle", "HERO Subtitle", "Hero Subtitle"]) ?? hero.subtitle;
       const active = asBool(pickField(fields, ["Active", "active", "IsActive", "isActive"]) ?? hero.active);
 
-      const videoUrl = pickField(fields, ["videoUrl"]) ?? hero.videoUrl;
-      const posterUrl = pickField(fields, ["posterUrl"]) ?? hero.posterUrl;
-      const imageUrl = pickField(fields, ["imageUrl"]) ?? hero.imageUrl;
+      const rawVideoUrl = pickField(fields, ["videoUrl", "VideoUrl", "video_url"]) ?? hero.videoUrl;
+      const videoUrl = withCacheBuster(asString(rawVideoUrl));
 
       setHero((h) => ({
         ...h,
         title: String(title ?? ""),
         subtitle: String(subtitle ?? ""),
         active,
-        videoUrl: asString(videoUrl),
-        posterUrl: asString(posterUrl),
-        imageUrl: asString(imageUrl),
+        videoUrl,
       }));
 
       setOkMsg("Salvato ✅");
+      try {
+        localStorage.setItem("lv_hero_updated_at", String(Date.now()));
+      } catch {}
       setTimeout(() => setOkMsg(null), 1500);
     } catch (e: any) {
       setError(e?.message || "Errore");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onUploadMp4(file: File) {
+    try {
+      setUploading(true);
+      setError(null);
+      setOkMsg(null);
+
+      if (!file.type.includes("video")) throw new Error("File non valido: carica un MP4.");
+      if (file.size > 250 * 1024 * 1024) throw new Error("File troppo grande (max 250MB).");
+
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("heroId", hero.id);
+
+      const r = await fetch("/api/admin/hero-video", { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j?.ok === false) throw new Error(j?.error || "Upload fallito");
+
+      const baseUrl = asString(j.videoUrl);
+      if (!baseUrl) throw new Error("Upload ok ma manca videoUrl");
+
+      // ✅ forziamo url diverso ad ogni upload
+      const videoUrl = withCacheBuster(baseUrl, Date.now());
+
+      setHero((h) => ({ ...h, videoUrl }));
+      setOkMsg("Video caricato ✅");
+      try {
+        localStorage.setItem("lv_hero_updated_at", String(Date.now()));
+      } catch {}
+      setTimeout(() => setOkMsg(null), 1500);
+
+      // ✅ prova a resettare e ripartire subito (best effort)
+      setTimeout(() => {
+        const v = videoRef.current;
+        if (!v) return;
+        try {
+          v.muted = true;
+          setMuted(true);
+          v.load();
+          v.play().catch(() => {});
+        } catch {}
+      }, 50);
+    } catch (e: any) {
+      setError(e?.message || "Errore upload");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function toggleMute() {
+    const v = videoRef.current;
+    if (!v) return;
+    const next = !v.muted;
+    v.muted = next;
+    setMuted(next);
+    if (!next) v.play().catch(() => {});
+  }
+
+  async function goFullscreen() {
+    const v = videoRef.current as any;
+    if (!v) return;
+    const req = v.requestFullscreen || v.webkitRequestFullscreen || v.mozRequestFullScreen || v.msRequestFullscreen;
+    if (req) {
+      try {
+        await req.call(v);
+      } catch {}
     }
   }
 
@@ -175,6 +249,7 @@ export default function AdminHeroPage() {
     color: "#EDEDED",
     textDecoration: "none",
     fontSize: 14,
+    cursor: "pointer",
   };
   const btnPrimary: CSSProperties = {
     ...btn,
@@ -183,16 +258,6 @@ export default function AdminHeroPage() {
     border: "1px solid #FFFFFF",
     opacity: canSubmit ? 1 : 0.6,
     cursor: canSubmit ? "pointer" : "not-allowed",
-  };
-  const btnMini: CSSProperties = {
-    padding: "8px 10px",
-    borderRadius: 12,
-    background: "rgba(255,255,255,0.10)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    color: "#EDEDED",
-    textDecoration: "none",
-    fontSize: 13,
-    whiteSpace: "nowrap",
   };
   const input: CSSProperties = {
     width: "100%",
@@ -215,7 +280,7 @@ export default function AdminHeroPage() {
         <div style={panel}>
           <h1 style={{ margin: 0, fontSize: 22 }}>Hero</h1>
           <p style={{ marginTop: 6, opacity: 0.7, fontSize: 13 }}>
-            Gestione contenuti HERO (Title, Subtitle, Active).
+            Hero = <b>solo MP4</b> su Supabase Storage. Niente poster/immagini/YouTube.
           </p>
 
           {loading && <p style={{ opacity: 0.75 }}>Caricamento…</p>}
@@ -224,119 +289,88 @@ export default function AdminHeroPage() {
 
           {!loading && (
             <form onSubmit={onSubmit} style={grid}>
-              {/* Media fields (editable now, saved via PATCH) */}
+              {/* VIDEO HERO */}
               <div style={panel}>
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div style={{ fontSize: 13, opacity: 0.85 }}>Media (campi link su Airtable)</div>
-
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <div>
-                    <label style={label}>videoUrl</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <input
-                        style={input}
-                        value={hero.videoUrl}
-                        onChange={(e) => setHero((h) => ({ ...h, videoUrl: e.target.value }))}
-                      />
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>Video Hero (MP4)</div>
+                    <div style={help}>
+                      Carichi un MP4 → viene salvato in Supabase (bucket <b>hero</b>) come <b>hero/hero.mp4</b> e il sito lo
+                      legge da lì.
+                    </div>
+                  </div>
 
-                      {/* ✅ utile per vedere subito cosa c'è */}
-                      {hero.videoUrl ? (
-                        <a href={hero.videoUrl} target="_blank" rel="noreferrer" style={btnMini} title="Apri il video attuale">
+                  <label style={{ ...btn, display: "inline-flex", alignItems: "center", gap: 10, opacity: uploading ? 0.7 : 1 }}>
+                    {uploading ? "Uploading…" : "Upload MP4"}
+                    <input
+                      type="file"
+                      accept="video/mp4,video/*"
+                      style={{ display: "none" }}
+                      disabled={uploading || !hero.id}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.currentTarget.value = "";
+                        if (f) onUploadMp4(f);
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ marginTop: 14 }}>
+                  {hero.videoUrl ? (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <video
+                        key={hero.videoUrl} // ✅ forza remount (evita buffer vecchio)
+                        ref={videoRef}
+                        muted
+                        playsInline
+                        controls={false}
+                        style={{ width: "100%", borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)" }}
+                      >
+                        <source src={hero.videoUrl} type="video/mp4" />
+                      </video>
+
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button type="button" style={btn} onClick={() => videoRef.current?.play().catch(() => {})}>
+                          Play
+                        </button>
+                        <button type="button" style={btn} onClick={() => videoRef.current?.pause()}>
+                          Pause
+                        </button>
+                        <button type="button" style={btn} onClick={toggleMute}>
+                          {muted ? "Unmute" : "Mute"}
+                        </button>
+                        <button type="button" style={btn} onClick={goFullscreen}>
+                          Fullscreen
+                        </button>
+                        <a href={hero.videoUrl} target="_blank" rel="noreferrer" style={{ ...btn, textDecoration: "none" }}>
                           Open ↗
                         </a>
-                      ) : null}
+                      </div>
 
-                      {/* ✅ shortcut per caricare/trovare il video e poi incollare il link */}
-                      <a
-                        href={YT_STUDIO_VIDEOS_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={btnMini}
-                        title="Apri YouTube Studio (carica/gestisci video)"
-                      >
-                        YouTube Studio
-                      </a>
+                      <div style={{ fontSize: 12, opacity: 0.65 }}>
+                        URL (readonly): <span style={{ opacity: 0.9 }}>{hero.videoUrl}</span>
+                      </div>
                     </div>
-                    <div style={help}>
-                      Usa questo campo se vuoi la <b>Hero con video</b>. Incolla un link video (es. MP4 / link video)
-                      e il sito userà quel contenuto come Hero.
+                  ) : (
+                    <div style={{ fontSize: 13, opacity: 0.75 }}>
+                      Nessun video caricato. Premi <b>Upload MP4</b>.
                     </div>
-                  </div>
-
-                  <div>
-                    <label style={label}>posterUrl</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <input
-                        style={input}
-                        value={hero.posterUrl}
-                        onChange={(e) => setHero((h) => ({ ...h, posterUrl: e.target.value }))}
-                      />
-
-                      {hero.posterUrl ? (
-                        <a href={hero.posterUrl} target="_blank" rel="noreferrer" style={btnMini} title="Apri l'immagine poster attuale">
-                          Open ↗
-                        </a>
-                      ) : null}
-
-                      <a
-                        href={HERO_DRIVE_FOLDER_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={btnMini}
-                        title="Apri cartella Drive (Hero assets)"
-                      >
-                        Apri Drive
-                      </a>
-                    </div>
-                    <div style={help}>
-                      <b>Copertina del video</b> (poster). Serve quando la Hero è video: mostra un’immagine pulita mentre il video
-                      carica o se l’autoplay non parte (Safari/iOS).
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={label}>imageUrl</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <input
-                        style={input}
-                        value={hero.imageUrl}
-                        onChange={(e) => setHero((h) => ({ ...h, imageUrl: e.target.value }))}
-                      />
-
-                      {hero.imageUrl ? (
-                        <a href={hero.imageUrl} target="_blank" rel="noreferrer" style={btnMini} title="Apri l'immagine hero attuale">
-                          Open ↗
-                        </a>
-                      ) : null}
-
-                      <a
-                        href={HERO_DRIVE_FOLDER_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={btnMini}
-                        title="Apri cartella Drive (Hero assets)"
-                      >
-                        Apri Drive
-                      </a>
-                    </div>
-                    <div style={help}>
-                      <b>Hero immagine</b>: usala se vuoi una Hero statica (senza video) oppure come <b>fallback</b> se il video non è disponibile.
-                      Se vuoi SOLO immagine, lascia <b>videoUrl</b> vuoto e compila solo questo.
-                    </div>
-                  </div>
-
-                  <div style={{ fontSize: 12, opacity: 0.6 }}>
-                    Regola pratica: <b>Video Hero</b> = videoUrl + posterUrl (imageUrl opzionale). <b>Immagine Hero</b> = solo imageUrl.
-                  </div>
+                  )}
                 </div>
               </div>
 
               <div>
                 <label style={label}>Title</label>
-                <input
-                  style={input}
-                  value={hero.title}
-                  onChange={(e) => setHero((h) => ({ ...h, title: e.target.value }))}
-                />
+                <input style={input} value={hero.title} onChange={(e) => setHero((h) => ({ ...h, title: e.target.value }))} />
               </div>
 
               <div>
@@ -361,7 +395,7 @@ export default function AdminHeroPage() {
               </div>
 
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6, flexWrap: "wrap" }}>
-                <Link href="/admin" style={btn}>
+                <Link href="/admin" style={{ ...btn, textDecoration: "none" }}>
                   ← Back
                 </Link>
 
