@@ -850,7 +850,7 @@ const HERO_MODE = "mp4" as const;
 
   return (
     <div
-      className="min-h-screen isolate bg-[var(--bg)] text-[var(--text)] selection:bg-[var(--red-accent)] selection:text-black"
+      className="min-h-screen bg-[var(--bg)] text-[var(--text)] selection:bg-[var(--red-accent)] selection:text-black"
       style={{
         ["--bg" as any]: palette.bg,
         ["--surface" as any]: palette.surface,
@@ -864,7 +864,7 @@ const HERO_MODE = "mp4" as const;
     >
     
      {/* Sticky header */}
-<div className="sticky top-0 z-[999] border-b border-white/10 bg-[var(--surface)]">
+<div className="sticky top-0 z-[9999] relative isolate border-b border-white/10 bg-[var(--surface)]">
 
   {SHOW_TOP_BAR && (
     <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-xs tracking-wide">
@@ -892,91 +892,136 @@ const HERO_MODE = "mp4" as const;
     </div>
   )}
 
-  <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-6">
-    <div className="flex items-center gap-3">
-      <img src={brand.logo} alt="LedVelvet" className="w-10 h-10 rounded-full border border-white/10" />
-      <div className="leading-tight">
-        <div className="text-sm font-semibold">LedVelvet</div>
-        <div className="text-xs text-white/60 tracking-[0.18em] uppercase">
-          ETHERAL CLUBBING
-        </div>
+
+<div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3 min-w-0 overflow-x-hidden">
+  {/* LEFT */}
+  <div className="flex items-center gap-3 min-w-0">
+    <img
+      src={brand.logo}
+      alt="LedVelvet"
+      className="w-10 h-10 rounded-full border border-white/10 shrink-0"
+    />
+    <div className="leading-tight min-w-0">
+      <div className="text-sm font-semibold truncate">LedVelvet</div>
+      <div className="text-xs text-white/60 tracking-[0.18em] uppercase truncate">
+        ETHERAL CLUBBING
       </div>
     </div>
+  </div>
 
-    <nav className="hidden md:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
-      <a href="#home" className="hover:text-[var(--text)]">Home</a>
-      <a href="#eventi" className="hover:text-[var(--text)]">Upcoming</a>
-      <a href="#past" className="hover:text-[var(--text)]">Past</a>
-      <a href="#sponsor" className="hover:text-[var(--text)]">Sponsor</a>
-      <a href="/about" className="hover:text-[var(--text)]">About</a>
-    </nav>
+  {/* DESKTOP MENU (lg+) */}
+  <nav className="hidden lg:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
+    <a href="#home" className="hover:text-[var(--text)] whitespace-nowrap">Home</a>
+    <a href="#eventi" className="hover:text-[var(--text)] whitespace-nowrap">Upcoming</a>
+    <a href="#past" className="hover:text-[var(--text)] whitespace-nowrap">Past</a>
+    <a href="#sponsor" className="hover:text-[var(--text)] whitespace-nowrap">Sponsor</a>
+    <a href="/about" className="hover:text-[var(--text)] whitespace-nowrap">About</a>
+  </nav>
 
-    <div className="flex items-center gap-2">
-      <div className="hidden md:flex items-center gap-2">
-        <SocialIcon href={SOCIALS.instagram} label="Instagram">
-          <IconInstagram />
-        </SocialIcon>
-        <SocialIcon href={SOCIALS.tiktok} label="TikTok">
-          <IconTikTok />
-        </SocialIcon>
-        <SocialIcon href={SOCIALS.telegram} label="Telegram">
-          <IconTelegram />
-        </SocialIcon>
+  {/* RIGHT SIDE */}
+  <div className="flex items-center gap-2 flex-none">
+
+    {/* DESKTOP SOCIAL (lg+) */}
+    <div className="hidden lg:flex items-center gap-2">
+      <SocialIcon href={SOCIALS.instagram} label="Instagram">
+        <IconInstagram />
+      </SocialIcon>
+      <SocialIcon href={SOCIALS.tiktok} label="TikTok">
+        <IconTikTok />
+      </SocialIcon>
+      <SocialIcon href={SOCIALS.telegram} label="Telegram">
+        <IconTelegram />
+      </SocialIcon>
+    </div>
+
+    {/* TABLET MENU BUTTON (md → < lg) */}
+    <details className="hidden md:block lg:hidden">
+      <summary
+        className="list-none cursor-pointer px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap flex items-center gap-2"
+      >
+        Menu ≡
+      </summary>
+<div className="fixed right-4 top-[72px] w-[min(92vw,420px)] rounded-2xl border border-white/12 bg-black/70 backdrop-blur-md shadow-[0_20px_60px_rgba(0,0,0,0.55)] p-3 z-[10000]">
+
+       <div className="grid gap-1 text-xs tracking-[0.22em] uppercase">
+          <a href="#home" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">Home</a>
+          <a href="#eventi" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">Upcoming</a>
+          <a href="#past" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">Past</a>
+          <a href="#sponsor" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">Sponsor</a>
+          <a href="/about" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">About</a>
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-2">
+          <SocialIcon href={SOCIALS.instagram} label="Instagram">
+            <IconInstagram />
+          </SocialIcon>
+          <SocialIcon href={SOCIALS.tiktok} label="TikTok">
+            <IconTikTok />
+          </SocialIcon>
+          <SocialIcon href={SOCIALS.telegram} label="Telegram">
+            <IconTelegram />
+          </SocialIcon>
+        </div>
       </div>
+    </details>
 
-      {!user.email ? (
-        <a
-          href="/login"
-          className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
+    {/* AUTH */}
+    {!user.email ? (
+      <a
+        href="/login"
+        className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap"
+      >
+        Accedi
+      </a>
+    ) : (
+      <div className="flex items-center gap-2">
+        <select
+          className="bg-transparent rounded-full px-3 py-2 text-xs tracking-[0.18em] uppercase border border-white/15 text-[var(--text)] max-w-[140px]"
+          value={user.level || "BASE"}
+          onChange={(e) => setUser((u) => ({ ...u, level: e.target.value as Level }))}
         >
-          Accedi
-        </a>
-      ) : (
-        <div className="flex items-center gap-2">
-          <select
-            className="bg-transparent rounded-full px-3 py-2 text-xs tracking-[0.18em] uppercase border border-white/15 text-[var(--text)]"
-            value={user.level || "BASE"}
-            onChange={(e) => setUser((u) => ({ ...u, level: e.target.value as Level }))}
-          >
-            <option value="BASE">BASE</option>
-            <option value="VIP">VIP</option>
-            <option value="FOUNDER">FOUNDER</option>
-          </select>
-          <button
-            onClick={() => setUser({ email: null })}
-            className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
-            type="button"
-          >
-            Esci
-          </button>
-        </div>
-      )}
+          <option value="BASE">BASE</option>
+          <option value="VIP">VIP</option>
+          <option value="FOUNDER">FOUNDER</option>
+        </select>
+
+        <button
+          onClick={() => setUser({ email: null })}
+          className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap"
+          type="button"
+        >
+          Esci
+        </button>
+      </div>
+    )}
+  </div>
+</div>
+
+{/* MOBILE BAR (< md only) */}
+<div className="md:hidden border-t border-white/10 overflow-x-hidden">
+  <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
+    <div className="flex gap-5 overflow-x-auto text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
+      <a href="#home" className="shrink-0 hover:text-[var(--text)]">Home</a>
+      <a href="#eventi" className="shrink-0 hover:text-[var(--text)]">Upcoming</a>
+      <a href="#past" className="shrink-0 hover:text-[var(--text)]">Past</a>
+      <a href="#sponsor" className="shrink-0 hover:text-[var(--text)]">Sponsor</a>
+      <a href="/about" className="shrink-0 hover:text-[var(--text)]">About</a>
+    </div>
+
+    <div className="flex items-center gap-2 shrink-0">
+      <SocialIcon href={SOCIALS.instagram} label="Instagram">
+        <IconInstagram />
+      </SocialIcon>
+      <SocialIcon href={SOCIALS.tiktok} label="TikTok">
+        <IconTikTok />
+      </SocialIcon>
+      <SocialIcon href={SOCIALS.telegram} label="Telegram">
+        <IconTelegram />
+      </SocialIcon>
     </div>
   </div>
+</div>
 
-  <div className="md:hidden border-t border-white/10">
-    <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
-      <div className="flex gap-5 overflow-x-auto text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
-        <a href="#home" className="shrink-0 hover:text-[var(--text)]">Home</a>
-        <a href="#eventi" className="shrink-0 hover:text-[var(--text)]">Upcoming</a>
-        <a href="#past" className="shrink-0 hover:text-[var(--text)]">Past</a>
-        <a href="#sponsor" className="shrink-0 hover:text-[var(--text)]">Sponsor</a>
-        <a href="/about" className="shrink-0 hover:text-[var(--text)]">About</a>
-      </div>
-
-      <div className="flex items-center gap-2 shrink-0">
-        <SocialIcon href={SOCIALS.instagram} label="Instagram">
-          <IconInstagram />
-        </SocialIcon>
-        <SocialIcon href={SOCIALS.tiktok} label="TikTok">
-          <IconTikTok />
-        </SocialIcon>
-        <SocialIcon href={SOCIALS.telegram} label="Telegram">
-          <IconTelegram />
-        </SocialIcon>
-      </div>
-    </div>
-  </div>
 
 </div>
 
