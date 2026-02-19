@@ -4,6 +4,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import DeepDiveOverlay from "./DeepDiveOverlay";
+import Link from "next/link";
+
 
 type Level = "BASE" | "VIP" | "FOUNDER";
 
@@ -375,6 +377,9 @@ const HERO_MODE = "mp4" as const;
   const [muted, setMuted] = useState(true);
   const [fsErr, setFsErr] = useState<string | null>(null);
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
+  const menuRef = useRef<HTMLDetailsElement | null>(null);
+  const closeMenu = () => { if (menuRef.current) menuRef.current.open = false; };
+
 
   // --- Ambient music player (Airtable MP3 via /api/public/playlist) ---
   type AmbientTrack = {
@@ -918,6 +923,10 @@ const HERO_MODE = "mp4" as const;
     <a href="#past" className="hover:text-[var(--text)] whitespace-nowrap">Past</a>
     <a href="#sponsor" className="hover:text-[var(--text)] whitespace-nowrap">Sponsor</a>
     <a href="/about" className="hover:text-[var(--text)] whitespace-nowrap">About</a>
+    <Link href="/legal" className="hover:text-[var(--text)] whitespace-nowrap">
+  Legal
+</Link>
+
   </nav>
 
   {/* RIGHT SIDE */}
@@ -936,36 +945,40 @@ const HERO_MODE = "mp4" as const;
       </SocialIcon>
     </div>
 
-    {/* TABLET MENU BUTTON (md → < lg) */}
-    <details className="hidden md:block lg:hidden">
-      <summary
-        className="list-none cursor-pointer px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap flex items-center gap-2"
-      >
-        Menu ≡
-      </summary>
-<div className="fixed right-4 top-[72px] w-[min(92vw,420px)] rounded-2xl border border-white/12 bg-black/70 backdrop-blur-md shadow-[0_20px_60px_rgba(0,0,0,0.55)] p-3 z-[10000]">
+    {/* TABLET E MOBILE MENU BUTTON (md → < lg) */}
+   <div className={cn("lg:hidden", deepDiveOpen ? "pointer-events-none opacity-40" : "")}>
+  <details ref={menuRef} className="relative">
+    <summary className="cursor-pointer select-none px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap">
+      Menu ≡
+    </summary>
 
-       <div className="grid gap-1 text-xs tracking-[0.22em] uppercase">
-          <a href="#home" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">Home</a>
-          <a href="#eventi" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">Upcoming</a>
-          <a href="#past" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">Past</a>
-          <a href="#sponsor" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">Sponsor</a>
-          <a href="/about" className="px-3 py-3 rounded-xl hover:bg-white/10 text-[var(--muted)] hover:text-[var(--text)]">About</a>
-        </div>
+    <div className="fixed right-4 top-[72px] w-[min(92vw,420px)] max-h-[70vh] overflow-auto rounded-2xl border border-white/12 bg-black/70 backdrop-blur-md shadow-[0_20px_60px_rgba(0,0,0,0.55)] p-3 z-[10000]">
+      <div className="grid gap-1 text-xs tracking-[0.22em] uppercase">
+        <a href="#home" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Home</a>
+        <a href="#eventi" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Upcoming</a>
+        <a href="#past" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Past</a>
+        <a href="#sponsor" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Sponsor</a>
+        <a href="/about" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">About</a>
+        {/* Legal: usa Link se vuoi modal */}
+       <Link
+       href="/legal"
+       onClick={closeMenu}
+       className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white"
+        >
+        Legal
+       </Link>
 
-        <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-2">
-          <SocialIcon href={SOCIALS.instagram} label="Instagram">
-            <IconInstagram />
-          </SocialIcon>
-          <SocialIcon href={SOCIALS.tiktok} label="TikTok">
-            <IconTikTok />
-          </SocialIcon>
-          <SocialIcon href={SOCIALS.telegram} label="Telegram">
-            <IconTelegram />
-          </SocialIcon>
-        </div>
       </div>
-    </details>
+
+      <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-2">
+        <SocialIcon href={SOCIALS.instagram} label="Instagram"><IconInstagram /></SocialIcon>
+        <SocialIcon href={SOCIALS.tiktok} label="TikTok"><IconTikTok /></SocialIcon>
+        <SocialIcon href={SOCIALS.telegram} label="Telegram"><IconTelegram /></SocialIcon>
+      </div>
+    </div>
+  </details>
+</div>
+
 
     {/* AUTH */}
     {!user.email ? (
@@ -998,32 +1011,6 @@ const HERO_MODE = "mp4" as const;
     )}
   </div>
 </div>
-
-{/* MOBILE BAR (< md only) */}
-<div className="md:hidden border-t border-white/10 overflow-x-hidden">
-  <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
-    <div className="flex gap-5 overflow-x-auto text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
-      <a href="#home" className="shrink-0 hover:text-[var(--text)]">Home</a>
-      <a href="#eventi" className="shrink-0 hover:text-[var(--text)]">Upcoming</a>
-      <a href="#past" className="shrink-0 hover:text-[var(--text)]">Past</a>
-      <a href="#sponsor" className="shrink-0 hover:text-[var(--text)]">Sponsor</a>
-      <a href="/about" className="shrink-0 hover:text-[var(--text)]">About</a>
-    </div>
-
-    <div className="flex items-center gap-2 shrink-0">
-      <SocialIcon href={SOCIALS.instagram} label="Instagram">
-        <IconInstagram />
-      </SocialIcon>
-      <SocialIcon href={SOCIALS.tiktok} label="TikTok">
-        <IconTikTok />
-      </SocialIcon>
-      <SocialIcon href={SOCIALS.telegram} label="Telegram">
-        <IconTelegram />
-      </SocialIcon>
-    </div>
-  </div>
-</div>
-
 
 </div>
 
@@ -1288,7 +1275,7 @@ const HERO_MODE = "mp4" as const;
     onClick={toggleMute}
     className="px-3 py-2 rounded-full border border-white/20 bg-black/40 text-white text-xs tracking-[0.18em] uppercase hover:bg-black/55"
   >
-    {muted ? "Unmute" : "Mute"}
+    {muted ? "Unmute/Restart" : "Mute"}
   </button>
 
   <button
@@ -1807,7 +1794,7 @@ const HERO_MODE = "mp4" as const;
       <footer className="border-t border-white/10 py-10 bg-[var(--bg)]">
         <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <p className="text-xs tracking-[0.22em] uppercase text-white/60">
-            © <span suppressHydrationWarning>{new Date().getFullYear()}</span> LedVelvet APS • Privacy • Cookie • Termini
+            © <span suppressHydrationWarning>{new Date().getFullYear()}</span> LedVelvet ETS
           </p>
           <div className="text-xs tracking-[0.22em] uppercase text-white/40">Follow us on Instagram · TikTok · Telegram</div>
         </div>
