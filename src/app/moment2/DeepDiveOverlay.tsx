@@ -1,6 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
 
-
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -650,63 +649,58 @@ export default function DeepDiveOverlay({
                       loading="eager"
                     />
 
-                    {/* ✅ BOTTOM TOOLBAR: prev / counter / next + close (safe-area) */}
+                    {/* ✅ NEW: CONTROLS MINIMI, MOLTO IN BASSO (solo ‹ › ✕) */}
                     <div
                       className="absolute inset-x-0 bottom-0"
-                      style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
+                      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 10px)" }}
                     >
-                      <div className="px-4 pt-10 pb-3 bg-gradient-to-t from-black/90 via-black/45 to-transparent">
-                        <div className="flex items-center justify-between gap-3">
+                      <div className="px-4 pb-2">
+                        <div className="flex items-center justify-between">
                           <button
                             type="button"
                             onClick={prevImg}
                             disabled={gallery.length <= 1}
                             className={[
-                              "px-4 py-2 rounded-full border text-xs tracking-[0.18em] uppercase",
+                              "w-12 h-12 rounded-full border grid place-items-center text-white",
                               gallery.length > 1
-                                ? "bg-white/10 border-white/25 text-white hover:bg-white/15 hover:border-white/40"
-                                : "bg-white/5 border-white/10 text-white/30 cursor-not-allowed",
+                                ? "bg-black/35 border-white/25 hover:bg-black/45 hover:border-white/40"
+                                : "bg-black/20 border-white/10 text-white/30 cursor-not-allowed",
                             ].join(" ")}
                             aria-label="Immagine precedente"
+                            title="Prev"
                           >
-                            ‹ Prev
+                            ‹
                           </button>
 
-                          <div className="text-[11px] tracking-[0.22em] uppercase text-white/70 tabular-nums">
-                            {lightboxIndex + 1} / {gallery.length}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={closeLightbox}
+                            className="w-12 h-12 rounded-full border border-white/25 bg-black/35 grid place-items-center text-white hover:bg-black/45 hover:border-white/40"
+                            aria-label="Chiudi"
+                            title="Close"
+                          >
+                            ✕
+                          </button>
 
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={nextImg}
-                              disabled={gallery.length <= 1}
-                              className={[
-                                "px-4 py-2 rounded-full border text-xs tracking-[0.18em] uppercase",
-                                gallery.length > 1
-                                  ? "bg-white/10 border-white/25 text-white hover:bg-white/15 hover:border-white/40"
-                                  : "bg-white/5 border-white/10 text-white/30 cursor-not-allowed",
-                              ].join(" ")}
-                              aria-label="Immagine successiva"
-                            >
-                              Next ›
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={closeLightbox}
-                              className="px-4 py-2 rounded-full bg-white/10 border border-white/25 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/40"
-                            >
-                              ✕ Close
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="mt-2 text-[11px] tracking-[0.18em] uppercase text-white/45">
-                          Tip: frecce ← → per navigare, ESC per chiudere
+                          <button
+                            type="button"
+                            onClick={nextImg}
+                            disabled={gallery.length <= 1}
+                            className={[
+                              "w-12 h-12 rounded-full border grid place-items-center text-white",
+                              gallery.length > 1
+                                ? "bg-black/35 border-white/25 hover:bg-black/45 hover:border-white/40"
+                                : "bg-black/20 border-white/10 text-white/30 cursor-not-allowed",
+                            ].join(" ")}
+                            aria-label="Immagine successiva"
+                            title="Next"
+                          >
+                            ›
+                          </button>
                         </div>
                       </div>
                     </div>
+                    {/* (TIP rimosso) */}
                   </div>
                 </div>
               </div>
