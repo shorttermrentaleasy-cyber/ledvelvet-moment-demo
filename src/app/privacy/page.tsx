@@ -121,7 +121,7 @@ export default function PrivacyPage() {
   </h3>
 
   <p className="text-gray-400 text-sm mb-4">
-    L'informativa completa relativa al sistema di tesseramento digitale
+    Informativa completa relativa al sistema di tesseramento digitale
     (piattaforma Wally) è disponibile nel documento dedicato.
   </p>
 
