@@ -1,8 +1,6 @@
 import Link from "next/link";
 import LegalTopbar from "@/components/legal/LegalTopbar";
 
-
-
 export const metadata = {
   title: "Legal – Led Velvet ETS",
   description: "Documentazione legale e informativa di Led Velvet ETS",
@@ -11,7 +9,7 @@ export const metadata = {
 export default function LegalPage() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-black text-white">
-<LegalTopbar homeHref="/moment2" label="Legal" />
+      <LegalTopbar homeHref="/moment2" label="Legal" />
 
       <div className="absolute inset-0 bg-gradient-to-br from-black via-[#0d0018] to-black" />
       <div className="absolute -top-40 -left-40 w-[520px] h-[520px] bg-purple-900/25 blur-[170px] rounded-full" />
@@ -32,20 +30,31 @@ export default function LegalPage() {
             description="Informativa sul trattamento dei dati personali (GDPR)."
             href="/privacy"
           />
+
           <LegalCard
             title="Cookie Policy"
             description="Informazioni sui cookie utilizzati dal sito."
             href="/cookie-policy"
           />
+
           <LegalCard
             title="Termini di Utilizzo"
             description="Condizioni di utilizzo del sito ledvelvet.it."
             href="/termini"
           />
+
           <LegalCard
             title="Trasparenza ETS"
             description="Documenti ufficiali, Statuto e iscrizione RUNTS."
             href="/trasparenza"
+          />
+
+          {/* ✅ NUOVA: PDF in /public/docs → URL pubblico /docs/... */}
+          <LegalCard
+            title="Privacy Area Tesseramento"
+            description="Informativa relativa al tesseramento digitale (Wally) e gestione soci."
+            href="/docs/INFORMATIVA_PRIVACY_TESSERAMENTO.pdf"
+            newTab
           />
         </div>
 
@@ -62,18 +71,23 @@ export default function LegalPage() {
     </main>
   );
 }
+
 function LegalCard({
   title,
   description,
   href,
+  newTab = false,
 }: {
   title: string;
   description: string;
   href: string;
+  newTab?: boolean;
 }) {
   return (
     <Link
       href={href}
+      target={newTab ? "_blank" : undefined}
+      rel={newTab ? "noreferrer" : undefined}
       className="group relative border border-white/10 bg-white/5 backdrop-blur-md rounded-2xl p-8 transition hover:border-fuchsia-500 hover:bg-white/10"
     >
       <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition bg-gradient-to-br from-fuchsia-600/10 to-purple-600/10" />

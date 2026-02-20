@@ -114,6 +114,26 @@ export default function PrivacyPage() {
             scrivendo a{" "}
             <a href="mailto:privacy@ledvelvet.it">privacy@ledvelvet.it</a>.
           </p>
+
+<div className="mt-12 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
+  <h3 className="text-lg font-semibold mb-3 text-white">
+    Informativa Area Tesseramento
+  </h3>
+
+  <p className="text-gray-400 text-sm mb-4">
+    L'informativa completa relativa al sistema di tesseramento digitale
+    (piattaforma Wally) è disponibile nel documento dedicato.
+  </p>
+
+  <a
+    href="/docs/INFORMATIVA_PRIVACY_TESSERAMENTO.pdf"
+    target="_blank"
+    rel="noreferrer"
+    className="inline-block px-5 py-2 rounded-full border border-white/20 bg-white/10 text-sm hover:bg-white/20 transition"
+  >
+    Scarica informativa completa (PDF)
+  </a>
+</div>
           <p>
             È possibile proporre reclamo al Garante per la protezione dei dati personali.
           </p>
