@@ -653,75 +653,78 @@ export default function DeepDiveOverlay({
             loading="eager"
           />
 
-          {/* 🔴 CONTROLLI ROSSI LEDVELVET */}
-          <div
-            className="absolute inset-x-0 bottom-0"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 14px)" }}
-          >
-            <div className="px-6 pb-2">
-              <div className="flex items-center justify-between">
+{/* ✅ CONTROLLI SUPER VISIBILI (rosso pieno + icone bianche + barra scura) */}
+<div
+  className="absolute inset-x-0 bottom-0"
+  style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 14px)" }}
+>
+  {/* barra scura dietro per staccare sempre dall’immagine */}
+  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
 
-                {/* PREV */}
-                <button
-                  type="button"
-                  onClick={prevImg}
-                  disabled={gallery.length <= 1}
-                  className={[
-                    "w-14 h-14 rounded-full grid place-items-center",
-                    "text-[28px] leading-none select-none",
-                    "border border-[var(--red-acc)]/80",
-                    "bg-[var(--red-acc)]/20 text-[var(--red-acc)]",
-                    "shadow-[0_0_30px_rgba(147,11,12,.45)]",
-                    "hover:bg-[var(--red-acc)]/30 hover:border-[var(--red-acc)]",
-                    "transition",
-                    gallery.length <= 1 ? "opacity-30 cursor-not-allowed" : "",
-                  ].join(" ")}
-                  aria-label="Immagine precedente"
-                >
-                  ‹
-                </button>
+  <div className="relative px-6 pb-2">
+    <div className="flex items-center justify-between">
+      {/* PREV */}
+      <button
+        type="button"
+        onClick={prevImg}
+        disabled={gallery.length <= 1}
+        className={[
+          "w-16 h-16 rounded-full grid place-items-center",
+          "text-[32px] leading-none select-none",
+          "bg-[var(--red-acc)] text-white",
+          "border-2 border-white/85",
+          "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_28px_rgba(147,11,12,.55)]",
+          "hover:brightness-110 active:scale-[0.98] transition",
+          gallery.length <= 1 ? "opacity-35 cursor-not-allowed hover:brightness-100" : "",
+        ].join(" ")}
+        aria-label="Immagine precedente"
+        title="Prev"
+      >
+        ‹
+      </button>
 
-                {/* CLOSE */}
-                <button
-                  type="button"
-                  onClick={closeLightbox}
-                  className={[
-                    "w-14 h-14 rounded-full grid place-items-center",
-                    "text-[24px] leading-none select-none",
-                    "border border-[var(--red-acc)]",
-                    "bg-[var(--red-acc)]/30 text-white",
-                    "shadow-[0_0_40px_rgba(147,11,12,.55)]",
-                    "hover:bg-[var(--red-acc)]/45",
-                    "transition",
-                  ].join(" ")}
-                  aria-label="Chiudi"
-                >
-                  ✕
-                </button>
+      {/* CLOSE */}
+      <button
+        type="button"
+        onClick={closeLightbox}
+        className={[
+          "w-16 h-16 rounded-full grid place-items-center",
+          "text-[26px] leading-none select-none",
+          "bg-white text-black",
+          "border-2 border-[var(--red-acc)]",
+          "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_30px_rgba(147,11,12,.55)]",
+          "hover:bg-white/90 active:scale-[0.98] transition",
+        ].join(" ")}
+        aria-label="Chiudi"
+        title="Close"
+      >
+        ✕
+      </button>
 
-                {/* NEXT */}
-                <button
-                  type="button"
-                  onClick={nextImg}
-                  disabled={gallery.length <= 1}
-                  className={[
-                    "w-14 h-14 rounded-full grid place-items-center",
-                    "text-[28px] leading-none select-none",
-                    "border border-[var(--red-acc)]/80",
-                    "bg-[var(--red-acc)]/20 text-[var(--red-acc)]",
-                    "shadow-[0_0_30px_rgba(147,11,12,.45)]",
-                    "hover:bg-[var(--red-acc)]/30 hover:border-[var(--red-acc)]",
-                    "transition",
-                    gallery.length <= 1 ? "opacity-30 cursor-not-allowed" : "",
-                  ].join(" ")}
-                  aria-label="Immagine successiva"
-                >
-                  ›
-                </button>
+      {/* NEXT */}
+      <button
+        type="button"
+        onClick={nextImg}
+        disabled={gallery.length <= 1}
+        className={[
+          "w-16 h-16 rounded-full grid place-items-center",
+          "text-[32px] leading-none select-none",
+          "bg-[var(--red-acc)] text-white",
+          "border-2 border-white/85",
+          "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_28px_rgba(147,11,12,.55)]",
+          "hover:brightness-110 active:scale-[0.98] transition",
+          gallery.length <= 1 ? "opacity-35 cursor-not-allowed hover:brightness-100" : "",
+        ].join(" ")}
+        aria-label="Immagine successiva"
+        title="Next"
+      >
+        ›
+      </button>
+    </div>
+  </div>
+</div>
 
-              </div>
-            </div>
-          </div>
+
           {/* fine controlli */}
 
         </div>
