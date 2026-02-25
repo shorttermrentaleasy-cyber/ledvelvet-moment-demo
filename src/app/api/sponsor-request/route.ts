@@ -11,6 +11,10 @@ type SponsorPayload = {
   message?: string;
   interestType?: string; // UI key -> maps to Airtable "interest type"
   source?: string; // default "website"
+
+  // ✅ GDPR flags (frontend -> backend)
+  privacy_gdpr?: boolean; // required true
+  marketing_optin?: boolean; // optional
 };
 
 function json(ok: boolean, data: any, status = 200) {
@@ -22,7 +26,9 @@ function isValidEmail(v: string) {
 }
 
 function normalizePhone(raw: string) {
-  const cleaned = String(raw || "").replace(/[^\d+\s()\-]/g, "").trim();
+  const cleaned = String(raw || "")
+    .replace(/[^\d+\s()\-]/g, "")
+    .trim();
   const digits = cleaned.replace(/[^\d]/g, "");
   if (!cleaned) return "";
   if (digits.length < 6) return ""; // troppo corto => invalido
@@ -46,9 +52,7 @@ async function getInterestTypeOptions() {
   const meta: any = await r.json();
   const table =
     meta?.tables?.find((t: any) => t?.name === "SPONSORS_REQUESTS") ||
-    meta?.tables?.find(
-      (t: any) => String(t?.name || "").toLowerCase() === "sponsors_requests"
-    );
+    meta?.tables?.find((t: any) => String(t?.name || "").toLowerCase() === "sponsors_requests");
 
   if (!table) return [];
 
@@ -84,7 +88,12 @@ async function createAirtableRecord(fields: Record<string, any>) {
   const text = await r.text();
   if (!r.ok) {
     console.error("Airtable create error:", r.status, text);
-    throw new Error("Airtable create failed");
+    try {
+      const j = JSON.parse(text);
+      throw new Error(j?.error?.message || j?.error || text || "Airtable create failed");
+    } catch {
+      throw new Error(text || "Airtable create failed");
+    }
   }
 
   return JSON.parse(text);
@@ -128,23 +137,30 @@ function escapeHtml(s: string) {
 
 export async function POST(req: Request) {
   try {
-    const raw = (await req.json()) as any;
+    const raw = (await req.json()) as SponsorPayload & Record<string, any>;
 
-	// compat: /moment manda brand/name/note
-	const company = String(raw.company ?? raw.brand ?? "").trim();
-	const contact = String(raw.contact ?? raw.name ?? "").trim();
-	const email = String(raw.email ?? "").trim();
-	const phoneRaw = String(raw.phone ?? "").trim();
-	const budget = String(raw.budget ?? "").trim();
-	const message = String(raw.message ?? raw.note ?? "").trim();
-	const interestType = String(raw.interestType ?? raw["interest type"] ?? "").trim();
-	const source = "website";
+    // compat: /moment manda brand/name/note
+    const company = String(raw.company ?? raw.brand ?? "").trim();
+    const contact = String(raw.contact ?? raw.name ?? "").trim();
+    const email = String(raw.email ?? "").trim();
+    const phoneRaw = String(raw.phone ?? "").trim();
+    const budget = String(raw.budget ?? "").trim();
+    const message = String(raw.message ?? raw.note ?? "").trim();
+    const interestType = String(raw.interestType ?? raw["interest type"] ?? "").trim();
+    const source = "website";
+
+    // ✅ GDPR flags (accept both new keys and Airtable-ish keys)
+    const privacy_gdpr = Boolean(raw.privacy_gdpr ?? raw.privacy ?? false);
+    const marketing_optin = Boolean(raw.marketing_optin ?? raw.marketing ?? false);
 
     // required
     if (!company) return json(false, { error: "Missing company" }, 400);
     if (!contact) return json(false, { error: "Missing contact" }, 400);
     if (!email) return json(false, { error: "Missing email" }, 400);
     if (!isValidEmail(email)) return json(false, { error: "Invalid email" }, 400);
+
+    // ✅ privacy mandatory (server-side)
+    if (!privacy_gdpr) return json(false, { error: "Missing privacy consent" }, 400);
 
     // phone optional but must be valid if provided
     const phone = phoneRaw ? normalizePhone(phoneRaw) : "";
@@ -159,7 +175,7 @@ export async function POST(req: Request) {
     }
 
     // IMPORTANT: non scriviamo "Request ID" (formula) né "createdat" se è Created time (read-only)
-    // "select" lo lasciamo vuoto (o lo mettiamo dopo quando ci dici le scelte esatte)
+    // "select" lo lasciamo vuoto
     const record = await createAirtableRecord({
       company,
       contact,
@@ -169,6 +185,10 @@ export async function POST(req: Request) {
       message: message || "",
       "interest type": interestType || "",
       source,
+
+      // ✅ map to Airtable checkbox fields you created
+      privacy_gdpr: privacy_gdpr,
+      marketing_optin: marketing_optin,
     });
 
     // mail notify
@@ -186,6 +206,8 @@ export async function POST(req: Request) {
         <p><b>Interest type:</b> ${escapeHtml(interestType || "-")}</p>
         <p><b>Budget:</b> ${escapeHtml(budget || "-")}</p>
         <p><b>Message:</b><br/>${escapeHtml(message || "-").replace(/\n/g, "<br/>")}</p>
+        <p><b>Consent (privacy):</b> ${privacy_gdpr ? "YES" : "NO"}</p>
+        <p><b>Marketing opt-in:</b> ${marketing_optin ? "YES" : "NO"}</p>
         <p><b>Source:</b> ${escapeHtml(source)}</p>
         <hr/>
         <p style="font-size:12px;color:#666">Airtable Record: ${escapeHtml(record?.id || "")}</p>

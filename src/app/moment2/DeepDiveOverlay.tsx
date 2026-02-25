@@ -208,6 +208,10 @@ export default function DeepDiveOverlay({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
+  // ✅ YouTube cookie-block fallback (DeepDive)
+  const [ytBlocked, setYtBlocked] = useState(false);
+  const ytTimerRef = useRef<number | null>(null);
+
   const stopMood = useCallback(() => {
     const el = moodAudioRef.current;
     if (!el) return;
@@ -393,6 +397,25 @@ export default function DeepDiveOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, lightboxOpen, nextImg, prevImg]);
 
+  // ✅ detect YouTube blocked (cookie) via timeout + onLoad
+  useEffect(() => {
+    setYtBlocked(false);
+    if (ytTimerRef.current) window.clearTimeout(ytTimerRef.current);
+    ytTimerRef.current = null;
+
+    if (!open) return;
+    if (!(heroType === "youtube" && heroYouTube)) return;
+
+    ytTimerRef.current = window.setTimeout(() => {
+      setYtBlocked(true);
+    }, 1800);
+
+    return () => {
+      if (ytTimerRef.current) window.clearTimeout(ytTimerRef.current);
+      ytTimerRef.current = null;
+    };
+  }, [open, heroType, heroYouTube]);
+
   if (!open) return null;
 
   return (
@@ -483,7 +506,12 @@ export default function DeepDiveOverlay({
 
                         <span className="text-[11px] tracking-[0.18em] uppercase text-white/50">Led Velvet Mood</span>
 
-                        <audio ref={moodAudioRef} src={moodTrackUrl} preload="none" onEnded={() => setIsMoodPlaying(false)} />
+                        <audio
+                          ref={moodAudioRef}
+                          src={moodTrackUrl}
+                          preload="none"
+                          onEnded={() => setIsMoodPlaying(false)}
+                        />
                       </div>
                     ) : null}
 
@@ -533,16 +561,45 @@ export default function DeepDiveOverlay({
                     ) : null}
                   </div>
 
+                  {/* ✅ HERO MEDIA (chiusure corrette) */}
                   <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden min-w-0">
                     {heroType === "youtube" && heroYouTube ? (
-                      <iframe
-                        className="w-full aspect-video"
-                        src={heroYouTube}
-                        title="Hero video"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        referrerPolicy="strict-origin-when-cross-origin"
-                      />
+                      <div className="relative w-full aspect-video">
+                        <iframe
+                          className="w-full h-full"
+                          src={heroYouTube}
+                          title="Hero video"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          onLoad={() => {
+                            if (ytTimerRef.current) window.clearTimeout(ytTimerRef.current);
+                            ytTimerRef.current = null;
+                            setYtBlocked(false);
+                          }}
+                        />
+
+                        {ytBlocked ? (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/75 p-4">
+                            <div className="max-w-md text-center">
+                              <div className="text-white text-sm md:text-base">
+                                Video bloccato: non hai accettato i cookie per contenuti esterni (YouTube).
+                              </div>
+
+                              <div className="mt-4 flex items-center justify-center gap-3">
+                            
+                                <button
+                                  type="button"
+                                  onClick={() => window.location.reload()}
+                                  className="inline-flex items-center rounded-full border border-white/20 bg-white/5 px-5 py-3 text-xs tracking-[0.18em] uppercase text-white/90 hover:bg-white/10"
+                                >
+                                  Riprova
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                     ) : heroType === "mp4" && heroMp4 ? (
                       <video className="w-full aspect-video object-cover" src={heroMp4} autoPlay muted loop playsInline />
                     ) : heroImg ? (
@@ -611,7 +668,6 @@ export default function DeepDiveOverlay({
 
                   {invite ? <SectionCard label="Invito">{invite}</SectionCard> : null}
 
-                  {/* ✅ BACK in fondo (leggero) */}
                   <div className="pt-2">
                     <button
                       type="button"
@@ -628,113 +684,99 @@ export default function DeepDiveOverlay({
             </div>
           </div>
 
-     {/* ✅ Lightbox */}
-{lightboxOpen && gallery?.length ? (
-  <div className="fixed inset-0 z-[1000]">
-    <div
-      className="absolute inset-0 bg-black/90"
-      onClick={closeLightbox}
-      aria-hidden="true"
-    />
+          {/* ✅ Lightbox */}
+          {lightboxOpen && gallery?.length ? (
+            <div className="fixed inset-0 z-[1000]">
+              <div className="absolute inset-0 bg-black/90" onClick={closeLightbox} aria-hidden="true" />
 
-    <div className="absolute inset-0 flex items-center justify-center p-4">
-      <div
-        className="relative w-full max-w-5xl"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Gallery lightbox"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-          <img
-            src={gallery[lightboxIndex]}
-            alt={`Gallery ${lightboxIndex + 1}`}
-            className="w-full max-h-[78vh] object-contain bg-black/40"
-            loading="eager"
-          />
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div
+                  className="relative w-full max-w-5xl"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Gallery lightbox"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="relative rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+                    <img
+                      src={gallery[lightboxIndex]}
+                      alt={`Gallery ${lightboxIndex + 1}`}
+                      className="w-full max-h-[78vh] object-contain bg-black/40"
+                      loading="eager"
+                    />
 
-{/* ✅ CONTROLLI SUPER VISIBILI (rosso pieno + icone bianche + barra scura) */}
-<div
-  className="absolute inset-x-0 bottom-0"
-  style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 14px)" }}
->
-  {/* barra scura dietro per staccare sempre dall’immagine */}
-  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+                    {/* ✅ CONTROLLI SUPER VISIBILI (rosso pieno + icone bianche + barra scura) */}
+                    <div
+                      className="absolute inset-x-0 bottom-0"
+                      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 14px)" }}
+                    >
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
 
-  <div className="relative px-6 pb-2">
-    <div className="flex items-center justify-between">
-      {/* PREV */}
-      <button
-        type="button"
-        onClick={prevImg}
-        disabled={gallery.length <= 1}
-        className={[
-          "w-16 h-16 rounded-full grid place-items-center",
-          "text-[32px] leading-none select-none",
-          "bg-[var(--red-acc)] text-white",
-          "border-2 border-white/85",
-          "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_28px_rgba(147,11,12,.55)]",
-          "hover:brightness-110 active:scale-[0.98] transition",
-          gallery.length <= 1 ? "opacity-35 cursor-not-allowed hover:brightness-100" : "",
-        ].join(" ")}
-        aria-label="Immagine precedente"
-        title="Prev"
-      >
-        ‹
-      </button>
+                      <div className="relative px-6 pb-2">
+                        <div className="flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={prevImg}
+                            disabled={gallery.length <= 1}
+                            className={[
+                              "w-16 h-16 rounded-full grid place-items-center",
+                              "text-[32px] leading-none select-none",
+                              "bg-[var(--red-acc)] text-white",
+                              "border-2 border-white/85",
+                              "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_28px_rgba(147,11,12,.55)]",
+                              "hover:brightness-110 active:scale-[0.98] transition",
+                              gallery.length <= 1 ? "opacity-35 cursor-not-allowed hover:brightness-100" : "",
+                            ].join(" ")}
+                            aria-label="Immagine precedente"
+                            title="Prev"
+                          >
+                            ‹
+                          </button>
 
-      {/* CLOSE */}
-      <button
-        type="button"
-        onClick={closeLightbox}
-        className={[
-          "w-16 h-16 rounded-full grid place-items-center",
-          "text-[26px] leading-none select-none",
-          "bg-white text-black",
-          "border-2 border-[var(--red-acc)]",
-          "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_30px_rgba(147,11,12,.55)]",
-          "hover:bg-white/90 active:scale-[0.98] transition",
-        ].join(" ")}
-        aria-label="Chiudi"
-        title="Close"
-      >
-        ✕
-      </button>
+                          <button
+                            type="button"
+                            onClick={closeLightbox}
+                            className={[
+                              "w-16 h-16 rounded-full grid place-items-center",
+                              "text-[26px] leading-none select-none",
+                              "bg-white text-black",
+                              "border-2 border-[var(--red-acc)]",
+                              "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_30px_rgba(147,11,12,.55)]",
+                              "hover:bg-white/90 active:scale-[0.98] transition",
+                            ].join(" ")}
+                            aria-label="Chiudi"
+                            title="Close"
+                          >
+                            ✕
+                          </button>
 
-      {/* NEXT */}
-      <button
-        type="button"
-        onClick={nextImg}
-        disabled={gallery.length <= 1}
-        className={[
-          "w-16 h-16 rounded-full grid place-items-center",
-          "text-[32px] leading-none select-none",
-          "bg-[var(--red-acc)] text-white",
-          "border-2 border-white/85",
-          "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_28px_rgba(147,11,12,.55)]",
-          "hover:brightness-110 active:scale-[0.98] transition",
-          gallery.length <= 1 ? "opacity-35 cursor-not-allowed hover:brightness-100" : "",
-        ].join(" ")}
-        aria-label="Immagine successiva"
-        title="Next"
-      >
-        ›
-      </button>
-    </div>
-  </div>
-</div>
-
-
-          {/* fine controlli */}
-
-        </div>
-      </div>
-    </div>
-  </div>
-) : null}     
-
-
-
+                          <button
+                            type="button"
+                            onClick={nextImg}
+                            disabled={gallery.length <= 1}
+                            className={[
+                              "w-16 h-16 rounded-full grid place-items-center",
+                              "text-[32px] leading-none select-none",
+                              "bg-[var(--red-acc)] text-white",
+                              "border-2 border-white/85",
+                              "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_28px_rgba(147,11,12,.55)]",
+                              "hover:brightness-110 active:scale-[0.98] transition",
+                              gallery.length <= 1 ? "opacity-35 cursor-not-allowed hover:brightness-100" : "",
+                            ].join(" ")}
+                            aria-label="Immagine successiva"
+                            title="Next"
+                          >
+                            ›
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    {/* fine controlli */}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

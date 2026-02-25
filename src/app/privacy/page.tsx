@@ -5,11 +5,16 @@ export const metadata = {
 
 import LegalTopbar from "@/components/legal/LegalTopbar";
 
-export default function PrivacyPage() {
+export default function PrivacyPage({
+  searchParams,
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const embed = String(searchParams?.embed || "") === "1";
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-black text-white">
-
-      <LegalTopbar homeHref="/moment2" label="Privacy Policy" />
+      {!embed ? <LegalTopbar homeHref="/moment2" label="Privacy Policy" /> : null}
 
       {/* Velvet background */}
       <div className="absolute inset-0 bg-gradient-to-br from-black via-[#0d0018] to-black" />
@@ -17,23 +22,18 @@ export default function PrivacyPage() {
       <div className="absolute bottom-0 right-0 w-[640px] h-[640px] bg-fuchsia-800/15 blur-[210px] rounded-full" />
 
       <article className="relative z-10 px-6 py-24 max-w-4xl mx-auto">
-
-        <h1 className="text-3xl md:text-5xl font-bold mb-6">
-          Privacy Policy
-        </h1>
+        <h1 className="text-3xl md:text-5xl font-bold mb-6">Privacy Policy</h1>
 
         <p className="text-gray-400 mb-10">
           Informativa sul trattamento dei dati personali ai sensi dell’art. 13 del Regolamento (UE) 2016/679 (“GDPR”).
         </p>
 
         <div className="prose prose-invert max-w-none prose-p:text-gray-300 prose-li:text-gray-300 prose-a:text-fuchsia-300">
-
           <h2>1) Titolare del trattamento</h2>
           <p>
             Il Titolare del trattamento è <strong>LED VELVET ETS</strong> (CF 90072950505).
             <br />
-            Email di contatto:{" "}
-            <a href="mailto:privacy@ledvelvet.it">privacy@ledvelvet.it</a>.
+            Email di contatto: <a href="mailto:privacy@ledvelvet.it">privacy@ledvelvet.it</a>.
           </p>
 
           <h2>2) Tipologia di dati trattati</h2>
@@ -43,8 +43,8 @@ export default function PrivacyPage() {
             <li>Dati tecnici di navigazione necessari al funzionamento e sicurezza del sito (log, IP, timestamp).</li>
           </ul>
           <p>
-            Il sito non è destinato alla raccolta di categorie particolari di dati (art. 9 GDPR). 
-            Si invita a non inserire informazioni sanitarie o sensibili nei moduli.
+            Il sito non è destinato alla raccolta di categorie particolari di dati (art. 9 GDPR). Si invita a non inserire
+            informazioni sanitarie o sensibili nei moduli.
           </p>
 
           <h2>3) Finalità del trattamento</h2>
@@ -65,24 +65,22 @@ export default function PrivacyPage() {
 
           <h2>5) Biglietteria eventi (Xceed)</h2>
           <p>
-            Per la gestione della biglietteria degli eventi, LED VELVET ETS può avvalersi della piattaforma <strong>Xceed</strong>, 
-            che opera quale titolare autonomo per le attività di vendita e gestione pagamenti.
+            Per la gestione della biglietteria degli eventi, LED VELVET ETS può avvalersi della piattaforma{" "}
+            <strong>Xceed</strong>, che opera quale titolare autonomo per le attività di vendita e gestione pagamenti.
           </p>
           <p>
-            L’Associazione può ricevere dati minimi (es. nominativo o codice biglietto) esclusivamente per 
-            finalità organizzative e controllo accessi agli eventi riservati ai soci.
+            L’Associazione può ricevere dati minimi (es. nominativo o codice biglietto) esclusivamente per finalità
+            organizzative e controllo accessi agli eventi riservati ai soci.
           </p>
 
           <h2>6) Tesseramento e tessere digitali</h2>
           <p>
-            La gestione del tesseramento può avvenire tramite piattaforme dedicate (es. Wallyfor). 
-            I dati sono trattati esclusivamente per finalità connesse al rapporto associativo.
+            La gestione del tesseramento può avvenire tramite piattaforme dedicate (es. Wallyfor). I dati sono trattati
+            esclusivamente per finalità connesse al rapporto associativo.
           </p>
 
           <h2>7) Fornitori tecnici e destinatari</h2>
-          <p>
-            Il sito utilizza fornitori esterni per servizi tecnici e digitali:
-          </p>
+          <p>Il sito utilizza fornitori esterni per servizi tecnici e digitali:</p>
           <ul>
             <li>Supabase – Database e backend.</li>
             <li>Vercel – Hosting applicativo.</li>
@@ -90,13 +88,14 @@ export default function PrivacyPage() {
             <li>Aruba – Gestione dominio, DNS e posta elettronica.</li>
           </ul>
           <p>
-            Tali soggetti operano come responsabili del trattamento ai sensi dell’art. 28 GDPR o come autonomi titolari per specifici servizi.
+            Tali soggetti operano come responsabili del trattamento ai sensi dell’art. 28 GDPR o come autonomi titolari
+            per specifici servizi.
           </p>
 
           <h2>8) Trasferimenti extra UE</h2>
           <p>
-            Qualora i fornitori trattino dati al di fuori dello Spazio Economico Europeo, 
-            il trattamento avviene nel rispetto delle garanzie previste dal GDPR (es. clausole contrattuali standard).
+            Qualora i fornitori trattino dati al di fuori dello Spazio Economico Europeo, il trattamento avviene nel
+            rispetto delle garanzie previste dal GDPR (es. clausole contrattuali standard).
           </p>
 
           <h2>9) Periodo di conservazione</h2>
@@ -109,39 +108,32 @@ export default function PrivacyPage() {
 
           <h2>10) Diritti dell’interessato</h2>
           <p>
-            L’interessato può esercitare i diritti previsti dagli artt. 15–22 GDPR 
-            (accesso, rettifica, cancellazione, limitazione, opposizione, portabilità ove applicabile) 
-            scrivendo a{" "}
+            L’interessato può esercitare i diritti previsti dagli artt. 15–22 GDPR (accesso, rettifica, cancellazione,
+            limitazione, opposizione, portabilità ove applicabile) scrivendo a{" "}
             <a href="mailto:privacy@ledvelvet.it">privacy@ledvelvet.it</a>.
           </p>
 
-<div className="mt-12 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
-  <h3 className="text-lg font-semibold mb-3 text-white">
-    Informativa Area Tesseramento
-  </h3>
+          <div className="mt-12 p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md">
+            <h3 className="text-lg font-semibold mb-3 text-white">Informativa Area Tesseramento</h3>
 
-  <p className="text-gray-400 text-sm mb-4">
-    Informativa completa relativa al sistema di tesseramento digitale
-    (piattaforma Wally) è disponibile nel documento dedicato.
-  </p>
+            <p className="text-gray-400 text-sm mb-4">
+              Informativa completa relativa al sistema di tesseramento digitale (piattaforma Wally) è disponibile nel
+              documento dedicato.
+            </p>
 
-  <a
-    href="/docs/INFORMATIVA_PRIVACY_TESSERAMENTO.pdf"
-    target="_blank"
-    rel="noreferrer"
-    className="inline-block px-5 py-2 rounded-full border border-white/20 bg-white/10 text-sm hover:bg-white/20 transition"
-  >
-    Scarica informativa completa (PDF)
-  </a>
-</div>
-          <p>
-            È possibile proporre reclamo al Garante per la protezione dei dati personali.
-          </p>
+            <a
+              href="/docs/INFORMATIVA_PRIVACY_TESSERAMENTO.pdf"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block px-5 py-2 rounded-full border border-white/20 bg-white/10 text-sm hover:bg-white/20 transition"
+            >
+              Scarica informativa completa (PDF)
+            </a>
+          </div>
 
-          <p className="text-gray-500">
-            Ultimo aggiornamento: Marzo/2026
-          </p>
+          <p>È possibile proporre reclamo al Garante per la protezione dei dati personali.</p>
 
+          <p className="text-gray-500">Ultimo aggiornamento: Marzo/2026</p>
         </div>
       </article>
     </main>
