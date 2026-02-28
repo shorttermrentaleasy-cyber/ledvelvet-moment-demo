@@ -194,6 +194,11 @@ function youTubeEmbedUrl(urlRaw: string, autoplayMuted = true): string | null {
     playsinline: "1",
   });
 
+// ✅ evita la schermata finale consigliati
+    loop: "1",
+    playlist: id,
+  });
+
   if (autoplayMuted) {
     params.set("autoplay", "1");
     params.set("mute", "1");
