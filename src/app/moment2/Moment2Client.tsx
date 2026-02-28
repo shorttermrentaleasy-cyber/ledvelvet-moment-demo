@@ -192,9 +192,8 @@ function youTubeEmbedUrl(urlRaw: string, autoplayMuted = true): string | null {
     rel: "0",
     modestbranding: "1",
     playsinline: "1",
-  });
 
-// ✅ evita la schermata finale consigliati
+    // ✅ evita la schermata finale consigliati
     loop: "1",
     playlist: id,
   });
@@ -206,7 +205,6 @@ function youTubeEmbedUrl(urlRaw: string, autoplayMuted = true): string | null {
 
   return `${base}?${params.toString()}`;
 }
-
 // ---- Social icons (NO lucide-react) ----
 function SocialIcon({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
   return (
