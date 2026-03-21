@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AdminTopbarClient from "../AdminTopbarClient";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type HeroRec = {
   id: string;
@@ -166,52 +167,76 @@ export default function AdminHeroPage() {
   }
 
   async function onUploadMp4(file: File) {
-    try {
-      setUploading(true);
-      setError(null);
-      setOkMsg(null);
+  try {
+    setUploading(true);
+    setError(null);
+    setOkMsg(null);
 
-      if (!file.type.includes("video")) throw new Error("File non valido: carica un MP4.");
-      if (file.size > 250 * 1024 * 1024) throw new Error("File troppo grande (max 250MB).");
+    if (!file.type.includes("video")) throw new Error("File non valido: carica un MP4.");
+    if (file.size > 250 * 1024 * 1024) throw new Error("File troppo grande (max 250MB).");
 
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("heroId", hero.id);
+    const bucket = "hero";
+    const objectPath = "hero.mp4";
 
-      const r = await fetch("/api/admin/hero-video", { method: "POST", body: fd });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j?.ok === false) throw new Error(j?.error || "Upload fallito");
+    const { error: uploadError } = await supabaseBrowser.storage.from(bucket).upload(objectPath, file, {
+      contentType: file.type || "video/mp4",
+      upsert: true,
+      cacheControl: "0",
+    });
 
-      const baseUrl = asString(j.videoUrl);
-      if (!baseUrl) throw new Error("Upload ok ma manca videoUrl");
-
-      // ✅ forziamo url diverso ad ogni upload
-      const videoUrl = withCacheBuster(baseUrl, Date.now());
-
-      setHero((h) => ({ ...h, videoUrl }));
-      setOkMsg("Video caricato ✅");
-      try {
-        localStorage.setItem("lv_hero_updated_at", String(Date.now()));
-      } catch {}
-      setTimeout(() => setOkMsg(null), 1500);
-
-      // ✅ prova a resettare e ripartire subito (best effort)
-      setTimeout(() => {
-        const v = videoRef.current;
-        if (!v) return;
-        try {
-          v.muted = true;
-          setMuted(true);
-          v.load();
-          v.play().catch(() => {});
-        } catch {}
-      }, 50);
-    } catch (e: any) {
-      setError(e?.message || "Errore upload");
-    } finally {
-      setUploading(false);
+    if (uploadError) {
+      throw new Error(`Upload Supabase fallito: ${uploadError.message}`);
     }
+
+    const pub = supabaseBrowser.storage.from(bucket).getPublicUrl(objectPath);
+    const baseUrl = pub?.data?.publicUrl || "";
+    if (!baseUrl) throw new Error("Upload ok ma publicUrl mancante");
+
+    const videoUrl = withCacheBuster(baseUrl, Date.now());
+
+    const r = await fetch("/api/admin/hero", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: hero.id, videoUrl }),
+    });
+
+    const raw = await r.text();
+    let j: any = {};
+    try {
+      j = raw ? JSON.parse(raw) : {};
+    } catch {
+      j = { raw };
+    }
+
+    if (!r.ok || j?.ok === false) {
+      throw new Error(j?.error || j?.message || j?.raw || `Sync HERO fallito (${r.status})`);
+    }
+
+    setHero((h) => ({ ...h, videoUrl }));
+    setOkMsg("Video caricato ✅");
+
+    try {
+      localStorage.setItem("lv_hero_updated_at", String(Date.now()));
+    } catch {}
+
+    setTimeout(() => setOkMsg(null), 1500);
+
+    setTimeout(() => {
+      const v = videoRef.current;
+      if (!v) return;
+      try {
+        v.muted = true;
+        setMuted(true);
+        v.load();
+        v.play().catch(() => {});
+      } catch {}
+    }, 50);
+  } catch (e: any) {
+    setError(e?.message || "Errore upload");
+  } finally {
+    setUploading(false);
   }
+}
 
   function toggleMute() {
     const v = videoRef.current;
@@ -332,6 +357,7 @@ export default function AdminHeroPage() {
                         ref={videoRef}
                         muted
                         playsInline
+			preload="metadata"
                         controls={false}
                         style={{ width: "100%", borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)" }}
                       >
