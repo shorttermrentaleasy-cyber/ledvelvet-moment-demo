@@ -57,8 +57,10 @@ export async function POST(req: NextRequest) {
     const path = "hero.mp4";
 
     const { data, error } = await supabase.storage
-      .from(bucket)
-      .createSignedUploadUrl(path);
+  .from(bucket)
+  .createSignedUploadUrl(path, {
+    upsert: true,
+  });
 
     if (error) {
       return NextResponse.json(
