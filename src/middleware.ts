@@ -25,8 +25,11 @@ export function middleware(req: NextRequest) {
   // Non bloccare file statici
   if (isPublicPath(pathname)) return NextResponse.next();
 
-  // (Opzionale) NON bloccare le API: se vuoi bloccare anche quelle, commenta questa riga
-  if (pathname.startsWith("/api")) return NextResponse.next();
+  // bloccate con token temporaneo le API quelle private: 
+
+  if (pathname.startsWith("/api") && !pathname.startsWith("/api/admin")) {
+  return NextResponse.next();
+  }
 
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Basic ")) {

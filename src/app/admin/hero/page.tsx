@@ -166,7 +166,7 @@ export default function AdminHeroPage() {
     }
   }
 
-  async function onUploadMp4(file: File) {
+ async function onUploadMp4(file: File) {
   try {
     setUploading(true);
     setError(null);
@@ -175,20 +175,47 @@ export default function AdminHeroPage() {
     if (!file.type.includes("video")) throw new Error("File non valido: carica un MP4.");
     if (file.size > 250 * 1024 * 1024) throw new Error("File troppo grande (max 250MB).");
 
-    const bucket = "hero";
-    const objectPath = "hero.mp4";
-
-    const { error: uploadError } = await supabaseBrowser.storage.from(bucket).upload(objectPath, file, {
-      contentType: file.type || "video/mp4",
-      upsert: true,
-      cacheControl: "0",
+    const signedRes = await fetch("/api/admin/hero-upload-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heroId: hero.id }),
     });
+
+    const signedRaw = await signedRes.text();
+    let signedJson: any = {};
+    try {
+      signedJson = signedRaw ? JSON.parse(signedRaw) : {};
+    } catch {
+      signedJson = { raw: signedRaw };
+    }
+
+    if (!signedRes.ok || signedJson?.ok === false) {
+      throw new Error(
+        signedJson?.error ||
+          signedJson?.message ||
+          signedJson?.raw ||
+          `Errore signed upload (${signedRes.status})`
+      );
+    }
+
+    const bucket = signedJson.bucket || "hero";
+    const path = signedJson.path || "hero.mp4";
+    const token = signedJson.token;
+
+    if (!token) throw new Error("Token upload mancante");
+
+    const { error: uploadError } = await supabaseBrowser.storage
+      .from(bucket)
+      .uploadToSignedUrl(path, token, file, {
+        contentType: file.type || "video/mp4",
+        upsert: true,
+      });
 
     if (uploadError) {
       throw new Error(`Upload Supabase fallito: ${uploadError.message}`);
     }
 
-    const pub = supabaseBrowser.storage.from(bucket).getPublicUrl(objectPath);
+    const pub = supabaseBrowser.storage.from(bucket).getPublicUrl(path);
     const baseUrl = pub?.data?.publicUrl || "";
     if (!baseUrl) throw new Error("Upload ok ma publicUrl mancante");
 
