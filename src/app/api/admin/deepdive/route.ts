@@ -10,6 +10,7 @@ type AirtableRecord<T> = { id: string; fields: T; createdTime?: string };
 type DeepDiveFields = {
   slug?: string;
   is_published?: boolean;
+  lineup_video_url?: string;
 
   event_ref?: string[];
   venue_ref?: string[];
@@ -117,6 +118,7 @@ export async function GET(req: NextRequest) {
           event_date: s(f.event_date),
           title_override: s(f.title_override),
           subtitle: s(f.subtitle),
+          lineup_video_url: s(f.lineup_video_url),
           sort_order: typeof f.sort_order === "number" ? f.sort_order : null,
         };
       })

@@ -31,6 +31,7 @@ type DeepDive = {
   gallery_urls?: any;
 
   lineup_text?: any;
+  lineup_video_url?: any;
   invite_text?: any;
 
   music_mood_url?: any;
@@ -204,13 +205,13 @@ export default function DeepDiveOverlay({
 
   const [returnTo, setReturnTo] = useState<string>("");
 
-  // ✅ gallery lightbox
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  // ✅ YouTube cookie-block fallback (DeepDive)
   const [ytBlocked, setYtBlocked] = useState(false);
   const ytTimerRef = useRef<number | null>(null);
+
+  const galleryScrollRef = useRef<HTMLDivElement | null>(null);
 
   const stopMood = useCallback(() => {
     const el = moodAudioRef.current;
@@ -243,7 +244,6 @@ export default function DeepDiveOverlay({
 
   const open = !!slug;
 
-  // lock scroll
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -253,7 +253,6 @@ export default function DeepDiveOverlay({
     };
   }, [open]);
 
-  // esc close (overlay)
   useEffect(() => {
     if (!open) return;
     const onKey = (ev: KeyboardEvent) => {
@@ -269,7 +268,6 @@ export default function DeepDiveOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, handleClose, lightboxOpen]);
 
-  // build returnTo with experience param
   useEffect(() => {
     if (!open || !slug) return;
     try {
@@ -294,7 +292,6 @@ export default function DeepDiveOverlay({
     return String(v).trim();
   }, []);
 
-  // load deepdive
   useEffect(() => {
     const slugStr = slugToString(slug);
     if (!open || !slugStr) return;
@@ -325,13 +322,11 @@ export default function DeepDiveOverlay({
     };
   }, [open, slug, slugToString]);
 
-  // stop mood when slug changes / close
   useEffect(() => {
     if (!open) return;
     stopMood();
   }, [slug, open, stopMood]);
 
-  // ✅ close lightbox on slug change / close
   useEffect(() => {
     if (!open) return;
     setLightboxOpen(false);
@@ -365,6 +360,7 @@ export default function DeepDiveOverlay({
   const concept = asString(data?.concept);
   const placeStory = asString(data?.place_story);
   const lineup = asString(data?.lineup_text);
+  const lineupVideo = asUrl(data?.lineup_video_url);
   const invite = asString(data?.invite_text);
 
   const openLightbox = useCallback((idx: number) => {
@@ -386,7 +382,16 @@ export default function DeepDiveOverlay({
     setLightboxIndex((i) => (i - 1 + gallery.length) % gallery.length);
   }, [gallery]);
 
-  // ✅ arrow navigation in lightbox
+  const scrollGalleryBy = useCallback((direction: "left" | "right") => {
+    const el = galleryScrollRef.current;
+    if (!el) return;
+    const amount = Math.max(280, Math.floor(el.clientWidth * 0.75));
+    el.scrollBy({
+      left: direction === "left" ? -amount : amount,
+      behavior: "smooth",
+    });
+  }, []);
+
   useEffect(() => {
     if (!open || !lightboxOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -397,7 +402,6 @@ export default function DeepDiveOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, lightboxOpen, nextImg, prevImg]);
 
-  // ✅ detect YouTube blocked (cookie) via timeout + onLoad
   useEffect(() => {
     setYtBlocked(false);
     if (ytTimerRef.current) window.clearTimeout(ytTimerRef.current);
@@ -441,7 +445,7 @@ export default function DeepDiveOverlay({
                     rel="noreferrer"
                     className="px-4 py-2 bg-[var(--red-acc)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90"
                   >
-                    Book
+                    Acquista
                   </a>
                 ) : null}
 
@@ -489,7 +493,7 @@ export default function DeepDiveOverlay({
                           rel="noreferrer"
                           className="inline-flex items-center rounded-full bg-[var(--red-acc)] px-4 py-2 text-xs tracking-[0.18em] uppercase text-black hover:opacity-90"
                         >
-                          Book
+                          Acquista
                         </a>
                       ) : null}
                     </div>
@@ -561,7 +565,6 @@ export default function DeepDiveOverlay({
                     ) : null}
                   </div>
 
-                  {/* ✅ HERO MEDIA (chiusure corrette) */}
                   <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden min-w-0">
                     {heroType === "youtube" && heroYouTube ? (
                       <div className="relative w-full aspect-video">
@@ -587,7 +590,6 @@ export default function DeepDiveOverlay({
                               </div>
 
                               <div className="mt-4 flex items-center justify-center gap-3">
-                            
                                 <button
                                   type="button"
                                   onClick={() => window.location.reload()}
@@ -615,18 +617,66 @@ export default function DeepDiveOverlay({
                 <section className="mt-10 grid gap-8 overflow-x-hidden">
                   {concept ? <SectionCard label="Concept">{concept}</SectionCard> : null}
                   {placeStory ? <SectionCard label="Luogo">{placeStory}</SectionCard> : null}
+
+                  {lineupVideo ? (
+                    <article className="rounded-2xl border border-white/10 bg-white/5 p-4 overflow-hidden">
+                      <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Promo Reel</div>
+
+                      <div className="mt-4 flex justify-center">
+                        <video
+                          src={lineupVideo}
+                          className="w-full max-w-[420px] aspect-[9/16] object-cover rounded-xl bg-black/40"
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          controls
+                          preload="metadata"
+                        />
+                      </div>
+                    </article>
+                  ) : null}
+
                   {lineup ? <SectionCard label="Line-up">{lineup}</SectionCard> : null}
 
                   {gallery?.length ? (
                     <article className="rounded-2xl border border-white/10 bg-white/5 p-6 overflow-x-hidden">
                       <div className="flex items-center justify-between gap-3 min-w-0">
                         <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Gallery</div>
-                        <div className="text-[11px] tracking-[0.18em] uppercase text-white/40 flex-none">
-                          {gallery.length} shots
+
+                        <div className="flex items-center gap-2 flex-none">
+                          <div className="text-[11px] tracking-[0.18em] uppercase text-white/40">
+                            {gallery.length} shots
+                          </div>
+
+                          {gallery.length > 1 ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => scrollGalleryBy("left")}
+                                className="w-10 h-10 rounded-full grid place-items-center border border-white/20 bg-white/5 text-white hover:bg-white/10 hover:border-white/35"
+                                aria-label="Scorri gallery a sinistra"
+                                title="Scorri a sinistra"
+                              >
+                                ‹
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => scrollGalleryBy("right")}
+                                className="w-10 h-10 rounded-full grid place-items-center border border-white/20 bg-white/5 text-white hover:bg-white/10 hover:border-white/35"
+                                aria-label="Scorri gallery a destra"
+                                title="Scorri a destra"
+                              >
+                                ›
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       </div>
 
                       <div
+                        ref={galleryScrollRef}
                         className={[
                           "mt-4 flex gap-3 overflow-x-auto overflow-y-hidden pb-2",
                           "snap-x snap-mandatory",
@@ -684,7 +734,6 @@ export default function DeepDiveOverlay({
             </div>
           </div>
 
-          {/* ✅ Lightbox */}
           {lightboxOpen && gallery?.length ? (
             <div className="fixed inset-0 z-[1000]">
               <div className="absolute inset-0 bg-black/90" onClick={closeLightbox} aria-hidden="true" />
@@ -705,27 +754,26 @@ export default function DeepDiveOverlay({
                       loading="eager"
                     />
 
-                    {/* ✅ CONTROLLI SUPER VISIBILI (rosso pieno + icone bianche + barra scura) */}
                     <div
                       className="absolute inset-x-0 bottom-0"
-                      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 14px)" }}
+                      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
                     >
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
-                      <div className="relative px-6 pb-2">
+                      <div className="relative px-5 pb-1">
                         <div className="flex items-center justify-between">
                           <button
                             type="button"
                             onClick={prevImg}
                             disabled={gallery.length <= 1}
                             className={[
-                              "w-16 h-16 rounded-full grid place-items-center",
-                              "text-[32px] leading-none select-none",
-                              "bg-[var(--red-acc)] text-white",
-                              "border-2 border-white/85",
-                              "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_28px_rgba(147,11,12,.55)]",
-                              "hover:brightness-110 active:scale-[0.98] transition",
-                              gallery.length <= 1 ? "opacity-35 cursor-not-allowed hover:brightness-100" : "",
+                              "w-11 h-11 rounded-full grid place-items-center",
+                              "text-[24px] leading-none select-none",
+                              "bg-black/45 text-white/90",
+                              "border border-white/20 backdrop-blur-sm",
+                              "shadow-[0_4px_18px_rgba(0,0,0,.35)]",
+                              "hover:bg-black/60 hover:border-white/30 active:scale-[0.98] transition",
+                              gallery.length <= 1 ? "opacity-30 cursor-not-allowed hover:bg-black/45 hover:border-white/20" : "",
                             ].join(" ")}
                             aria-label="Immagine precedente"
                             title="Prev"
@@ -737,12 +785,12 @@ export default function DeepDiveOverlay({
                             type="button"
                             onClick={closeLightbox}
                             className={[
-                              "w-16 h-16 rounded-full grid place-items-center",
-                              "text-[26px] leading-none select-none",
-                              "bg-white text-black",
-                              "border-2 border-[var(--red-acc)]",
-                              "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_30px_rgba(147,11,12,.55)]",
-                              "hover:bg-white/90 active:scale-[0.98] transition",
+                              "w-11 h-11 rounded-full grid place-items-center",
+                              "text-[18px] leading-none select-none",
+                              "bg-white/90 text-black",
+                              "border border-white/40 backdrop-blur-sm",
+                              "shadow-[0_4px_18px_rgba(0,0,0,.28)]",
+                              "hover:bg-white active:scale-[0.98] transition",
                             ].join(" ")}
                             aria-label="Chiudi"
                             title="Close"
@@ -755,13 +803,13 @@ export default function DeepDiveOverlay({
                             onClick={nextImg}
                             disabled={gallery.length <= 1}
                             className={[
-                              "w-16 h-16 rounded-full grid place-items-center",
-                              "text-[32px] leading-none select-none",
-                              "bg-[var(--red-acc)] text-white",
-                              "border-2 border-white/85",
-                              "shadow-[0_10px_28px_rgba(0,0,0,.65),0_0_28px_rgba(147,11,12,.55)]",
-                              "hover:brightness-110 active:scale-[0.98] transition",
-                              gallery.length <= 1 ? "opacity-35 cursor-not-allowed hover:brightness-100" : "",
+                              "w-11 h-11 rounded-full grid place-items-center",
+                              "text-[24px] leading-none select-none",
+                              "bg-black/45 text-white/90",
+                              "border border-white/20 backdrop-blur-sm",
+                              "shadow-[0_4px_18px_rgba(0,0,0,.35)]",
+                              "hover:bg-black/60 hover:border-white/30 active:scale-[0.98] transition",
+                              gallery.length <= 1 ? "opacity-30 cursor-not-allowed hover:bg-black/45 hover:border-white/20" : "",
                             ].join(" ")}
                             aria-label="Immagine successiva"
                             title="Next"
@@ -771,7 +819,6 @@ export default function DeepDiveOverlay({
                         </div>
                       </div>
                     </div>
-                    {/* fine controlli */}
                   </div>
                 </div>
               </div>

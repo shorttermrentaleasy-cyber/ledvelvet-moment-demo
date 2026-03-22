@@ -32,6 +32,7 @@ type DeepDiveFields = {
   place_story?: string;
 
   lineup_text?: string;
+  lineup_video_url?: string;
   invite_text?: string;
 
   cta_primary_label?: string;
@@ -124,6 +125,7 @@ export async function GET(req: NextRequest) {
           concept: s(f.concept),
           place_story: s(f.place_story),
           lineup_text: s(f.lineup_text),
+          lineup_video_url: s(f.lineup_video_url),
           invite_text: s(f.invite_text),
 
           // atmosphere

@@ -39,6 +39,7 @@ type DeepDiveFields = {
   place_story?: string;
 
   lineup_text?: string;
+  lineup_video_url?: string;
   invite_text?: string;
 
   // keep read-only / or later
@@ -210,6 +211,7 @@ export async function PATCH(req: NextRequest, ctx: { params: { slug: string } })
     if ("concept" in body) fields.concept = s(body.concept);
     if ("place_story" in body) fields.place_story = s(body.place_story);
     if ("lineup_text" in body) fields.lineup_text = s(body.lineup_text);
+    if ("lineup_video_url" in body) fields.lineup_video_url = s(body.lineup_video_url);
     if ("invite_text" in body) fields.invite_text = s(body.invite_text);
 
     // ✅ single select: accept string or null to clear
@@ -274,6 +276,32 @@ export async function PATCH(req: NextRequest, ctx: { params: { slug: string } })
     }
 
     return jsonNoStore({ ok: false, error: "PATCH failed after retries", ignored_fields: ignored }, 500);
+  } catch (e: any) {
+    return jsonNoStore({ ok: false, error: e?.message || "Unexpected error" }, 500);
+  }
+}
+
+export async function DELETE(_req: NextRequest, ctx: { params: { slug: string } }) {
+  try {
+    const slug = s(ctx?.params?.slug);
+    if (!slug) return jsonNoStore({ ok: false, error: "Missing slug" }, 400);
+
+    const found = await findRecordBySlug(slug);
+    if (!found) return jsonNoStore({ ok: false, error: "Not found" }, 404);
+
+    await airtableFetch<{ id: string; deleted: boolean }>(
+      `${found.baseId}/${encodeURIComponent(found.deepTable)}/${encodeURIComponent(found.rec.id)}`,
+      { method: "DELETE" }
+    );
+
+    return jsonNoStore(
+      {
+        ok: true,
+        deleted_slug: slug,
+        deleted_record_id: found.rec.id,
+      },
+      200
+    );
   } catch (e: any) {
     return jsonNoStore({ ok: false, error: e?.message || "Unexpected error" }, 500);
   }
