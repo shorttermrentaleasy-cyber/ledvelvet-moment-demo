@@ -961,7 +961,9 @@ export default function Moment2() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3 min-w-0 overflow-x-hidden">
           {/* LEFT */}
           <div className="flex items-center gap-3 min-w-0">
+
             <img src={brand.logo} alt="LedVelvet" className="w-10 h-10 rounded-full border border-white/10 shrink-0" />
+
             <div className="leading-tight min-w-0">
               <div className="text-sm font-semibold truncate">LedVelvet</div>
               <div className="text-xs text-white/60 tracking-[0.18em] uppercase truncate">ETHERAL CLUBBING</div>
@@ -1269,9 +1271,21 @@ export default function Moment2() {
                         {soldOut ? (
                           <span className="text-xs text-white/60">Sold out</span>
                         ) : e.ticketUrl ? (
-                          <a href={e.ticketUrl} target="_blank" rel="noreferrer" className="px-4 py-2 bg-[var(--red-accent)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90">
-                            Book
-                          </a>
+                          
+
+
+<a
+  href={e.ticketUrl}
+  target="_blank"
+  rel="noreferrer"
+  className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
+>
+  Acquista
+</a>
+
+
+
+
                         ) : (
                           <span className="text-xs text-white/60">Ticket soon</span>
                         )}
@@ -1432,7 +1446,7 @@ export default function Moment2() {
                                       Watch recap
                                     </a>
                                   ) : (
-                                    <span className="text-xs text-white/60">Recap in arrivo</span>
+                                    <span className="text-xs text-white/60"></span>
                                   )}
                                 </div>
                               </div>
