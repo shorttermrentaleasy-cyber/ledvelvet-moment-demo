@@ -960,15 +960,17 @@ export default function Moment2() {
 
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3 min-w-0 overflow-x-hidden">
           {/* LEFT */}
-          <div className="flex items-center gap-3 min-w-0">
+          
+           <a href="#home" className="flex items-center gap-3 min-w-0">
+  <img src={brand.logo} alt="LedVelvet" className="w-10 h-10 rounded-full border border-white/10 shrink-0" />
 
-            <img src={brand.logo} alt="LedVelvet" className="w-10 h-10 rounded-full border border-white/10 shrink-0" />
+  <div className="leading-tight min-w-0">
+    <div className="text-sm font-semibold truncate">LedVelvet</div>
+    <div className="text-xs text-white/60 tracking-[0.18em] uppercase truncate">ETHEREAL CLUBBING</div>
+  </div>
+</a>
 
-            <div className="leading-tight min-w-0">
-              <div className="text-sm font-semibold truncate">LedVelvet</div>
-              <div className="text-xs text-white/60 tracking-[0.18em] uppercase truncate">ETHERAL CLUBBING</div>
-            </div>
-          </div>
+
 
           {/* DESKTOP MENU */}
           <nav className="hidden lg:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
@@ -1185,7 +1187,9 @@ export default function Moment2() {
           <div className="pointer-events-none absolute inset-0 z-40 opacity-60" style={{ background: "radial-gradient(900px circle at 50% 55%, rgba(147,11,12,0.22), transparent 62%)" }} />
         </div>
 
-        <div className="absolute inset-0 z-50 flex items-center justify-center text-center px-6">
+        
+
+<div className="absolute inset-0 z-50 flex items-center justify-center text-center px-6">
           <div className="w-full max-w-none">
             <img src={brand.logo} alt="LedVelvet" className="mx-auto w-36 h-36 sm:w-40 sm:h-40 md:w-48 md:h-48 lg:w-56 lg:h-56 object-contain opacity-70 drop-shadow-[0_10px_30px_rgba(0,0,0,0.65)]" />
 
@@ -1241,7 +1245,8 @@ export default function Moment2() {
                     {yt ? (
                       <IubendaYouTube src={yt} title={`LedVelvet – ${e.name}`} purposes={purposes} />
                     ) : (
-                      <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-10 h-full w-full object-cover" loading="lazy" />
+                     <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-10 h-full w-full object-contain" loading="lazy" />
+
                     )}
 
                     <div className="pointer-events-none absolute inset-0 z-30 bg-gradient-to-t from-black/90 via-black/35 to-black/10" />
@@ -1412,7 +1417,7 @@ export default function Moment2() {
                               {yt ? (
                                 <IubendaYouTube src={yt} title={`LedVelvet – ${e.name}`} purposes={purposes} />
                               ) : (
-                                <img src={e.posterSrc} alt={e.name} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+                                <img src={e.posterSrc} alt={e.name} className="absolute inset-0 h-full w-full object-contain" loading="lazy" />
                               )}
 
                               <div className="pointer-events-none absolute inset-0 z-30 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
