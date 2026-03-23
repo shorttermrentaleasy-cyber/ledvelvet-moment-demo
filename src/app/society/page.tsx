@@ -181,22 +181,38 @@ export default function SocietyPage({ searchParams }: Props) {
             non acquistare un privilegio.
           </p>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <a
-              href="mailto:info@ledvelvet.it?subject=Richiesta%20Adesione%20Led%20Velvet%20Society"
-              className="inline-flex items-center rounded-full border border-white/20 bg-white text-black px-5 py-2 text-xs tracking-[0.22em] uppercase hover:opacity-90"
-            >
-              Invia richiesta via email
-            </a>
+<div className="mt-6 flex flex-wrap gap-3">
+  {/* CTA principale → WALLY */}
+  <Link
+    href="/become-member?from=/society"
+    className="inline-flex items-center rounded-full border border-white/20 bg-white text-black px-6 py-3 text-xs tracking-[0.22em] uppercase font-semibold hover:opacity-90 transition"
+  >
+    Entra in LV People
+  </Link>
 
-            <Link
-              href={from}
-              className="inline-flex items-center rounded-full border border-[var(--red-acc)]/35 bg-[var(--red-acc)]/10 px-5 py-2 text-xs tracking-[0.22em] uppercase text-white/85 hover:bg-[var(--red-acc)]/15 hover:border-[var(--red-acc)]/55"
-            >
-              Torna all’esperienza
-            </Link>
-          </div>
+  {/* fallback umano */}
+  <a
+    href="mailto:info@ledvelvet.it?subject=Richiesta%20Adesione%20Led%20Velvet%20Society"
+    className="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-6 py-3 text-xs tracking-[0.22em] uppercase text-white hover:bg-white/10 transition"
+  >
+    Contatta lo staff
+  </a>
 
+  {/* torna indietro */}
+  <Link
+    href={from}
+    className="inline-flex items-center rounded-full border border-[var(--red-acc)]/35 bg-[var(--red-acc)]/10 px-5 py-2 text-xs tracking-[0.22em] uppercase text-white/85 hover:bg-[var(--red-acc)]/15 hover:border-[var(--red-acc)]/55"
+  >
+    Torna all’esperienza
+  </Link>
+</div>
+<p className="mt-4 text-xs text-white/50 max-w-md leading-relaxed">
+  L’adesione avviene tramite piattaforma dedicata. Una volta completata,
+  entrerai ufficialmente nella community LV PEOPLE.
+</p>
+
+
+        
           <p className="mt-6 text-xs text-white/60 leading-relaxed">
             Nota: LV PEOPLE opera all’interno del quadro statutario
             dell’associazione e ne rispetta valori, regole e struttura annuale.

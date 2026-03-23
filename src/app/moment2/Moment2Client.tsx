@@ -291,7 +291,7 @@ export default function Moment2() {
 
   const router = useRouter();
   const sp = useSearchParams();
-
+  const [societyOpen, setSocietyOpen] = useState(false);
   const experienceSlug = sp.get("experience");
   const ticketUrlQ = sp.get("ticketUrl") || "";
   const cityQ = sp.get("city") || "";
@@ -850,9 +850,12 @@ export default function Moment2() {
       }}
     >
       {/* Sticky header */}
-      <div className="sticky top-0 z-[9999] relative isolate border-b border-white/10 bg-[var(--surface)]">
+      
+<div className="sticky top-0 z-[9999] relative isolate overflow-visible border-b border-white/10 bg-[var(--surface)]">
+
         {SHOW_TOP_BAR && (
           <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-xs tracking-wide">
+
             <div className="flex items-center gap-2 text-[var(--muted)]">
               <span className="uppercase">Cart reserved for</span>
               <span className="font-medium">·</span>
@@ -877,29 +880,70 @@ export default function Moment2() {
           </div>
         )}
 
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3 min-w-0 overflow-x-hidden">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3 min-w-0 overflow-visible">
           {/* LEFT */}
-          
-           <a href="#home" className="flex items-center gap-3 min-w-0">
-  <img src={brand.logo} alt="LedVelvet" className="w-10 h-10 rounded-full border border-white/10 shrink-0" />
+         <Link href="/moment2#home" className="flex items-center gap-3 min-w-0">
+  <img
+    src={brand.logo}
+    alt="LedVelvet"
+    className="w-10 h-10 rounded-full border border-white/10 shrink-0"
+  />
 
   <div className="leading-tight min-w-0">
     <div className="text-sm font-semibold truncate">LedVelvet</div>
-    <div className="text-xs text-white/60 tracking-[0.18em] uppercase truncate">ETHEREAL CLUBBING</div>
+    <div className="text-xs text-white/60 tracking-[0.18em] uppercase truncate">
+      ETHEREAL CLUBBING
+    </div>
   </div>
-</a>
-
-
+</Link> 
+        
 
           {/* DESKTOP MENU */}
-          <nav className="hidden lg:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
-            <a href="#home" className="hover:text-[var(--text)] whitespace-nowrap">Home</a>
-            <a href="#eventi" className="hover:text-[var(--text)] whitespace-nowrap">Upcoming</a>
-            <a href="#past" className="hover:text-[var(--text)] whitespace-nowrap">Past</a>
-            <a href="#sponsor" className="hover:text-[var(--text)] whitespace-nowrap">Sponsor</a>
-            <a href="/about" className="hover:text-[var(--text)] whitespace-nowrap">About</a>
-            <Link href="/legal" className="hover:text-[var(--text)] whitespace-nowrap">Legal</Link>
-          </nav>
+<nav className="hidden lg:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
+  <a href="#home" className="hover:text-[var(--text)] whitespace-nowrap">Home</a>
+  <a href="#eventi" className="hover:text-[var(--text)] whitespace-nowrap">Upcoming</a>
+  <a href="#past" className="hover:text-[var(--text)] whitespace-nowrap">Past</a>
+  <a href="#sponsor" className="hover:text-[var(--text)] whitespace-nowrap">Sponsor</a>
+  <a href="/about" className="hover:text-[var(--text)] whitespace-nowrap">About</a>
+  <Link href="/legal" className="hover:text-[var(--text)] whitespace-nowrap">Legal</Link>
+
+  {/* 🔥 SOCIETY */}
+  
+<div
+  className="relative"
+  onMouseEnter={() => setSocietyOpen(true)}
+  onMouseLeave={() => setSocietyOpen(false)}
+>
+  <button
+    type="button"
+    className="inline-flex items-center h-[44px] bg-transparent p-0 m-0 border-0 text-xs tracking-[0.22em] uppercase text-[var(--muted)] hover:text-[var(--text)] whitespace-nowrap align-middle"
+  >
+    Society
+  </button>
+
+  <span className="absolute left-0 right-0 top-full h-4" aria-hidden="true" />
+
+  {societyOpen && (
+    <div className="absolute top-full left-0 mt-0 w-56 rounded-2xl border border-white/10 bg-black/90 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden z-[10000] pointer-events-auto animate-[lvFade_0.25s_ease]">
+      <Link
+        href="/society"
+        className="block px-4 py-3 text-xs tracking-[0.18em] uppercase text-white/80 hover:bg-white/10 hover:text-white transition-all duration-200"
+      >
+        LV People
+      </Link>
+
+      <Link
+        href="/become-member?from=/moment2#home"
+        className="block px-4 py-3 text-xs tracking-[0.18em] uppercase text-white/80 hover:bg-white/10 hover:text-white transition-all duration-200"
+      >
+        Become member
+      </Link>
+    </div>
+  )}
+</div>
+
+
+</nav>        
 
           {/* RIGHT */}
           <div className="flex items-center gap-2 flex-none">
@@ -919,13 +963,34 @@ export default function Moment2() {
 
                 <div className="fixed right-4 top-[72px] w-[min(92vw,420px)] max-h-[70vh] overflow-auto rounded-2xl border border-white/12 bg-black/70 backdrop-blur-md shadow-[0_20px_60px_rgba(0,0,0,0.55)] p-3 z-[10000]">
                   <div className="grid gap-1 text-xs tracking-[0.22em] uppercase">
-                    <a href="#home" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Home</a>
-                    <a href="#eventi" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Upcoming</a>
-                    <a href="#past" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Past</a>
-                    <a href="#sponsor" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Sponsor</a>
-                    <a href="/about" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">About</a>
-                    <Link href="/legal" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Legal</Link>
+<a href="#home" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Home</a>
+<a href="#eventi" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Upcoming</a>
+<a href="#past" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Past</a>
+<a href="#sponsor" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Sponsor</a>
+<a href="/about" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">About</a>
+<Link href="/legal" onClick={closeMenu} className="px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white">Legal</Link>
+
+{/* 🔥 SOCIETY (IN FONDO, STILE UGUALE) */}
+<div className="mt-2 pt-2 border-t border-white/10">
+  <Link
+    href="/society"
+    onClick={closeMenu}
+    className="block px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white"
+  >
+    LV People
+  </Link>
+
+  <Link
+    href="/become-member?from=/moment2#home"
+    onClick={closeMenu}
+    className="block px-3 py-3 rounded-xl hover:bg-white/10 text-white/80 hover:text-white"
+  >
+    Become member
+  </Link>
+
+                    
                   </div>
+ </div>
 
                   <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-2">
                     <SocialIcon href={SOCIALS.instagram} label="Instagram"><IconInstagram /></SocialIcon>
