@@ -208,9 +208,6 @@ export default function DeepDiveOverlay({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  const [ytBlocked, setYtBlocked] = useState(false);
-  const ytTimerRef = useRef<number | null>(null);
-
   const galleryScrollRef = useRef<HTMLDivElement | null>(null);
 
   const stopMood = useCallback(() => {
@@ -402,23 +399,6 @@ export default function DeepDiveOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, lightboxOpen, nextImg, prevImg]);
 
-  useEffect(() => {
-    setYtBlocked(false);
-    if (ytTimerRef.current) window.clearTimeout(ytTimerRef.current);
-    ytTimerRef.current = null;
-
-    if (!open) return;
-    if (!(heroType === "youtube" && heroYouTube)) return;
-
-    ytTimerRef.current = window.setTimeout(() => {
-      setYtBlocked(true);
-    }, 1800);
-
-    return () => {
-      if (ytTimerRef.current) window.clearTimeout(ytTimerRef.current);
-      ytTimerRef.current = null;
-    };
-  }, [open, heroType, heroYouTube]);
 
   if (!open) return null;
 
@@ -567,41 +547,23 @@ export default function DeepDiveOverlay({
 
                   <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden min-w-0">
                     {heroType === "youtube" && heroYouTube ? (
-                      <div className="relative w-full aspect-video">
-                        <iframe
-                          className="w-full h-full"
-                          src={heroYouTube}
-                          title="Hero video"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          onLoad={() => {
-                            if (ytTimerRef.current) window.clearTimeout(ytTimerRef.current);
-                            ytTimerRef.current = null;
-                            setYtBlocked(false);
-                          }}
-                        />
 
-                        {ytBlocked ? (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/75 p-4">
-                            <div className="max-w-md text-center">
-                              <div className="text-white text-sm md:text-base">
-                                Video bloccato: non hai accettato i cookie per contenuti esterni (YouTube).
-                              </div>
+                      
+<div className="relative w-full aspect-video">
+  <iframe
+    className="w-full h-full"
+    src={heroYouTube}
+    title="Hero video"
+    loading="lazy"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+    allowFullScreen
+    referrerPolicy="strict-origin-when-cross-origin"
+  />
+</div>
 
-                              <div className="mt-4 flex items-center justify-center gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => window.location.reload()}
-                                  className="inline-flex items-center rounded-full border border-white/20 bg-white/5 px-5 py-3 text-xs tracking-[0.18em] uppercase text-white/90 hover:bg-white/10"
-                                >
-                                  Riprova
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
+
+
+
                     ) : heroType === "mp4" && heroMp4 ? (
                       <video className="w-full aspect-video object-cover" src={heroMp4} autoPlay muted loop playsInline />
                     ) : heroImg ? (
