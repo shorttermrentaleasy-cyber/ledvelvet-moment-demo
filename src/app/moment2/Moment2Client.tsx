@@ -267,87 +267,6 @@ function Marquee({ text }: { text: string }) {
   );
 }
 
-function openIubendaPreferences() {
-  try {
-    const w = window as any;
-
-    if (w?._iub?.cs?.api?.openPreferences) {
-      w._iub.cs.api.openPreferences();
-      return true;
-    }
-
-    if (w?._iub?.cs?.api?.show) {
-      w._iub.cs.api.show();
-      return true;
-    }
-  } catch {}
-  return false;
-}
-
-function IubendaYouTube({
-  src,
-  title,
-  purposes = "3",
-}: {
-  src: string;
-  title: string;
-  purposes?: string;
-}) {
-  const [loaded, setLoaded] = React.useState(false);
-
-  return (
-    <div className="absolute inset-0 z-20">
-      <iframe
-        className="absolute inset-0 h-full w-full iubenda-cs-blocking"
-        data-iub-purposes={purposes}
-        src={src}
-        title={title}
-        loading="lazy"
-        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-        allowFullScreen
-        referrerPolicy="strict-origin-when-cross-origin"
-        onLoad={() => setLoaded(true)}
-      />
-
-      {!loaded && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 p-4 text-center">
-          <div className="max-w-md">
-            <div className="text-white text-sm font-medium">Contenuto esterno bloccato (YouTube)</div>
-            <div className="mt-2 text-white/70 text-xs leading-relaxed">
-              Per vedere il video devi accettare i cookie per contenuti esterni.
-              Apri le preferenze e abilita i contenuti esterni, poi torna qui.
-            </div>
-
-            <div className="mt-4 flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  const ok = openIubendaPreferences();
-                  if (!ok) alert("Apri il lucchetto Iubenda in basso a destra e abilita i contenuti esterni.");
-                }}
-                className="px-4 py-2 bg-[var(--red-accent)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90"
-              >
-                Autorizza cookie
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const url = new URL(window.location.href);
-                  url.searchParams.set("_r", String(Date.now()));
-                  window.location.replace(url.toString());
-                }}
-                className="px-4 py-2 border border-white/20 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/10"
-              >
-                Riprova
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 const SHOW_TOP_BAR = false;
 
@@ -1237,17 +1156,25 @@ export default function Moment2() {
               const soldOut = tag.includes("SOLD");
 
               const yt = youTubeEmbedUrl(e.teaserUrl || "");
-              const purposes = "3";
+              
 
               return (
                 <article key={e.id} className="bg-black/25 overflow-hidden border border-white/10">
                   <div className="relative aspect-[16/9] bg-black">
-                    {yt ? (
-                      <IubendaYouTube src={yt} title={`LedVelvet – ${e.name}`} purposes={purposes} />
-                    ) : (
-                     <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-10 h-full w-full object-contain" loading="lazy" />
 
-                    )}
+                    {yt ? (
+  <iframe
+    className="absolute inset-0 z-20 h-full w-full"
+    src={yt}
+    title={`LedVelvet – ${e.name}`}
+    loading="lazy"
+    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+    allowFullScreen
+    referrerPolicy="strict-origin-when-cross-origin"
+  />
+) : (
+  <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-10 h-full w-full object-contain" loading="lazy" />
+)}
 
                     <div className="pointer-events-none absolute inset-0 z-30 bg-gradient-to-t from-black/90 via-black/35 to-black/10" />
                   </div>
@@ -1321,9 +1248,7 @@ export default function Moment2() {
                             {e.notes}
                           </div>
 
-                          {!expandedNotes[e.id] ? (
-                            <div className="md:hidden pointer-events-none absolute left-0 right-0 bottom-0 h-10 bg-gradient-to-t from-black/70 to-transparent" />
-                          ) : null}
+                          
                         </div>
 
                         {e.notes.length > 160 ? (
@@ -1409,16 +1334,26 @@ export default function Moment2() {
                     <div className="grid lg:grid-cols-2 gap-6">
                       {(pastByYear[year] || []).map((e) => {
                         const yt = youTubeEmbedUrl(e.aftermovieUrl || "", false);
-                        const purposes = "3";
-
+                        
                         return (
                           <article key={e.id} className="bg-black/30 overflow-hidden border border-white/10">
                             <div className="relative aspect-[16/9] bg-black">
-                              {yt ? (
-                                <IubendaYouTube src={yt} title={`LedVelvet – ${e.name}`} purposes={purposes} />
-                              ) : (
-                                <img src={e.posterSrc} alt={e.name} className="absolute inset-0 h-full w-full object-contain" loading="lazy" />
-                              )}
+
+{yt ? (
+  <iframe
+    className="absolute inset-0 z-20 h-full w-full"
+    src={yt}
+    title={`LedVelvet – ${e.name}`}
+    loading="lazy"
+    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+    allowFullScreen
+    referrerPolicy="strict-origin-when-cross-origin"
+  />
+) : (
+  <img src={e.posterSrc} alt={e.name} className="absolute inset-0 h-full w-full object-contain" loading="lazy" />
+)}
+
+
 
                               <div className="pointer-events-none absolute inset-0 z-30 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
                             </div>
@@ -1480,9 +1415,7 @@ export default function Moment2() {
                                       {e.notes}
                                     </div>
 
-                                    {!expandedNotes[e.id] ? (
-                                      <div className="md:hidden pointer-events-none absolute left-0 right-0 bottom-0 h-10 bg-gradient-to-t from-black/70 to-transparent" />
-                                    ) : null}
+                                    
                                   </div>
 
                                   {e.notes.length > 160 ? (
