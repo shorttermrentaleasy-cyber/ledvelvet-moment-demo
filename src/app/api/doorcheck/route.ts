@@ -18,13 +18,35 @@ function unauthorized(message = "Unauthorized") {
 
 type DoorcheckBody = {
   event_id?: string;
-  event_ref?: string; // opzionale: events.xceed_event_ref
+  event_ref?: string;
   mode?: "scan" | "manual";
   qr?: string;
-  full_name?: string; // manual
-  phone?: string; // manual
-  email?: string; // manual opzionale
+  full_name?: string;
+  phone?: string;
+  email?: string;
   device_id?: string;
+};
+
+type MembershipInfo = {
+  member_found: boolean;
+  member_group: "ordinary" | "loyalty" | "staff" | null;
+  member_group_label: string | null;
+  priority_access: boolean;
+  member_active_for_access: boolean;
+  member_access_note: string | null;
+  member_status_raw: string | null;
+  eligible_for_membership_invite: boolean;
+};
+
+const NO_MEMBERSHIP: MembershipInfo = {
+  member_found: false,
+  member_group: null,
+  member_group_label: null,
+  priority_access: false,
+  member_active_for_access: false,
+  member_access_note: null,
+  member_status_raw: null,
+  eligible_for_membership_invite: false,
 };
 
 function isDigitsOnly(s: string) {
@@ -43,7 +65,6 @@ function normalizePhone(phone: string | null | undefined) {
   if (!p) return null;
   p = p.replace(/[^\d+]/g, "");
   if (!p) return null;
-  // normalizza "39xxxxxxxx" => "+39xxxxxxxx"
   if (/^39\d{8,}$/.test(p)) p = `+${p}`;
   return p.length >= 6 ? p : null;
 }
@@ -71,7 +92,7 @@ function toHumanMessage(input: { kind?: string; status?: string; reason?: string
     case "ambiguous_member_match":
       return "Accesso negato: trovato più di un socio con questi dati (email/telefono). Verificare manualmente.";
     case "not_found":
-      return "Accesso negato: nessun biglietto valido per questo evento (ticket non presente in import).";
+      return "Accesso negato: nessun biglietto valido per questo evento.";
     default:
       break;
   }
@@ -83,10 +104,6 @@ function toHumanMessage(input: { kind?: string; status?: string; reason?: string
   return "";
 }
 
-/**
- * Legge campi dal raw Xceed anche se le chiavi hanno spazi.
- * Esempi: "Offer title", "Offer Description"
- */
 function getXceedRawField(raw: any, keys: string[]): string | null {
   if (!raw || typeof raw !== "object") return null;
   for (const k of keys) {
@@ -98,10 +115,65 @@ function getXceedRawField(raw: any, keys: string[]): string | null {
   return null;
 }
 
-/**
- * API KEY (DB ONLY)
- * Usa solo: public.door_api_keys(api_key text, active boolean)
- */
+function buildMembershipInfo(params: {
+  membershipGroup?: string | null;
+  status?: string | null;
+  requireActiveMembership?: boolean;
+  inviteEligible?: boolean;
+}): MembershipInfo {
+  const group = String(params.membershipGroup || "").trim();
+  const status = String(params.status || "").trim() || null;
+  const requireActiveMembership = Boolean(params.requireActiveMembership);
+  const inviteEligible = Boolean(params.inviteEligible);
+
+  let member_group: MembershipInfo["member_group"] = null;
+  let member_group_label: string | null = null;
+  let priority_access = false;
+
+  if (group === "Soci Ordinari") {
+    member_group = "ordinary";
+    member_group_label = "Soci Ordinari";
+  } else if (group === "Loyalty Clubber") {
+    member_group = "loyalty";
+    member_group_label = "Loyalty Clubber";
+    priority_access = true;
+  } else if (group === "Staff") {
+    member_group = "staff";
+    member_group_label = "Staff";
+    priority_access = true;
+  }
+
+  const member_found = !!member_group_label;
+
+  let member_active_for_access = false;
+  let member_access_note: string | null = null;
+
+  if (!member_found) {
+    member_active_for_access = false;
+    member_access_note = null;
+  } else if (!requireActiveMembership) {
+    member_active_for_access = true;
+    member_access_note = "membership recognized; active check not enforced";
+  } else if (status === "ATTIVA") {
+    member_active_for_access = true;
+    member_access_note = "membership active";
+  } else {
+    member_active_for_access = false;
+    member_access_note = "membership not active";
+  }
+
+  return {
+    member_found,
+    member_group,
+    member_group_label,
+    priority_access,
+    member_active_for_access,
+    member_access_note,
+    member_status_raw: status,
+    eligible_for_membership_invite: !member_found && inviteEligible,
+  };
+}
+
 async function isDoorApiKeyValid(supabase: ReturnType<typeof supabaseAdmin>, apiKey: string) {
   const k = (apiKey || "").trim();
   if (!k) return false;
@@ -147,7 +219,7 @@ async function resolveEventId(
 async function getEventPolicy(supabase: ReturnType<typeof supabaseAdmin>, eventId: string) {
   const { data: ev, error } = await supabase
     .from("events")
-    .select("id, require_ticket, require_membership")
+    .select("id, require_ticket, require_membership, require_active_membership")
     .eq("id", eventId)
     .maybeSingle();
 
@@ -156,20 +228,28 @@ async function getEventPolicy(supabase: ReturnType<typeof supabaseAdmin>, eventI
   return {
     require_ticket: Boolean((ev as any)?.require_ticket),
     require_membership: Boolean((ev as any)?.require_membership),
+    require_active_membership: Boolean((ev as any)?.require_active_membership),
   };
 }
 
 async function findMemberByBarcodeOrCard(
   supabase: ReturnType<typeof supabaseAdmin>,
   qrRaw: string
-): Promise<{ id: string; display_name: string | null; email: string | null; phone: string | null } | null> {
-  // 1) barcode numerico (members.legacy_barcode)
+): Promise<{
+  id: string;
+  display_name: string | null;
+  email: string | null;
+  phone: string | null;
+  membership_group: string | null;
+  status: string | null;
+} | null> {
   if (isDigitsOnly(qrRaw)) {
     const { data: m, error } = await supabase
       .from("members")
-      .select("id, first_name, last_name, email, phone")
+      .select("id, first_name, last_name, email, phone, membership_group, status")
       .eq("legacy_barcode", qrRaw)
       .maybeSingle();
+
     if (error) throw new Error(error.message);
     if (!m) return null;
 
@@ -178,10 +258,11 @@ async function findMemberByBarcodeOrCard(
       display_name: buildFullName((m as any).first_name, (m as any).last_name),
       email: (m as any).email ?? null,
       phone: (m as any).phone ?? null,
+      membership_group: (m as any).membership_group ?? null,
+      status: (m as any).status ?? null,
     };
   }
 
-  // 2) QR tessera LV (member_cards.qr_secret)
   const { data: card, error: cErr } = await supabase
     .from("member_cards")
     .select("member_id, revoked")
@@ -194,7 +275,7 @@ async function findMemberByBarcodeOrCard(
 
   const { data: m, error: mErr } = await supabase
     .from("members")
-    .select("id, first_name, last_name, email, phone")
+    .select("id, first_name, last_name, email, phone, membership_group, status")
     .eq("id", (card as any).member_id)
     .maybeSingle();
 
@@ -206,8 +287,12 @@ async function findMemberByBarcodeOrCard(
     display_name: buildFullName((m as any).first_name, (m as any).last_name),
     email: (m as any).email ?? null,
     phone: (m as any).phone ?? null,
+    membership_group: (m as any).membership_group ?? null,
+    status: (m as any).status ?? null,
   };
 }
+
+
 
 async function memberAlreadyCheckedIn(
   supabase: ReturnType<typeof supabaseAdmin>,
@@ -247,18 +332,32 @@ async function resolveMemberByEmailOrPhone(
   supabase: ReturnType<typeof supabaseAdmin>,
   emailNorm: string | null,
   phoneNorm: string | null
-): Promise<{ id: string; display_name: string | null } | { ambiguous: true } | null> {
+): Promise<
+  | {
+      id: string;
+      display_name: string | null;
+      membership_group: string | null;
+      status: string | null;
+    }
+  | { ambiguous: true }
+  | null
+> {
   if (emailNorm) {
     const { data, error } = await supabase
       .from("members")
-      .select("id, first_name, last_name")
+      .select("id, first_name, last_name, membership_group, status")
       .ilike("email", emailNorm)
       .limit(2);
 
     if (error) throw new Error(error.message);
     if (data && data.length === 1) {
       const m = data[0] as any;
-      return { id: m.id as string, display_name: buildFullName(m.first_name, m.last_name) };
+      return {
+        id: m.id as string,
+        display_name: buildFullName(m.first_name, m.last_name),
+        membership_group: m.membership_group ?? null,
+        status: m.status ?? null,
+      };
     }
     if (data && data.length > 1) return { ambiguous: true };
   }
@@ -266,14 +365,19 @@ async function resolveMemberByEmailOrPhone(
   if (phoneNorm) {
     const { data, error } = await supabase
       .from("members")
-      .select("id, first_name, last_name")
+      .select("id, first_name, last_name, membership_group, status")
       .eq("phone", phoneNorm)
       .limit(2);
 
     if (error) throw new Error(error.message);
     if (data && data.length === 1) {
       const m = data[0] as any;
-      return { id: m.id as string, display_name: buildFullName(m.first_name, m.last_name) };
+      return {
+        id: m.id as string,
+        display_name: buildFullName(m.first_name, m.last_name),
+        membership_group: m.membership_group ?? null,
+        status: m.status ?? null,
+      };
     }
     if (data && data.length > 1) return { ambiguous: true };
   }
@@ -281,10 +385,6 @@ async function resolveMemberByEmailOrPhone(
   return null;
 }
 
-/**
- * ✅ Ticket check “disponibile” per socio: deve esistere un ticket NON ancora consumato (checkin_id IS NULL)
- * Match: buyer_*_norm preferiti, fallback email/phone.
- */
 async function memberHasAvailableTicketForEvent(
   supabase: ReturnType<typeof supabaseAdmin>,
   eventId: string,
@@ -313,11 +413,6 @@ async function memberHasAvailableTicketForEvent(
   return !!(data && data.length > 0);
 }
 
-/**
- * ✅ Bridge ETS -> Ticket:
- * Se evento richiede ticket, collega un ticket NON usato (checkin_id NULL) a questo checkin_id.
- * Match: buyer_*_norm preferiti, fallback email/phone.
- */
 async function linkMemberTicketToCheckin(params: {
   supabase: ReturnType<typeof supabaseAdmin>;
   eventId: string;
@@ -328,7 +423,6 @@ async function linkMemberTicketToCheckin(params: {
   const { supabase, eventId, checkinId, email, phone } = params;
   if (!checkinId) return;
 
-  // 1) match per email
   const e = normalizeEmail(email);
   if (e) {
     const { data: t, error: tErr } = await supabase
@@ -354,7 +448,6 @@ async function linkMemberTicketToCheckin(params: {
     }
   }
 
-  // 2) fallback per phone
   const p = normalizePhone(phone);
   if (p) {
     const { data: t, error: tErr } = await supabase
@@ -375,20 +468,16 @@ async function linkMemberTicketToCheckin(params: {
         .update({ checkin_id: checkinId })
         .eq("id", (t as any).id);
 
-      if (updErr) throw new Error(updErr.message);
+        if (updErr) throw new Error(updErr.message);
       return;
     }
   }
 }
 
-/**
- * ✅ Legacy domain table (PRODUZIONE): public.legacy_people
- */
 async function upsertLegacyPerson(
   supabase: ReturnType<typeof supabaseAdmin>,
   payload: { source: "guest"; full_name: string | null; email: string | null; phone: string | null }
 ) {
-  // Chiave di dedupe (ordine): email -> phone -> insert new
   if (payload.email) {
     const { data: ex, error: exErr } = await supabase
       .from("legacy_people")
@@ -456,30 +545,26 @@ async function upsertLegacyPerson(
   return { id: (ins as any).id as string, full_name: (ins as any).full_name as string | null };
 }
 
+
 export async function POST(req: Request) {
   try {
     const supabase = supabaseAdmin();
 
-    // ✅ API KEY (DB ONLY)
     const got = (req.headers.get("x-api-key") || "").trim();
     if (!got) return unauthorized("Missing API key");
 
     const ok = await isDoorApiKeyValid(supabase, got);
     if (!ok) return unauthorized("Invalid API key");
 
-    // ✅ body (una sola volta)
     const body = (await req.json()) as DoorcheckBody;
 
-    // ✅ resolve event
     const eventId = await resolveEventId(supabase, body.event_id || null, body.event_ref || null);
     if (!eventId) {
       return NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 });
     }
 
-    // ✅ policy
     const policy = await getEventPolicy(supabase, eventId);
 
-    // ✅ mode + qr
     const mode = (body.mode || "scan").trim() as "scan" | "manual";
     const qrRaw = (body.qr || "").trim();
 
@@ -487,22 +572,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
     }
 
-    // =========================
-    // MANUAL => SRL
-    // =========================
     if (mode === "manual") {
       const fullName = (body.full_name || "").trim();
       const phoneNorm = normalizePhone(body.phone || null);
       const emailNorm = normalizeEmail(body.email || null);
 
-      // coerente con UI: minimo nome O telefono
       if (!fullName && !phoneNorm) {
         return NextResponse.json({ ok: false, error: "Missing full_name or phone" }, { status: 400 });
       }
 
       const scanned_code = qrRaw || (phoneNorm ? `MANUAL:${phoneNorm}` : "MANUAL");
 
-      // ✅ Se il manual nasce da un ticket XCEED (qr = qr_code), agganciamo il ticket per evitare duplicati alla riscansione.
       let manualXceedTicket: any | null = null;
       if (qrRaw && !qrRaw.startsWith("MANUAL")) {
         const { data: t, error: tErr } = await supabase
@@ -526,13 +606,13 @@ export async function POST(req: Request) {
             checkin_id: tCheckinId,
             legacy_person_id: (t as any)?.legacy_person_id ?? null,
             display_name: nm,
+            ...NO_MEMBERSHIP,
           };
           resp.message = toHumanMessage(resp);
           return NextResponse.json(resp);
         }
       }
 
-      // crea/riusa legacy person in dominio
       const legacy = await upsertLegacyPerson(supabase, {
         source: "guest",
         full_name: fullName || null,
@@ -540,7 +620,6 @@ export async function POST(req: Request) {
         phone: phoneNorm,
       });
 
-      // anti-duplicato sul legacy_person_id
       const alreadyId = await legacyAlreadyCheckedIn(supabase, eventId, legacy.id);
       if (alreadyId) {
         if (manualXceedTicket?.id) {
@@ -560,6 +639,7 @@ export async function POST(req: Request) {
           legacy_person_id: legacy.id,
           display_name: fullName || (legacy as any)?.full_name || null,
           scanned_code,
+          ...NO_MEMBERSHIP,
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
@@ -583,7 +663,6 @@ export async function POST(req: Request) {
 
       const newCheckinId = (ins as any)?.id || null;
 
-      // se era da ticket, salva legame ticket->checkin e ticket->legacy_person
       if (manualXceedTicket?.id && newCheckinId) {
         const { error: updErr } = await supabase
           .from("xceed_tickets")
@@ -601,23 +680,30 @@ export async function POST(req: Request) {
         legacy_person_id: legacy.id,
         display_name: fullName || null,
         scanned_code,
+        ...NO_MEMBERSHIP,
       };
       resp.message = toHumanMessage(resp);
       return NextResponse.json(resp);
     }
 
-    // =========================
-    // SCAN
-    // =========================
-    if (!qrRaw) return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
+    if (!qrRaw) {
+      return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
+    }
 
-    // A) tessera socio (ETS)
+    // A) ETS via tessera/barcode
     const member = await findMemberByBarcodeOrCard(supabase, qrRaw);
+    const etsMembershipInfo = member
+      ? buildMembershipInfo({
+          membershipGroup: member.membership_group,
+          status: member.status,
+          requireActiveMembership: policy.require_active_membership,
+          inviteEligible: false,
+        })
+      : { ...NO_MEMBERSHIP };
+
     if (member) {
-      // ✅ IMPORTANT: prima anti-duplicato (così non neghi a uno già entrato)
       const alreadyId = await memberAlreadyCheckedIn(supabase, eventId, member.id);
       if (alreadyId) {
-        // ✅ se evento richiede ticket, prova comunque a “chiudere” il ticket collegandolo (utile se prima era entrato via ETS senza bridging)
         if (policy.require_ticket) {
           await linkMemberTicketToCheckin({
             supabase,
@@ -636,12 +722,12 @@ export async function POST(req: Request) {
           member_id: member.id,
           display_name: member.display_name,
           checkin_id: alreadyId,
+          ...etsMembershipInfo,
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
       }
 
-      // ✅ se richiede ticket: deve esistere un ticket NON ancora consumato
       if (policy.require_ticket) {
         const hasTicket = await memberHasAvailableTicketForEvent(
           supabase,
@@ -649,6 +735,7 @@ export async function POST(req: Request) {
           normalizeEmail(member.email),
           normalizePhone(member.phone)
         );
+
         if (!hasTicket) {
           const resp: any = {
             ok: true,
@@ -658,6 +745,7 @@ export async function POST(req: Request) {
             reason: "missing_ticket",
             member_id: member.id,
             display_name: member.display_name,
+            ...etsMembershipInfo,
           };
           resp.message = toHumanMessage(resp);
           return NextResponse.json(resp);
@@ -682,7 +770,6 @@ export async function POST(req: Request) {
 
       const newCheckinId = (ins as any)?.id || null;
 
-      // ✅ NEW: bridge ETS -> ticket (fa sparire “da entrare” nei biglietti)
       if (policy.require_ticket && newCheckinId) {
         await linkMemberTicketToCheckin({
           supabase,
@@ -701,12 +788,13 @@ export async function POST(req: Request) {
         member_id: member.id,
         checkin_id: newCheckinId,
         display_name: member.display_name,
+        ...etsMembershipInfo,
       };
       resp.message = toHumanMessage(resp);
       return NextResponse.json(resp);
     }
 
-    // B) ticket XCEED (xceed_tickets.qr_code)
+    // B) XCEED ticket
     const { data: ticket, error: tErr } = await supabase
       .from("xceed_tickets")
       .select("id, checkin_id, legacy_person_id, full_name, email, phone, transaction_id, booking_date, raw")
@@ -721,7 +809,6 @@ export async function POST(req: Request) {
       const buyerEmail = normalizeEmail((ticket as any).email ?? null);
       const buyerPhone = normalizePhone((ticket as any).phone ?? null);
 
-      // extra output from raw
       const raw = (ticket as any).raw || null;
       const offerTitle =
         getXceedRawField(raw, ["Offer title", "Offer Title", "offer_title", "offerTitle"]) || null;
@@ -732,7 +819,6 @@ export async function POST(req: Request) {
       const ticket_transaction_id = asString((ticket as any).transaction_id) || null;
       const ticket_booking_date = (ticket as any).booking_date || null;
 
-      // ✅ anti-duplicati: se il ticket ha già checkin_id, fine.
       const ticketCheckinId = String((ticket as any).checkin_id ?? "").trim();
       if (ticketCheckinId) {
         const resp: any = {
@@ -743,8 +829,12 @@ export async function POST(req: Request) {
           checkin_id: ticketCheckinId,
           legacy_person_id: (ticket as any).legacy_person_id ?? null,
           display_name: buyerName,
-
-          // extra
+          ...buildMembershipInfo({
+            membershipGroup: null,
+            status: null,
+            requireActiveMembership: policy.require_active_membership,
+            inviteEligible: !!buyerEmail,
+          }),
           ticket_offer_title: offerTitle,
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
@@ -754,9 +844,22 @@ export async function POST(req: Request) {
         return NextResponse.json(resp);
       }
 
-      // ✅ CASE 1: evento richiede membership -> check-in ETS unico (member_id)
       if (policy.require_membership) {
         const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
+        const xceedMembershipInfo =
+          !m || (m as any).ambiguous
+            ? buildMembershipInfo({
+                membershipGroup: null,
+                status: null,
+                requireActiveMembership: policy.require_active_membership,
+                inviteEligible: !!buyerEmail,
+              })
+            : buildMembershipInfo({
+                membershipGroup: (m as any).membership_group,
+                status: (m as any).status,
+                requireActiveMembership: policy.require_active_membership,
+                inviteEligible: false,
+              });
 
         if (m && (m as any).ambiguous) {
           const resp: any = {
@@ -766,8 +869,7 @@ export async function POST(req: Request) {
             status: "denied",
             reason: "ambiguous_member_match",
             display_name: buyerName,
-
-            // extra
+            ...xceedMembershipInfo,
             ticket_offer_title: offerTitle,
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
@@ -785,8 +887,8 @@ export async function POST(req: Request) {
             status: "denied",
             reason: "not_a_member",
             display_name: buyerName,
-
-            // extra
+            ...xceedMembershipInfo,
+            member_access_note: "not a member",
             ticket_offer_title: offerTitle,
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
@@ -808,8 +910,7 @@ export async function POST(req: Request) {
             member_id: (m as any).id,
             checkin_id: alreadyEtsId,
             display_name: (m as any).display_name || buyerName,
-
-            // extra
+            ...xceedMembershipInfo,
             ticket_offer_title: offerTitle,
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
@@ -848,8 +949,7 @@ export async function POST(req: Request) {
           member_id: (m as any).id,
           checkin_id: (ins as any)?.id || null,
           display_name: (m as any).display_name || buyerName,
-
-          // extra
+          ...xceedMembershipInfo,
           ticket_offer_title: offerTitle,
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
@@ -859,10 +959,8 @@ export async function POST(req: Request) {
         return NextResponse.json(resp);
       }
 
-      // ✅ CASE 2: evento NON richiede membership -> XCEED guest (dominio legacy_people)
       let legacyPersonId = (ticket as any).legacy_person_id as string | null;
 
-      // crea legacy_person se ticket non lo ha
       if (!legacyPersonId) {
         const legacy = await upsertLegacyPerson(supabase, {
           source: "guest",
@@ -880,7 +978,6 @@ export async function POST(req: Request) {
         if (updErr) throw new Error(updErr.message);
       }
 
-      // anti-duplicato su legacy_person_id
       const alreadyLegacyId = await legacyAlreadyCheckedIn(supabase, eventId, legacyPersonId);
       if (alreadyLegacyId) {
         await supabase.from("xceed_tickets").update({ checkin_id: alreadyLegacyId }).eq("id", (ticket as any).id);
@@ -893,8 +990,12 @@ export async function POST(req: Request) {
           legacy_person_id: legacyPersonId,
           checkin_id: alreadyLegacyId,
           display_name: buyerName,
-
-          // extra
+          ...buildMembershipInfo({
+            membershipGroup: null,
+            status: null,
+            requireActiveMembership: policy.require_active_membership,
+            inviteEligible: !!buyerEmail,
+          }),
           ticket_offer_title: offerTitle,
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
@@ -930,8 +1031,12 @@ export async function POST(req: Request) {
         checkin_id: (ins as any)?.id || null,
         legacy_person_id: legacyPersonId,
         display_name: buyerName,
-
-        // extra
+        ...buildMembershipInfo({
+          membershipGroup: null,
+          status: null,
+          requireActiveMembership: policy.require_active_membership,
+          inviteEligible: !!buyerEmail,
+        }),
         ticket_offer_title: offerTitle,
         ticket_offer_description: offerDescription,
         ticket_transaction_id,
@@ -941,7 +1046,6 @@ export async function POST(req: Request) {
       return NextResponse.json(resp);
     }
 
-    // C) legacy_people (dominio) => SRL storico (legacy_people.legacy_barcode)
     const { data: lp, error: lpErr } = await supabase
       .from("legacy_people")
       .select("id, full_name")
@@ -961,6 +1065,7 @@ export async function POST(req: Request) {
           legacy_person_id: (lp as any).id,
           checkin_id: alreadyId,
           display_name: (lp as any).full_name ?? null,
+          ...NO_MEMBERSHIP,
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
@@ -990,18 +1095,19 @@ export async function POST(req: Request) {
         checkin_id: (ins as any)?.id || null,
         legacy_person_id: (lp as any).id,
         display_name: (lp as any).full_name ?? null,
+        ...NO_MEMBERSHIP,
       };
       resp.message = toHumanMessage(resp);
       return NextResponse.json(resp);
     }
 
-    // D) sconosciuto
     const resp: any = {
       ok: true,
       allowed: false,
       kind: "UNKNOWN",
       status: "denied",
       reason: "not_found",
+      ...NO_MEMBERSHIP,
     };
     resp.message = toHumanMessage(resp);
     return NextResponse.json(resp);
@@ -1011,3 +1117,6 @@ export async function POST(req: Request) {
 }
 
 export {};
+
+
+
