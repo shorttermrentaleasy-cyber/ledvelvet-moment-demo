@@ -36,6 +36,39 @@ type XceedTicketsResponse = {
   data: XceedTicket[];
 };
 
+function normalizeEmail(email: string | null | undefined) {
+  const e = String(email ?? "").trim().toLowerCase();
+  if (!e || !e.includes("@") || !e.includes(".")) return null;
+  return e;
+}
+
+function normalizePhone(phone: string | null | undefined) {
+  let p = String(phone ?? "").trim();
+  if (!p) return null;
+  p = p.replace(/[^\d+]/g, "");
+  if (!p) return null;
+  if (/^39\d{8,}$/.test(p)) p = `+${p}`;
+  return p.length >= 6 ? p : null;
+}
+
+function buildFullName(firstName?: string | null, lastName?: string | null) {
+  const first = String(firstName ?? "").trim();
+  const last = String(lastName ?? "").trim();
+  const full = `${first} ${last}`.trim();
+  return full || null;
+}
+
+function toIsoFromEpochMaybe(value?: number | null) {
+  if (value == null) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+
+  const ms = n < 10_000_000_000 ? n * 1000 : n;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 export async function GET(req: NextRequest) {
   const apiKey = process.env.XCEED_API_KEY;
   const baseUrl = process.env.XCEED_BASE_URL;
@@ -63,13 +96,12 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  const eventId = searchParams.get("eventId");
+  const xceedEventRef = String(searchParams.get("eventId") || "").trim();
   const offset = searchParams.get("offset") || "0";
   const limit = searchParams.get("limit") || "100";
-  const includeCancelledTickets =
-    searchParams.get("includeCancelledTickets") || "true";
+  const includeCancelledTickets = searchParams.get("includeCancelledTickets") || "true";
 
-  if (!eventId) {
+  if (!xceedEventRef) {
     return NextResponse.json(
       {
         ok: false,
@@ -79,14 +111,77 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const url =
-    `${baseUrl}/v1/tickets` +
-    `?offset=${encodeURIComponent(offset)}` +
-    `&limit=${encodeURIComponent(limit)}` +
-    `&events=${encodeURIComponent(eventId)}` +
-    `&includeCancelledTickets=${encodeURIComponent(includeCancelledTickets)}`;
-
   try {
+    const supabase = createClient(supabaseUrl, supabaseServiceRole, {
+      auth: { persistSession: false },
+    });
+
+    // 1) risolvi evento locale da ref numerico O uuid
+    let { data: eventRow, error: eventErr } = await supabase
+      .from("events")
+      .select("id, name, xceed_event_ref, xceed_event_uuid")
+      .eq("xceed_event_ref", xceedEventRef)
+      .maybeSingle();
+
+    if (eventErr) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Failed to resolve local event",
+          details: eventErr.message,
+          xceedEventRef,
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!eventRow) {
+      const secondTry = await supabase
+        .from("events")
+        .select("id, name, xceed_event_ref, xceed_event_uuid")
+        .eq("xceed_event_uuid", xceedEventRef)
+        .maybeSingle();
+
+      if (secondTry.error) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Failed to resolve local event",
+            details: secondTry.error.message,
+            xceedEventRef,
+          },
+          { status: 500 }
+        );
+      }
+
+      eventRow = secondTry.data;
+    }
+
+    if (!eventRow?.id) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "No local event found for this Xceed identifier",
+          xceedEventRef,
+        },
+        { status: 404 }
+      );
+    }
+
+    const localEventId = String(eventRow.id);
+    const xceedTicketsEventId =
+      String((eventRow as any).xceed_event_uuid || "").trim() ||
+      String((eventRow as any).xceed_event_ref || "").trim() ||
+      xceedEventRef;
+
+    // 2) costruisci URL Xceed DOPO aver risolto l'id giusto
+    const url =
+      `${baseUrl}/v1/tickets` +
+      `?offset=${encodeURIComponent(offset)}` +
+      `&limit=${encodeURIComponent(limit)}` +
+      `&events=${encodeURIComponent(xceedTicketsEventId)}` +
+      `&includeCancelledTickets=${encodeURIComponent(includeCancelledTickets)}`;
+
     const xceedResponse = await fetch(url, {
       method: "GET",
       headers: {
@@ -108,6 +203,8 @@ export async function GET(req: NextRequest) {
           xceedStatus: xceedResponse.status,
           error: "Invalid JSON response from Xceed",
           raw: rawText,
+          xceedEventRef,
+          xceedTicketsEventId,
         },
         { status: 502 }
       );
@@ -120,74 +217,87 @@ export async function GET(req: NextRequest) {
           xceedStatus: xceedResponse.status,
           error: "Xceed request failed",
           data: parsed,
+          xceedEventRef,
+          xceedTicketsEventId,
         },
         { status: xceedResponse.status || 502 }
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceRole, {
-      auth: { persistSession: false },
-    });
+    // 3) mappa nello schema operativo
+    const nowIso = new Date().toISOString();
 
     const rows = parsed.data
       .filter((ticket) => !!ticket.qrCode)
-      .map((ticket) => ({
-        xceed_event_uuid: eventId,
-        xceed_booking_uuid: ticket.booking?.bookingUuid ?? null,
-        xceed_booking_id: ticket.booking?.bookingId ?? null,
-        qr_code: ticket.qrCode,
+      .map((ticket) => {
+        const email = normalizeEmail(ticket.email ?? null);
+        const phone = normalizePhone(ticket.phone ?? null);
+        const fullName = buildFullName(ticket.firstName, ticket.lastName);
 
-        first_name: ticket.firstName ?? null,
-        last_name: ticket.lastName ?? null,
-        email: ticket.email ?? (ticket.booking as any)?.email ?? null,
-        phone: ticket.phone ?? (ticket.booking as any)?.phone ?? null,
-        has_checked_in: Boolean(ticket.hasCheckedIn),
-        checked_in_time: ticket.checkedInTime ?? null,
-        is_active: ticket.isActive ?? null,
-        booking_confirmed: ticket.booking?.confirmed ?? null,
+        const rawPayload = {
+          source: "xceed_partner_api",
+          xceed_event_ref: xceedEventRef,
+          xceed_event_uuid: (eventRow as any).xceed_event_uuid ?? null,
+          synced_at: nowIso,
+          ticket,
+        };
 
-        offer_id: ticket.offer?.id ?? null,
-        offer_uuid: ticket.offer?.uuid ?? null,
-        offer_type: ticket.offer?.type ?? null,
-        offer_name: ticket.offer?.name ?? null,
+        return {
+          event_id: localEventId,
+          qr_code: ticket.qrCode,
+          status:
+            ticket.isActive === false
+              ? "cancelled"
+              : ticket.hasCheckedIn
+              ? "checked_in"
+              : "active",
+          full_name: fullName,
+          email,
+          phone,
+          booking_date: toIsoFromEpochMaybe(ticket.booking?.purchasedAt),
+          transaction_id:
+            ticket.booking?.bookingId != null ? String(ticket.booking.bookingId) : null,
+          imported_at: nowIso,
+          raw: rawPayload,
 
-        channel_id: ticket.booking?.channel?.id ?? null,
-        channel_legacy_id: ticket.booking?.channel?.legacyId ?? null,
-        channel_name: ticket.booking?.channel?.name ?? null,
-        channel_slug: ticket.booking?.channel?.slug ?? null,
-
-        purchased_at: ticket.booking?.purchasedAt ?? null,
-        booking_updated_at: ticket.booking?.updatedAt ?? null,
-
-        raw_payload: ticket,
-        synced_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
+          buyer_email: email,
+          buyer_phone: phone,
+          buyer_email_norm: email,
+          buyer_phone_norm: phone,
+        };
+      });
 
     if (rows.length === 0) {
       return NextResponse.json({
         ok: true,
         xceedStatus: xceedResponse.status,
-        eventId,
+        xceedEventRef,
+        xceedTicketsEventId,
+        localEventId,
+        localEventName: eventRow.name ?? null,
         fetched: 0,
         upserted: 0,
         message: "No tickets returned by Xceed",
       });
     }
 
+    // 4) upsert nella tabella operativa
     const { data: upsertedRows, error: upsertError } = await supabase
-      .from("xceed_partner_tickets")
+      .from("xceed_tickets")
       .upsert(rows, {
-        onConflict: "qr_code",
+        onConflict: "event_id,qr_code",
       })
-      .select("id, qr_code, has_checked_in, checked_in_time, offer_type, offer_name");
+      .select("id, event_id, qr_code, status, full_name, email, booking_date, transaction_id");
 
     if (upsertError) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Supabase upsert failed",
+          error: "Supabase upsert failed on xceed_tickets",
           details: upsertError.message,
+          xceedEventRef,
+          xceedTicketsEventId,
+          localEventId,
         },
         { status: 500 }
       );
@@ -196,7 +306,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       xceedStatus: xceedResponse.status,
-      eventId,
+      xceedEventRef,
+      xceedTicketsEventId,
+      localEventId,
+      localEventName: eventRow.name ?? null,
       fetched: parsed.data.length,
       upserted: upsertedRows?.length ?? 0,
       preview: upsertedRows?.slice(0, 5) ?? [],

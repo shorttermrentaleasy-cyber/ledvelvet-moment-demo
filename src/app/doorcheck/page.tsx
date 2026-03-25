@@ -8,6 +8,12 @@ const LS_KEY = "doorcheck_pin_ok";
 const LS_KEY_API = "doorcheck_api_key";
 const LS_KEY_DEVICE = "doorcheck_device_id";
 
+type DoorUi = {
+  type?: "ETS" | "SRL" | "XCEED" | "UNKNOWN";
+  color?: "green" | "red" | "blue" | "gold" | "gray";
+  badge?: string;
+};
+
 type DoorcheckOkResponse = {
   ok: true;
   allowed: boolean;
@@ -26,6 +32,18 @@ type DoorcheckOkResponse = {
   ticket_offer_description?: string | null;
   ticket_transaction_id?: string | null;
   ticket_booking_date?: string | null;
+
+  member_found?: boolean;
+  member_group?: "ordinary" | "loyalty" | "staff" | null;
+  member_group_label?: string | null;
+  priority_access?: boolean;
+  member_active_for_access?: boolean;
+  member_access_note?: string | null;
+  member_status_raw?: string | null;
+  eligible_for_membership_invite?: boolean;
+  membership_invite_url?: string | null;
+
+  ui?: DoorUi | null;
 };
 
 type DoorcheckResponse = DoorcheckOkResponse | { ok: false; error: string };
@@ -53,11 +71,9 @@ type AttendanceResp =
         tickets_total: number;
         tickets_checked_in: number;
         tickets_missing: number;
-
         checkins_total?: number;
         checkins_allowed?: number;
         checkins_denied?: number;
-
         checkins_allowed_by_kind?: {
           ETS?: number;
           XCEED?: number;
@@ -65,7 +81,6 @@ type AttendanceResp =
           UNKNOWN?: number;
         };
       };
-
       tickets_payload?: {
         view: "missing" | "entered" | "all";
         q: string;
@@ -86,9 +101,8 @@ type AttendanceResp =
           booking_date: string | null;
         }>;
       };
-
       checkins_payload?: {
-        kind: string; // ALL/ETS/SRL/XCEED
+        kind: string;
         q: string;
         limit: number;
         offset: number;
@@ -160,6 +174,36 @@ function fmtTS(ts: string | null | undefined) {
   }
 }
 
+function badgeClasses(color?: string, allowed?: boolean) {
+  if (!allowed) return "border-red-400/30 bg-red-400/15 text-red-100";
+  switch (color) {
+    case "gold":
+      return "border-amber-400/30 bg-amber-400/15 text-amber-100";
+    case "blue":
+      return "border-sky-400/30 bg-sky-400/15 text-sky-100";
+    case "gray":
+      return "border-white/15 bg-white/10 text-white";
+    case "green":
+    default:
+      return "border-emerald-400/30 bg-emerald-400/15 text-emerald-100";
+  }
+}
+
+function panelClasses(color?: string, allowed?: boolean) {
+  if (!allowed) return "border-red-400/30 bg-red-400/10";
+  switch (color) {
+    case "gold":
+      return "border-amber-400/30 bg-amber-400/10";
+    case "blue":
+      return "border-sky-400/30 bg-sky-400/10";
+    case "gray":
+      return "border-white/15 bg-white/5";
+    case "green":
+    default:
+      return "border-emerald-400/30 bg-emerald-400/10";
+  }
+}
+
 export default function DoorCheckPage() {
   const [eventId, setEventId] = useState("");
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -183,7 +227,6 @@ export default function DoorCheckPage() {
   const [autoSubmitOnScan, setAutoSubmitOnScan] = useState(true);
   const [scanStarting, setScanStarting] = useState(false);
 
-  // manual SRL UI
   const [manualOpen, setManualOpen] = useState(false);
   const [manualName, setManualName] = useState("");
   const [manualPhone, setManualPhone] = useState("");
@@ -191,7 +234,6 @@ export default function DoorCheckPage() {
   const [manualLoading, setManualLoading] = useState(false);
   const [lastDeniedCode, setLastDeniedCode] = useState<string | null>(null);
 
-  // Attendance drawer
   const [attOpen, setAttOpen] = useState(false);
   const [attTab, setAttTab] = useState<"missing" | "entered" | "tickets">("missing");
   const [attQ, setAttQ] = useState("");
@@ -201,7 +243,6 @@ export default function DoorCheckPage() {
   const [attErr, setAttErr] = useState<string | null>(null);
   const [attData, setAttData] = useState<AttendanceResp | null>(null);
 
-  // ✅ offsets separati
   const [ticketsOffset, setTicketsOffset] = useState(0);
   const [checkinsOffset, setCheckinsOffset] = useState(0);
   const [attLimit] = useState(200);
@@ -280,8 +321,6 @@ export default function DoorCheckPage() {
       if (did) setDeviceId(did);
     } catch {}
   }, []);
-
-  // ✅ AUTO-PROVISION: se arrivi con /doorcheck?provision=TOKEN (&device_id=...)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -341,21 +380,17 @@ export default function DoorCheckPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
 
   useEffect(() => {
     return () => stopScanner();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // debounce ricerca presenze
   useEffect(() => {
     const t = setTimeout(() => setAttQDebounced(attQ.trim()), 250);
     return () => clearTimeout(t);
   }, [attQ]);
 
-  // carica eventi quando pinOk
   useEffect(() => {
     if (!pinOk) return;
 
@@ -381,7 +416,6 @@ export default function DoorCheckPage() {
 
         if (!cancelled) {
           mapped.sort((a, b) => (a.name || "").localeCompare(b.name || "", "it", { sensitivity: "base" }));
-
           setEvents(mapped);
           if (!selectedEventId && mapped.length) {
             setSelectedEventId(mapped[0].id);
@@ -398,7 +432,6 @@ export default function DoorCheckPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinOk, selectedEventId]);
 
   function checkPin() {
@@ -655,7 +688,6 @@ export default function DoorCheckPage() {
     setAttErr(null);
   }
 
-  // ✅ IMPORTANTE: summary deve essere SEMPRE completo (non dipendere da view=missing)
   async function fetchAttendanceSummary(eid: string) {
     const url = `/api/admin/attendance?event_id=${encodeURIComponent(eid)}&limit=1&offset=0&scope=both&view=all`;
     const r = await fetch(url, { cache: "no-store" });
@@ -688,15 +720,13 @@ export default function DoorCheckPage() {
     if (reset) resetAttendanceStateForNewQuery();
 
     try {
-      // 1) prendi sempre summary globale
       const summaryResp = await fetchAttendanceSummary(eid);
 
-      // 2) poi prendi il payload del tab corrente (paginato)
       let url = `/api/admin/attendance?event_id=${encodeURIComponent(eid)}&limit=${attLimit}&offset=${off}&scope=${scope}`;
 
       if (scope === "tickets") {
         if (attTab === "missing") url += `&view=missing`;
-        else url += `&view=all`; // tickets tab
+        else url += `&view=all`;
         if (q) url += `&q=${encodeURIComponent(q)}`;
       } else {
         url += `&kind=${encodeURIComponent(attKind)}`;
@@ -708,7 +738,6 @@ export default function DoorCheckPage() {
 
       if (!r.ok || !payloadResp?.ok) throw new Error((payloadResp as any)?.error || "Errore caricamento presenze");
 
-      // 3) merge: summary/event da summaryResp, payload da payloadResp
       const merged: AttendanceResp = {
         ok: true,
         event: (summaryResp as any).event,
@@ -717,7 +746,6 @@ export default function DoorCheckPage() {
         ...(payloadResp as any).checkins_payload ? { checkins_payload: (payloadResp as any).checkins_payload } : {},
       } as any;
 
-      // has_more fallback
       if ((merged as any).tickets_payload && typeof (merged as any).tickets_payload.has_more === "undefined") {
         (merged as any).tickets_payload.has_more = (((merged as any).tickets_payload.tickets?.length ?? 0) as number) >= attLimit;
       }
@@ -763,7 +791,6 @@ export default function DoorCheckPage() {
   useEffect(() => {
     if (!attOpen) return;
     loadAttendance(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attOpen, attTab, attKind, attQDebounced]);
 
   const drawerTitle = useMemo(() => {
@@ -781,7 +808,6 @@ export default function DoorCheckPage() {
     if (!attData || !("ok" in attData) || !attData.ok) return false;
     return !!attData.checkins_payload?.has_more && !attLoading;
   }, [attData, attLoading]);
-
   return (
     <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-2xl mx-auto">
@@ -1114,7 +1140,6 @@ export default function DoorCheckPage() {
               )}
             </section>
 
-            {/* Risultato check */}
             <section className="mt-4">
               {!res ? (
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
@@ -1127,6 +1152,10 @@ export default function DoorCheckPage() {
                   const isDenied = !allowedNow;
                   const denyReasonEff = String(resAny?.reason || denyReason || "").trim();
                   const humanMessage = String(resAny?.message || "").trim();
+                  const ui = resAny.ui || null;
+                  const memberLabel = String(resAny.member_group_label || "").trim();
+                  const memberStatus = String(resAny.member_status_raw || "").trim();
+                  const inviteUrl = String(resAny.membership_invite_url || "").trim();
 
                   const hasTicketInfo =
                     !!String(resAny?.ticket_offer_title || "").trim() ||
@@ -1134,32 +1163,81 @@ export default function DoorCheckPage() {
                     !!String(resAny?.ticket_transaction_id || "").trim() ||
                     !!String(resAny?.ticket_booking_date || "").trim();
 
+                  const hasMemberInfo =
+                    !!resAny.member_found ||
+                    !!memberLabel ||
+                    !!memberStatus ||
+                    !!resAny.member_access_note ||
+                    !!resAny.priority_access;
+
                   return (
-                    <div
-                      className={`rounded-2xl border p-5 ${
-                        allowedNow ? "border-emerald-400/30 bg-emerald-400/10" : "border-red-400/30 bg-red-400/10"
-                      }`}
-                    >
-                      <div className="text-lg font-semibold">{allowedNow ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+                    <div className={`rounded-2xl border p-5 ${panelClasses(ui?.color, allowedNow)}`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-lg font-semibold">{allowedNow ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+                        {ui?.badge ? (
+                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${badgeClasses(ui?.color, allowedNow)}`}>
+                            {ui.badge}
+                          </span>
+                        ) : null}
+                        {resAny.kind ? (
+                          <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/70">
+                            {resAny.kind}
+                          </span>
+                        ) : null}
+                      </div>
 
                       {humanMessage ? (
-                        <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/85">
+                        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/85">
                           {humanMessage}
                         </div>
                       ) : null}
 
-                      <div className="mt-2 text-sm font-mono">
-                        {resAny.kind ? `kind: ${resAny.kind}` : null}
-                        {resAny.kind ? " · " : ""}
+                      {resAny.display_name ? (
+                        <div className="mt-3 text-xl font-semibold text-white">{resAny.display_name}</div>
+                      ) : null}
+
+                      <div className="mt-2 text-sm font-mono text-white/70">
                         {resAny.status ? `status: ${resAny.status}` : null}
                         {(resAny.reason || denyReason) ? ` · reason: ${String(resAny.reason || denyReason).trim()}` : ""}
                       </div>
 
-                      {resAny.display_name ? <div className="mt-1 text-white/80">name: {resAny.display_name}</div> : null}
+                      {hasMemberInfo ? (
+                        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                          <div className="text-sm font-semibold">👤 Membership</div>
+
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+                              {resAny.member_found ? "Socio riconosciuto" : "Non socio"}
+                            </span>
+
+                            {memberLabel ? (
+                              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${badgeClasses(ui?.color, !!resAny.member_found || allowedNow)}`}>
+                                {memberLabel}
+                              </span>
+                            ) : null}
+
+                            {resAny.priority_access ? (
+                              <span className="rounded-full border border-amber-400/30 bg-amber-400/15 px-3 py-1 text-xs font-semibold text-amber-100">
+                                Priority access
+                              </span>
+                            ) : null}
+
+                            {memberStatus ? (
+                              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+                                Stato: {memberStatus}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {resAny.member_access_note ? (
+                            <div className="mt-2 text-xs text-white/70">{resAny.member_access_note}</div>
+                          ) : null}
+                        </div>
+                      ) : null}
 
                       {hasTicketInfo ? (
                         <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-                          <div className="text-sm font-semibold">🎫 Ticket info</div>
+                          <div className="text-sm font-semibold">🎫 Ticket</div>
 
                           {resAny.ticket_offer_title ? (
                             <div className="mt-2 text-sm text-white/90">
@@ -1180,8 +1258,25 @@ export default function DoorCheckPage() {
                         </div>
                       ) : null}
 
+                      {inviteUrl ? (
+                        <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
+                          <div className="text-sm font-semibold text-sky-100">🪪 Non socio</div>
+                          <div className="mt-1 text-xs text-sky-50/80">
+                            Ticket trovato, ma membership non presente o richiesta per l’accesso.
+                          </div>
+                          <a
+                            href={inviteUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-3 inline-flex rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                          >
+                            Apri iscrizione Wally
+                          </a>
+                        </div>
+                      ) : null}
+
                       {resAny.checkin_id ? (
-                        <div className="mt-2 text-[11px] text-white/40 font-mono">checkin_id: {resAny.checkin_id}</div>
+                        <div className="mt-3 text-[11px] text-white/40 font-mono">checkin_id: {resAny.checkin_id}</div>
                       ) : null}
 
                       {isDenied && lastDeniedCode ? (
@@ -1204,7 +1299,6 @@ export default function DoorCheckPage() {
               )}
             </section>
 
-            {/* Drawer Presenze */}
             {attOpen ? (
               <div className="fixed inset-0 z-50">
                 <div
@@ -1370,8 +1464,7 @@ export default function DoorCheckPage() {
                                 <div key={c.id} className="rounded-xl border border-white/10 bg-black/30 p-3">
                                   <div className="flex items-center justify-between gap-3">
                                     <div className="text-sm text-white/90">
-                                      {c.display_name || "—"}{" "}
-                                      <span className="text-white/50">· {String(c.kind || "—")}</span>
+                                      {c.display_name || "—"} <span className="text-white/50">· {String(c.kind || "—")}</span>
                                     </div>
                                     <div className="text-[11px] text-white/50 font-mono">{fmtTS(c.created_at)}</div>
                                   </div>
@@ -1467,8 +1560,7 @@ export default function DoorCheckPage() {
                               <div key={c.id} className="rounded-xl border border-white/10 bg-black/30 p-3">
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="text-sm text-white/90">
-                                    {c.display_name || "—"}{" "}
-                                    <span className="text-white/50">· {String(c.kind || "—")}</span>
+                                    {c.display_name || "—"} <span className="text-white/50">· {String(c.kind || "—")}</span>
                                   </div>
                                   <div className="text-[11px] text-white/50 font-mono">{fmtTS(c.created_at)}</div>
                                 </div>

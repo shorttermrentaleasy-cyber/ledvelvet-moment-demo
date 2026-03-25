@@ -38,6 +38,12 @@ type MembershipInfo = {
   eligible_for_membership_invite: boolean;
 };
 
+type UiInfo = {
+  type: "ETS" | "XCEED" | "SRL" | "UNKNOWN";
+  color: "green" | "red" | "blue" | "gold" | "gray";
+  badge: string;
+};
+
 const NO_MEMBERSHIP: MembershipInfo = {
   member_found: false,
   member_group: null,
@@ -174,6 +180,65 @@ function buildMembershipInfo(params: {
   };
 }
 
+function buildUiInfo(params: {
+  kind: "ETS" | "XCEED" | "SRL" | "UNKNOWN";
+  allowed: boolean;
+  memberGroupLabel?: string | null;
+  priorityAccess?: boolean;
+  ticketOfferTitle?: string | null;
+}): UiInfo {
+  const kind = params.kind;
+  const allowed = Boolean(params.allowed);
+  const memberGroupLabel = String(params.memberGroupLabel || "").trim();
+  const priorityAccess = Boolean(params.priorityAccess);
+  const ticketOfferTitle = String(params.ticketOfferTitle || "").trim();
+
+  if (!allowed) {
+    return {
+      type: kind,
+      color: "red",
+      badge: memberGroupLabel || ticketOfferTitle || kind,
+    };
+  }
+
+  if (kind === "ETS") {
+    if (priorityAccess) {
+      return {
+        type: "ETS",
+        color: "gold",
+        badge: memberGroupLabel || "Socio priority",
+      };
+    }
+    return {
+      type: "ETS",
+      color: "green",
+      badge: memberGroupLabel || "Socio",
+    };
+  }
+
+  if (kind === "XCEED") {
+    return {
+      type: "XCEED",
+      color: "blue",
+      badge: ticketOfferTitle || "Ticket Xceed",
+    };
+  }
+
+  if (kind === "SRL") {
+    return {
+      type: "SRL",
+      color: "gray",
+      badge: "Guest / SRL",
+    };
+  }
+
+  return {
+    type: "UNKNOWN",
+    color: "red",
+    badge: "Non trovato",
+  };
+}
+
 async function isDoorApiKeyValid(supabase: ReturnType<typeof supabaseAdmin>, apiKey: string) {
   const k = (apiKey || "").trim();
   if (!k) return false;
@@ -291,9 +356,6 @@ async function findMemberByBarcodeOrCard(
     status: (m as any).status ?? null,
   };
 }
-
-
-
 async function memberAlreadyCheckedIn(
   supabase: ReturnType<typeof supabaseAdmin>,
   eventId: string,
@@ -468,7 +530,7 @@ async function linkMemberTicketToCheckin(params: {
         .update({ checkin_id: checkinId })
         .eq("id", (t as any).id);
 
-        if (updErr) throw new Error(updErr.message);
+      if (updErr) throw new Error(updErr.message);
       return;
     }
   }
@@ -544,8 +606,6 @@ async function upsertLegacyPerson(
   if (insErr) throw new Error(insErr.message);
   return { id: (ins as any).id as string, full_name: (ins as any).full_name as string | null };
 }
-
-
 export async function POST(req: Request) {
   try {
     const supabase = supabaseAdmin();
@@ -607,6 +667,11 @@ export async function POST(req: Request) {
             legacy_person_id: (t as any)?.legacy_person_id ?? null,
             display_name: nm,
             ...NO_MEMBERSHIP,
+            ui: buildUiInfo({
+              kind: "XCEED",
+              allowed: true,
+              ticketOfferTitle: "Ticket Xceed",
+            }),
           };
           resp.message = toHumanMessage(resp);
           return NextResponse.json(resp);
@@ -640,6 +705,10 @@ export async function POST(req: Request) {
           display_name: fullName || (legacy as any)?.full_name || null,
           scanned_code,
           ...NO_MEMBERSHIP,
+          ui: buildUiInfo({
+            kind: "SRL",
+            allowed: true,
+          }),
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
@@ -681,6 +750,10 @@ export async function POST(req: Request) {
         display_name: fullName || null,
         scanned_code,
         ...NO_MEMBERSHIP,
+        ui: buildUiInfo({
+          kind: "SRL",
+          allowed: true,
+        }),
       };
       resp.message = toHumanMessage(resp);
       return NextResponse.json(resp);
@@ -723,6 +796,12 @@ export async function POST(req: Request) {
           display_name: member.display_name,
           checkin_id: alreadyId,
           ...etsMembershipInfo,
+          ui: buildUiInfo({
+            kind: "ETS",
+            allowed: true,
+            memberGroupLabel: etsMembershipInfo.member_group_label,
+            priorityAccess: etsMembershipInfo.priority_access,
+          }),
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
@@ -746,6 +825,12 @@ export async function POST(req: Request) {
             member_id: member.id,
             display_name: member.display_name,
             ...etsMembershipInfo,
+            ui: buildUiInfo({
+              kind: "ETS",
+              allowed: false,
+              memberGroupLabel: etsMembershipInfo.member_group_label,
+              priorityAccess: etsMembershipInfo.priority_access,
+            }),
           };
           resp.message = toHumanMessage(resp);
           return NextResponse.json(resp);
@@ -789,6 +874,12 @@ export async function POST(req: Request) {
         checkin_id: newCheckinId,
         display_name: member.display_name,
         ...etsMembershipInfo,
+        ui: buildUiInfo({
+          kind: "ETS",
+          allowed: true,
+          memberGroupLabel: etsMembershipInfo.member_group_label,
+          priorityAccess: etsMembershipInfo.priority_access,
+        }),
       };
       resp.message = toHumanMessage(resp);
       return NextResponse.json(resp);
@@ -819,26 +910,38 @@ export async function POST(req: Request) {
       const ticket_transaction_id = asString((ticket as any).transaction_id) || null;
       const ticket_booking_date = (ticket as any).booking_date || null;
 
-      const ticketCheckinId = String((ticket as any).checkin_id ?? "").trim();
+      const ticketCheckinId = String((ticket as any)?.checkin_id ?? "").trim();
       if (ticketCheckinId) {
+        const xceedAlreadyMembershipInfo = buildMembershipInfo({
+          membershipGroup: null,
+          status: null,
+          requireActiveMembership: policy.require_active_membership,
+          inviteEligible: !!buyerEmail,
+        });
+
         const resp: any = {
           ok: true,
           allowed: true,
           kind: "XCEED",
           status: "Already Checked IN",
           checkin_id: ticketCheckinId,
-          legacy_person_id: (ticket as any).legacy_person_id ?? null,
+          legacy_person_id: (ticket as any)?.legacy_person_id ?? null,
           display_name: buyerName,
-          ...buildMembershipInfo({
-            membershipGroup: null,
-            status: null,
-            requireActiveMembership: policy.require_active_membership,
-            inviteEligible: !!buyerEmail,
-          }),
+          ...xceedAlreadyMembershipInfo,
+          membership_invite_url: buyerEmail
+            ? `https://wallyfor.com/tessera?email=${encodeURIComponent(buyerEmail)}`
+            : null,
           ticket_offer_title: offerTitle,
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
           ticket_booking_date,
+          ui: buildUiInfo({
+            kind: "XCEED",
+            allowed: true,
+            memberGroupLabel: xceedAlreadyMembershipInfo.member_group_label,
+            priorityAccess: xceedAlreadyMembershipInfo.priority_access,
+            ticketOfferTitle: offerTitle,
+          }),
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
@@ -874,6 +977,13 @@ export async function POST(req: Request) {
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
+            ui: buildUiInfo({
+              kind: "XCEED",
+              allowed: false,
+              memberGroupLabel: xceedMembershipInfo.member_group_label,
+              priorityAccess: xceedMembershipInfo.priority_access,
+              ticketOfferTitle: offerTitle,
+            }),
           };
           resp.message = toHumanMessage(resp);
           return NextResponse.json(resp);
@@ -889,10 +999,20 @@ export async function POST(req: Request) {
             display_name: buyerName,
             ...xceedMembershipInfo,
             member_access_note: "not a member",
+            membership_invite_url: buyerEmail
+              ? `https://wallyfor.com/tessera?email=${encodeURIComponent(buyerEmail)}`
+              : null,
             ticket_offer_title: offerTitle,
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
+            ui: buildUiInfo({
+              kind: "XCEED",
+              allowed: false,
+              memberGroupLabel: xceedMembershipInfo.member_group_label,
+              priorityAccess: xceedMembershipInfo.priority_access,
+              ticketOfferTitle: offerTitle,
+            }),
           };
           resp.message = toHumanMessage(resp);
           return NextResponse.json(resp);
@@ -915,6 +1035,13 @@ export async function POST(req: Request) {
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
+            ui: buildUiInfo({
+              kind: "ETS",
+              allowed: true,
+              memberGroupLabel: xceedMembershipInfo.member_group_label,
+              priorityAccess: xceedMembershipInfo.priority_access,
+              ticketOfferTitle: offerTitle,
+            }),
           };
           resp.message = toHumanMessage(resp);
           return NextResponse.json(resp);
@@ -954,6 +1081,13 @@ export async function POST(req: Request) {
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
           ticket_booking_date,
+          ui: buildUiInfo({
+            kind: "ETS",
+            allowed: true,
+            memberGroupLabel: xceedMembershipInfo.member_group_label,
+            priorityAccess: xceedMembershipInfo.priority_access,
+            ticketOfferTitle: offerTitle,
+          }),
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
@@ -980,6 +1114,13 @@ export async function POST(req: Request) {
 
       const alreadyLegacyId = await legacyAlreadyCheckedIn(supabase, eventId, legacyPersonId);
       if (alreadyLegacyId) {
+        const xceedGuestAlreadyMembershipInfo = buildMembershipInfo({
+          membershipGroup: null,
+          status: null,
+          requireActiveMembership: policy.require_active_membership,
+          inviteEligible: !!buyerEmail,
+        });
+
         await supabase.from("xceed_tickets").update({ checkin_id: alreadyLegacyId }).eq("id", (ticket as any).id);
 
         const resp: any = {
@@ -990,16 +1131,21 @@ export async function POST(req: Request) {
           legacy_person_id: legacyPersonId,
           checkin_id: alreadyLegacyId,
           display_name: buyerName,
-          ...buildMembershipInfo({
-            membershipGroup: null,
-            status: null,
-            requireActiveMembership: policy.require_active_membership,
-            inviteEligible: !!buyerEmail,
-          }),
+          ...xceedGuestAlreadyMembershipInfo,
+          membership_invite_url: buyerEmail
+            ? `https://wallyfor.com/tessera?email=${encodeURIComponent(buyerEmail)}`
+            : null,
           ticket_offer_title: offerTitle,
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
           ticket_booking_date,
+          ui: buildUiInfo({
+            kind: "XCEED",
+            allowed: true,
+            memberGroupLabel: xceedGuestAlreadyMembershipInfo.member_group_label,
+            priorityAccess: xceedGuestAlreadyMembershipInfo.priority_access,
+            ticketOfferTitle: offerTitle,
+          }),
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
@@ -1023,6 +1169,13 @@ export async function POST(req: Request) {
 
       await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
 
+      const xceedGuestMembershipInfo = buildMembershipInfo({
+        membershipGroup: null,
+        status: null,
+        requireActiveMembership: policy.require_active_membership,
+        inviteEligible: !!buyerEmail,
+      });
+
       const resp: any = {
         ok: true,
         allowed: true,
@@ -1031,16 +1184,21 @@ export async function POST(req: Request) {
         checkin_id: (ins as any)?.id || null,
         legacy_person_id: legacyPersonId,
         display_name: buyerName,
-        ...buildMembershipInfo({
-          membershipGroup: null,
-          status: null,
-          requireActiveMembership: policy.require_active_membership,
-          inviteEligible: !!buyerEmail,
-        }),
+        ...xceedGuestMembershipInfo,
+        membership_invite_url: buyerEmail
+          ? `https://wallyfor.com/tessera?email=${encodeURIComponent(buyerEmail)}`
+          : null,
         ticket_offer_title: offerTitle,
         ticket_offer_description: offerDescription,
         ticket_transaction_id,
         ticket_booking_date,
+        ui: buildUiInfo({
+          kind: "XCEED",
+          allowed: true,
+          memberGroupLabel: xceedGuestMembershipInfo.member_group_label,
+          priorityAccess: xceedGuestMembershipInfo.priority_access,
+          ticketOfferTitle: offerTitle,
+        }),
       };
       resp.message = toHumanMessage(resp);
       return NextResponse.json(resp);
@@ -1066,6 +1224,10 @@ export async function POST(req: Request) {
           checkin_id: alreadyId,
           display_name: (lp as any).full_name ?? null,
           ...NO_MEMBERSHIP,
+          ui: buildUiInfo({
+            kind: "SRL",
+            allowed: true,
+          }),
         };
         resp.message = toHumanMessage(resp);
         return NextResponse.json(resp);
@@ -1096,6 +1258,10 @@ export async function POST(req: Request) {
         legacy_person_id: (lp as any).id,
         display_name: (lp as any).full_name ?? null,
         ...NO_MEMBERSHIP,
+        ui: buildUiInfo({
+          kind: "SRL",
+          allowed: true,
+        }),
       };
       resp.message = toHumanMessage(resp);
       return NextResponse.json(resp);
@@ -1108,6 +1274,10 @@ export async function POST(req: Request) {
       status: "denied",
       reason: "not_found",
       ...NO_MEMBERSHIP,
+      ui: buildUiInfo({
+        kind: "UNKNOWN",
+        allowed: false,
+      }),
     };
     resp.message = toHumanMessage(resp);
     return NextResponse.json(resp);
@@ -1117,6 +1287,3 @@ export async function POST(req: Request) {
 }
 
 export {};
-
-
-
