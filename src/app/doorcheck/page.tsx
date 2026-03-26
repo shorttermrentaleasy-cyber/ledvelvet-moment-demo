@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import QRCode from "react-qr-code";
 import { BrowserMultiFormatReader, IScannerControls } from "@zxing/browser";
 
 const DOOR_PIN = "1979";
@@ -233,6 +234,8 @@ export default function DoorCheckPage() {
   const [manualEmail, setManualEmail] = useState("");
   const [manualLoading, setManualLoading] = useState(false);
   const [lastDeniedCode, setLastDeniedCode] = useState<string | null>(null);
+  const [inviteQrOpen, setInviteQrOpen] = useState(false);
+  const [inviteQrUrl, setInviteQrUrl] = useState("");
 
   const [attOpen, setAttOpen] = useState(false);
   const [attTab, setAttTab] = useState<"missing" | "entered" | "tickets">("missing");
@@ -1052,11 +1055,14 @@ export default function DoorCheckPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setRes(null);
-                    setQr("");
-                    setManualOpen(false);
-                    setLastDeniedCode(null);
-                  }}
+                  setRes(null);
+                  setQr("");
+                  setManualOpen(false);
+                  setLastDeniedCode(null);
+                  setInviteQrOpen(false);
+                  setInviteQrUrl("");
+                   }}
+
                   className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
                 >
                   Reset scan
@@ -1258,30 +1264,40 @@ export default function DoorCheckPage() {
                         </div>
                       ) : null}
 
-                      {!allowedNow && inviteUrl ? (
-                        <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
-                          <div className="text-sm font-semibold text-sky-100">🪪 Non socio</div>
-                          <div className="mt-1 text-xs text-sky-50/80">
-                            Ticket trovato, ma membership non presente o richiesta per l’accesso.
-                          </div>
-                          <a
-                            href={inviteUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-3 inline-flex rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
-                          >
-                            Apri iscrizione Wally
-                          </a>
-                        </div>
-                      ) : null}
 
-                      {resAny.checkin_id ? (
-                        <div className="mt-3 text-[11px] text-white/40 font-mono">checkin_id: {resAny.checkin_id}</div>
-                      ) : null}
 
-                      {isDenied && lastDeniedCode ? (
-                        <div className="mt-3 text-[11px] text-white/40 font-mono">lastDeniedCode: {lastDeniedCode}</div>
-                      ) : null}
+{!allowedNow && inviteUrl ? (
+  <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
+    <div className="text-sm font-semibold text-sky-100">🪪 Non socio</div>
+    <div className="mt-1 text-xs text-sky-50/80">
+      Ticket trovato, ma membership non presente o richiesta per l’accesso.
+    </div>
+
+    <div className="mt-3 flex flex-wrap gap-3">
+      <a
+        href={inviteUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+      >
+        Apri iscrizione Wally
+      </a>
+
+      <button
+        type="button"
+        onClick={() => {
+          setInviteQrUrl(inviteUrl);
+          setInviteQrOpen(true);
+        }}
+        className="inline-flex rounded-xl border border-white/20 bg-black/20 px-4 py-2 text-sm font-semibold text-white hover:bg-black/30"
+      >
+        Mostra QR iscrizione
+      </button>
+    </div>
+
+    <div className="mt-3 text-[11px] text-sky-50/60 break-all">{inviteUrl}</div>
+  </div>
+) : null}
 
                       {isDenied && denyReasonEff === "not_found" ? (
                         <div className="mt-3 text-sm text-white/80">
@@ -1584,6 +1600,83 @@ export default function DoorCheckPage() {
                 </div>
               </div>
             ) : null}
+
+
+            {inviteQrOpen ? (
+              <div className="fixed inset-0 z-[60]">
+                <div
+                  className="absolute inset-0 bg-black/70"
+                  onClick={() => {
+                    setInviteQrOpen(false);
+                  }}
+                />
+                <div className="absolute inset-x-0 top-1/2 mx-auto w-[92%] max-w-md -translate-y-1/2 rounded-3xl border border-white/10 bg-neutral-950 p-6 shadow-2xl">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-semibold">Iscrizione socio</div>
+                      <div className="mt-1 text-xs text-white/50">
+                        Fai inquadrare questo QR al cliente
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setInviteQrOpen(false)}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="mt-5 flex justify-center">
+                    <div className="rounded-2xl bg-white p-4">
+                      <QRCode
+                        value={inviteQrUrl || "https://www.wallyfor.com"}
+                        size={220}
+                        bgColor="#FFFFFF"
+                        fgColor="#000000"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 text-center text-xs text-white/60 break-all">
+                    {inviteQrUrl}
+                  </div>
+
+                  <div className="mt-5 flex flex-col sm:flex-row gap-3">
+                    <a
+                      href={inviteQrUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex justify-center rounded-xl bg-white text-black px-4 py-3 text-sm font-semibold"
+                    >
+                      Apri iscrizione
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(inviteQrUrl);
+                          alert("Link copiato");
+                        } catch {
+                          alert("Impossibile copiare il link");
+                        }
+                      }}
+                      className="inline-flex justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10"
+                    >
+                      Copia link
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+
+
+
+
+
           </>
         )}
       </div>
