@@ -1258,7 +1258,7 @@ export default function DoorCheckPage() {
                         </div>
                       ) : null}
 
-                      {inviteUrl ? (
+                      {!allowedNow && inviteUrl ? (
                         <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
                           <div className="text-sm font-semibold text-sky-100">🪪 Non socio</div>
                           <div className="mt-1 text-xs text-sky-50/80">

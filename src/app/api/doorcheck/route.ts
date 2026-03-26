@@ -910,42 +910,58 @@ export async function POST(req: Request) {
       const ticket_transaction_id = asString((ticket as any).transaction_id) || null;
       const ticket_booking_date = (ticket as any).booking_date || null;
 
-      const ticketCheckinId = String((ticket as any)?.checkin_id ?? "").trim();
-      if (ticketCheckinId) {
-        const xceedAlreadyMembershipInfo = buildMembershipInfo({
+const ticketCheckinId = String((ticket as any).checkin_id ?? "").trim();
+if (ticketCheckinId) {
+  const resolvedMember = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
+
+  const alreadyCheckedMembershipInfo =
+    !resolvedMember || (resolvedMember as any).ambiguous
+      ? buildMembershipInfo({
           membershipGroup: null,
           status: null,
           requireActiveMembership: policy.require_active_membership,
           inviteEligible: !!buyerEmail,
+        })
+      : buildMembershipInfo({
+          membershipGroup: (resolvedMember as any).membership_group,
+          status: (resolvedMember as any).status,
+          requireActiveMembership: policy.require_active_membership,
+          inviteEligible: false,
         });
 
-        const resp: any = {
-          ok: true,
-          allowed: true,
-          kind: "XCEED",
-          status: "Already Checked IN",
-          checkin_id: ticketCheckinId,
-          legacy_person_id: (ticket as any)?.legacy_person_id ?? null,
-          display_name: buyerName,
-          ...xceedAlreadyMembershipInfo,
-          membership_invite_url: buyerEmail
-            ? `https://wallyfor.com/tessera?email=${encodeURIComponent(buyerEmail)}`
-            : null,
-          ticket_offer_title: offerTitle,
-          ticket_offer_description: offerDescription,
-          ticket_transaction_id,
-          ticket_booking_date,
-          ui: buildUiInfo({
-            kind: "XCEED",
-            allowed: true,
-            memberGroupLabel: xceedAlreadyMembershipInfo.member_group_label,
-            priorityAccess: xceedAlreadyMembershipInfo.priority_access,
-            ticketOfferTitle: offerTitle,
-          }),
-        };
-        resp.message = toHumanMessage(resp);
-        return NextResponse.json(resp);
-      }
+  const resp: any = {
+    ok: true,
+    allowed: true,
+    kind:
+      resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED",
+    status: "Already Checked IN",
+    checkin_id: ticketCheckinId,
+    member_id:
+      resolvedMember && !(resolvedMember as any).ambiguous
+        ? (resolvedMember as any).id
+        : null,
+    legacy_person_id:
+      resolvedMember && !(resolvedMember as any).ambiguous
+        ? null
+        : (ticket as any).legacy_person_id ?? null,
+    display_name:
+      resolvedMember && !(resolvedMember as any).ambiguous
+        ? (resolvedMember as any).display_name || buyerName
+        : buyerName,
+    ...alreadyCheckedMembershipInfo,
+    ticket_offer_title: offerTitle,
+    ticket_offer_description: offerDescription,
+    ticket_transaction_id,
+    ticket_booking_date,
+  };
+
+  resp.message = toHumanMessage(resp);
+  return NextResponse.json(resp);
+}
+      
+
+
+
 
       if (policy.require_membership) {
         const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
