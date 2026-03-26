@@ -33,7 +33,7 @@ type DoorcheckOkResponse = {
   ticket_offer_description?: string | null;
   ticket_transaction_id?: string | null;
   ticket_booking_date?: string | null;
-
+  ticket_type?: string | null;
   member_found?: boolean;
   member_group?: "ordinary" | "loyalty" | "staff" | null;
   member_group_label?: string | null;
@@ -1257,10 +1257,22 @@ export default function DoorCheckPage() {
                             </div>
                           ) : null}
 
-                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
-                            {resAny.ticket_transaction_id ? <div>tx: {resAny.ticket_transaction_id}</div> : null}
-                            {resAny.ticket_booking_date ? <div>booking: {String(resAny.ticket_booking_date)}</div> : null}
-                          </div>
+                          
+<div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
+  {resAny.ticket_type ? (
+    <div>
+      type: <span className="text-white/80">{resAny.ticket_type}</span>
+    </div>
+  ) : null}
+
+  {resAny.ticket_transaction_id ? <div>tx: {resAny.ticket_transaction_id}</div> : null}
+
+  {resAny.ticket_booking_date ? (
+    <div>booking: {String(resAny.ticket_booking_date)}</div>
+  ) : null}
+</div>
+
+
                         </div>
                       ) : null}
 

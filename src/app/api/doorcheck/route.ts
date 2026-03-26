@@ -121,6 +121,16 @@ function getXceedRawField(raw: any, keys: string[]): string | null {
   return null;
 }
 
+function getXceedTicketType(raw: any): string | null {
+  return (
+    raw?.ticket?.offer?.type ??
+    raw?.booking?.offer?.type ??
+    raw?.offer?.type ??
+    getXceedRawField(raw, ["Offer type", "Offer Type", "offer_type", "offerType"]) ??
+    null
+  );
+}
+
 function buildMembershipInfo(params: {
   membershipGroup?: string | null;
   status?: string | null;
@@ -929,31 +939,40 @@ if (ticketCheckinId) {
           inviteEligible: false,
         });
 
-  const resp: any = {
-    ok: true,
-    allowed: true,
-    kind:
-      resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED",
-    status: "Already Checked IN",
-    checkin_id: ticketCheckinId,
-    member_id:
-      resolvedMember && !(resolvedMember as any).ambiguous
-        ? (resolvedMember as any).id
-        : null,
-    legacy_person_id:
-      resolvedMember && !(resolvedMember as any).ambiguous
-        ? null
-        : (ticket as any).legacy_person_id ?? null,
-    display_name:
-      resolvedMember && !(resolvedMember as any).ambiguous
-        ? (resolvedMember as any).display_name || buyerName
-        : buyerName,
-    ...alreadyCheckedMembershipInfo,
-    ticket_offer_title: offerTitle,
-    ticket_offer_description: offerDescription,
-    ticket_transaction_id,
-    ticket_booking_date,
-  };
+const resp: any = {
+  ok: true,
+  allowed: true,
+  kind:
+    resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED",
+  status: "Already Checked IN",
+  checkin_id: ticketCheckinId,
+  member_id:
+    resolvedMember && !(resolvedMember as any).ambiguous
+      ? (resolvedMember as any).id
+      : null,
+  legacy_person_id:
+    resolvedMember && !(resolvedMember as any).ambiguous
+      ? null
+      : (ticket as any).legacy_person_id ?? null,
+  display_name:
+    resolvedMember && !(resolvedMember as any).ambiguous
+      ? (resolvedMember as any).display_name || buyerName
+      : buyerName,
+  ...alreadyCheckedMembershipInfo,
+  ticket_offer_title: offerTitle,
+  ticket_offer_description: offerDescription,
+  ticket_transaction_id,
+  ticket_booking_date,
+  ticket_type:
+    raw?.ticket?.offer?.type ??
+    raw?.booking?.offer?.type ??
+    getXceedRawField(raw, ["Offer type", "Offer Type", "offer_type", "offerType"]) ??
+    null,
+};
+
+
+
+
 
   resp.message = toHumanMessage(resp);
   return NextResponse.json(resp);
@@ -993,6 +1012,7 @@ if (ticketCheckinId) {
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
+            ticket_type: getXceedTicketType(raw),
             ui: buildUiInfo({
               kind: "XCEED",
               allowed: false,
@@ -1023,6 +1043,7 @@ if (ticketCheckinId) {
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
+            ticket_type: getXceedTicketType(raw),
             ui: buildUiInfo({
               kind: "XCEED",
               allowed: false,
@@ -1052,6 +1073,7 @@ if (ticketCheckinId) {
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
+            ticket_type: getXceedTicketType(raw),
             ui: buildUiInfo({
               kind: "ETS",
               allowed: true,
@@ -1098,6 +1120,7 @@ if (ticketCheckinId) {
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
           ticket_booking_date,
+          ticket_type: getXceedTicketType(raw),
           ui: buildUiInfo({
             kind: "ETS",
             allowed: true,
@@ -1156,6 +1179,7 @@ if (ticketCheckinId) {
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
           ticket_booking_date,
+          ticket_type: getXceedTicketType(raw),
           ui: buildUiInfo({
             kind: "XCEED",
             allowed: true,
@@ -1209,6 +1233,7 @@ if (ticketCheckinId) {
         ticket_offer_description: offerDescription,
         ticket_transaction_id,
         ticket_booking_date,
+        ticket_type: getXceedTicketType(raw),
         ui: buildUiInfo({
           kind: "XCEED",
           allowed: true,
