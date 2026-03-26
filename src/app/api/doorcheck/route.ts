@@ -1016,7 +1016,8 @@ if (ticketCheckinId) {
             ...xceedMembershipInfo,
             member_access_note: "not a member",
             membership_invite_url: buyerEmail
-              ? `https://wallyfor.com/tessera?email=${encodeURIComponent(buyerEmail)}`
+
+              ? `https://www.wallyfor.com/step1.php?ref=1d7439beb34f751e1db481e40592079e`
               : null,
             ticket_offer_title: offerTitle,
             ticket_offer_description: offerDescription,
@@ -1149,7 +1150,7 @@ if (ticketCheckinId) {
           display_name: buyerName,
           ...xceedGuestAlreadyMembershipInfo,
           membership_invite_url: buyerEmail
-            ? `https://wallyfor.com/tessera?email=${encodeURIComponent(buyerEmail)}`
+            ? `https://www.wallyfor.com/step1.php?ref=1d7439beb34f751e1db481e40592079e`
             : null,
           ticket_offer_title: offerTitle,
           ticket_offer_description: offerDescription,
@@ -1202,7 +1203,7 @@ if (ticketCheckinId) {
         display_name: buyerName,
         ...xceedGuestMembershipInfo,
         membership_invite_url: buyerEmail
-          ? `https://wallyfor.com/tessera?email=${encodeURIComponent(buyerEmail)}`
+          ? `https://www.wallyfor.com/step1.php?ref=1d7439beb34f751e1db481e40592079e`
           : null,
         ticket_offer_title: offerTitle,
         ticket_offer_description: offerDescription,
