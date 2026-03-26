@@ -616,6 +616,7 @@ async function upsertLegacyPerson(
   if (insErr) throw new Error(insErr.message);
   return { id: (ins as any).id as string, full_name: (ins as any).full_name as string | null };
 }
+
 export async function POST(req: Request) {
   try {
     const supabase = supabaseAdmin();
@@ -773,7 +774,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
     }
 
-    // A) ETS via tessera/barcode
     const member = await findMemberByBarcodeOrCard(supabase, qrRaw);
     const etsMembershipInfo = member
       ? buildMembershipInfo({
@@ -783,7 +783,6 @@ export async function POST(req: Request) {
           inviteEligible: false,
         })
       : { ...NO_MEMBERSHIP };
-
     if (member) {
       const alreadyId = await memberAlreadyCheckedIn(supabase, eventId, member.id);
       if (alreadyId) {
@@ -895,7 +894,6 @@ export async function POST(req: Request) {
       return NextResponse.json(resp);
     }
 
-    // B) XCEED ticket
     const { data: ticket, error: tErr } = await supabase
       .from("xceed_tickets")
       .select("id, checkin_id, legacy_person_id, full_name, email, phone, transaction_id, booking_date, raw")
@@ -919,68 +917,65 @@ export async function POST(req: Request) {
 
       const ticket_transaction_id = asString((ticket as any).transaction_id) || null;
       const ticket_booking_date = (ticket as any).booking_date || null;
+      const ticket_type = getXceedTicketType(raw);
 
-const ticketCheckinId = String((ticket as any).checkin_id ?? "").trim();
-if (ticketCheckinId) {
-  const resolvedMember = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
+      const ticketCheckinId = String((ticket as any).checkin_id ?? "").trim();
+      if (ticketCheckinId) {
+        const resolvedMember = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
 
-  const alreadyCheckedMembershipInfo =
-    !resolvedMember || (resolvedMember as any).ambiguous
-      ? buildMembershipInfo({
-          membershipGroup: null,
-          status: null,
-          requireActiveMembership: policy.require_active_membership,
-          inviteEligible: !!buyerEmail,
-        })
-      : buildMembershipInfo({
-          membershipGroup: (resolvedMember as any).membership_group,
-          status: (resolvedMember as any).status,
-          requireActiveMembership: policy.require_active_membership,
-          inviteEligible: false,
-        });
+        const alreadyCheckedMembershipInfo =
+          !resolvedMember || (resolvedMember as any).ambiguous
+            ? buildMembershipInfo({
+                membershipGroup: null,
+                status: null,
+                requireActiveMembership: policy.require_active_membership,
+                inviteEligible: !!buyerEmail,
+              })
+            : buildMembershipInfo({
+                membershipGroup: (resolvedMember as any).membership_group,
+                status: (resolvedMember as any).status,
+                requireActiveMembership: policy.require_active_membership,
+                inviteEligible: false,
+              });
 
-const resp: any = {
-  ok: true,
-  allowed: true,
-  kind:
-    resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED",
-  status: "Already Checked IN",
-  checkin_id: ticketCheckinId,
-  member_id:
-    resolvedMember && !(resolvedMember as any).ambiguous
-      ? (resolvedMember as any).id
-      : null,
-  legacy_person_id:
-    resolvedMember && !(resolvedMember as any).ambiguous
-      ? null
-      : (ticket as any).legacy_person_id ?? null,
-  display_name:
-    resolvedMember && !(resolvedMember as any).ambiguous
-      ? (resolvedMember as any).display_name || buyerName
-      : buyerName,
-  ...alreadyCheckedMembershipInfo,
-  ticket_offer_title: offerTitle,
-  ticket_offer_description: offerDescription,
-  ticket_transaction_id,
-  ticket_booking_date,
-  ticket_type:
-    raw?.ticket?.offer?.type ??
-    raw?.booking?.offer?.type ??
-    getXceedRawField(raw, ["Offer type", "Offer Type", "offer_type", "offerType"]) ??
-    null,
-};
+        const resp: any = {
+          ok: true,
+          allowed: true,
+          kind:
+            resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED",
+          status: "Already Checked IN",
+          checkin_id: ticketCheckinId,
+          member_id:
+            resolvedMember && !(resolvedMember as any).ambiguous
+              ? (resolvedMember as any).id
+              : null,
+          legacy_person_id:
+            resolvedMember && !(resolvedMember as any).ambiguous
+              ? null
+              : (ticket as any).legacy_person_id ?? null,
+          display_name:
+            resolvedMember && !(resolvedMember as any).ambiguous
+              ? (resolvedMember as any).display_name || buyerName
+              : buyerName,
+          ...alreadyCheckedMembershipInfo,
+          ticket_offer_title: offerTitle,
+          ticket_offer_description: offerDescription,
+          ticket_transaction_id,
+          ticket_booking_date,
+          ticket_type,
+          ui: buildUiInfo({
+            kind:
+              resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED",
+            allowed: true,
+            memberGroupLabel: alreadyCheckedMembershipInfo.member_group_label,
+            priorityAccess: alreadyCheckedMembershipInfo.priority_access,
+            ticketOfferTitle: offerTitle,
+          }),
+        };
 
-
-
-
-
-  resp.message = toHumanMessage(resp);
-  return NextResponse.json(resp);
-}
-      
-
-
-
+        resp.message = toHumanMessage(resp);
+        return NextResponse.json(resp);
+      }
 
       if (policy.require_membership) {
         const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
@@ -1012,7 +1007,7 @@ const resp: any = {
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
-            ticket_type: getXceedTicketType(raw),
+            ticket_type,
             ui: buildUiInfo({
               kind: "XCEED",
               allowed: false,
@@ -1036,14 +1031,13 @@ const resp: any = {
             ...xceedMembershipInfo,
             member_access_note: "not a member",
             membership_invite_url: buyerEmail
-
               ? `https://www.wallyfor.com/step1.php?ref=1d7439beb34f751e1db481e40592079e`
               : null,
             ticket_offer_title: offerTitle,
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
-            ticket_type: getXceedTicketType(raw),
+            ticket_type,
             ui: buildUiInfo({
               kind: "XCEED",
               allowed: false,
@@ -1073,7 +1067,7 @@ const resp: any = {
             ticket_offer_description: offerDescription,
             ticket_transaction_id,
             ticket_booking_date,
-            ticket_type: getXceedTicketType(raw),
+            ticket_type,
             ui: buildUiInfo({
               kind: "ETS",
               allowed: true,
@@ -1120,7 +1114,7 @@ const resp: any = {
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
           ticket_booking_date,
-          ticket_type: getXceedTicketType(raw),
+          ticket_type,
           ui: buildUiInfo({
             kind: "ETS",
             allowed: true,
@@ -1179,7 +1173,7 @@ const resp: any = {
           ticket_offer_description: offerDescription,
           ticket_transaction_id,
           ticket_booking_date,
-          ticket_type: getXceedTicketType(raw),
+          ticket_type,
           ui: buildUiInfo({
             kind: "XCEED",
             allowed: true,
@@ -1233,7 +1227,7 @@ const resp: any = {
         ticket_offer_description: offerDescription,
         ticket_transaction_id,
         ticket_booking_date,
-        ticket_type: getXceedTicketType(raw),
+        ticket_type,
         ui: buildUiInfo({
           kind: "XCEED",
           allowed: true,
