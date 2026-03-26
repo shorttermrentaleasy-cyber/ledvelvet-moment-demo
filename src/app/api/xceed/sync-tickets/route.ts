@@ -79,22 +79,21 @@ type XceedBookingsResponse = {
   data: XceedBooking[];
 };
 
-/**
- * Tipo RAW unificato usato sia per tickets che per bookings_fallback
- */
 type XceedTicketRowRaw = {
   source: "tickets" | "bookings_fallback";
   xceed_event_ref: string;
   xceed_event_uuid: string | null;
   synced_at: string;
-  ticket?: XceedTicket;
-  booking?: XceedBooking;
-  pass?: XceedBookingPass;
+  offer: {
+    type: string | null;
+    name: string | null;
+    description: string | null;
+  };
+  booking?: any;
+  ticket?: any;
+  pass?: any;
 };
 
-/**
- * Tipo riga per la tabella xceed_tickets
- */
 type XceedTicketRow = {
   event_id: string;
   qr_code: string;
@@ -176,6 +175,108 @@ async function fetchJson(url: string, apiKey: string) {
   };
 }
 
+async function fetchAllTicketPages(
+  baseUrl: string,
+  apiKey: string,
+  eventId: string,
+  includeCancelledTickets: string,
+  pageSize = 100
+): Promise<{ ok: boolean; status: number; items: XceedTicket[]; error?: string }> {
+  let offset = 0;
+  const items: XceedTicket[] = [];
+  const maxPages = 50;
+
+  for (let page = 0; page < maxPages; page++) {
+    const url =
+      `${baseUrl}/v1/tickets` +
+      `?offset=${encodeURIComponent(String(offset))}` +
+      `&limit=${encodeURIComponent(String(pageSize))}` +
+      `&events=${encodeURIComponent(eventId)}` +
+      `&includeCancelledTickets=${encodeURIComponent(includeCancelledTickets)}`;
+
+    const res = await fetchJson(url, apiKey);
+
+    if (!res.parsed) {
+      return {
+        ok: false,
+        status: res.status,
+        items,
+        error: "Invalid JSON response from Xceed tickets endpoint",
+      };
+    }
+
+    if (!res.ok || !res.parsed?.success || !Array.isArray(res.parsed.data)) {
+      return {
+        ok: false,
+        status: res.status,
+        items,
+        error: "Xceed tickets request failed",
+      };
+    }
+
+    const pageItems = (res.parsed as XceedTicketsResponse).data;
+    items.push(...pageItems);
+
+    if (pageItems.length < pageSize) {
+      return { ok: true, status: res.status, items };
+    }
+
+    offset += pageSize;
+  }
+
+  return { ok: true, status: 200, items };
+}
+async function fetchAllBookingPages(
+  baseUrl: string,
+  apiKey: string,
+  eventId: string,
+  includeCancelledTickets: string,
+  pageSize = 100
+): Promise<{ ok: boolean; status: number; items: XceedBooking[]; error?: string }> {
+  let offset = 0;
+  const items: XceedBooking[] = [];
+  const maxPages = 50;
+
+  for (let page = 0; page < maxPages; page++) {
+    const url =
+      `${baseUrl}/v1/bookings` +
+      `?offset=${encodeURIComponent(String(offset))}` +
+      `&limit=${encodeURIComponent(String(pageSize))}` +
+      `&events=${encodeURIComponent(eventId)}` +
+      `&includeCancelledTickets=${encodeURIComponent(includeCancelledTickets)}`;
+
+    const res = await fetchJson(url, apiKey);
+
+    if (!res.parsed) {
+      return {
+        ok: false,
+        status: res.status,
+        items,
+        error: "Invalid JSON response from Xceed bookings endpoint",
+      };
+    }
+
+    if (!res.ok || !res.parsed?.success || !Array.isArray(res.parsed.data)) {
+      return {
+        ok: false,
+        status: res.status,
+        items,
+        error: "Xceed bookings request failed",
+      };
+    }
+
+    const pageItems = (res.parsed as XceedBookingsResponse).data;
+    items.push(...pageItems);
+
+    if (pageItems.length < pageSize) {
+      return { ok: true, status: res.status, items };
+    }
+
+    offset += pageSize;
+  }
+
+  return { ok: true, status: 200, items };
+}
 
 export async function GET(req: NextRequest) {
   const apiKey = process.env.XCEED_API_KEY;
@@ -185,37 +286,26 @@ export async function GET(req: NextRequest) {
 
   if (!apiKey || !baseUrl) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Missing XCEED_API_KEY or XCEED_BASE_URL",
-      },
+      { ok: false, error: "Missing XCEED_API_KEY or XCEED_BASE_URL" },
       { status: 500 }
     );
   }
 
   if (!supabaseUrl || !supabaseServiceRole) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE",
-      },
+      { ok: false, error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE" },
       { status: 500 }
     );
   }
 
   const { searchParams } = new URL(req.url);
   const xceedEventRef = String(searchParams.get("eventId") || "").trim();
-  const offset = searchParams.get("offset") || "0";
-  const limit = searchParams.get("limit") || "100";
   const includeCancelledTickets =
     searchParams.get("includeCancelledTickets") || "true";
 
   if (!xceedEventRef) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Missing required query param: eventId",
-      },
+      { ok: false, error: "Missing required query param: eventId" },
       { status: 400 }
     );
   }
@@ -282,42 +372,22 @@ export async function GET(req: NextRequest) {
       String((eventRow as any).xceed_event_ref || "").trim() ||
       xceedEventRef;
 
-    const ticketsUrl =
-      `${baseUrl}/v1/tickets` +
-      `?offset=${encodeURIComponent(offset)}` +
-      `&limit=${encodeURIComponent(limit)}` +
-      `&events=${encodeURIComponent(xceedTicketsEventId)}` +
-      `&includeCancelledTickets=${encodeURIComponent(
-        includeCancelledTickets
-      )}`;
+    const nowIso = new Date().toISOString();
 
-    const ticketsFetch = await fetchJson(ticketsUrl, apiKey);
+    const ticketsFetch = await fetchAllTicketPages(
+      baseUrl,
+      apiKey,
+      xceedTicketsEventId,
+      includeCancelledTickets,
+      100
+    );
 
-    if (!ticketsFetch.parsed) {
+    if (!ticketsFetch.ok) {
       return NextResponse.json(
         {
           ok: false,
           xceedStatus: ticketsFetch.status,
-          error: "Invalid JSON response from Xceed tickets endpoint",
-          raw: ticketsFetch.rawText,
-          xceedEventRef,
-          xceedTicketsEventId,
-        },
-        { status: 502 }
-      );
-    }
-
-    if (
-      !ticketsFetch.ok ||
-      !ticketsFetch.parsed?.success ||
-      !Array.isArray(ticketsFetch.parsed.data)
-    ) {
-      return NextResponse.json(
-        {
-          ok: false,
-          xceedStatus: ticketsFetch.status,
-          error: "Xceed tickets request failed",
-          data: ticketsFetch.parsed,
+          error: ticketsFetch.error || "Xceed tickets request failed",
           xceedEventRef,
           xceedTicketsEventId,
         },
@@ -325,10 +395,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const parsedTickets = ticketsFetch.parsed as XceedTicketsResponse;
-    const nowIso = new Date().toISOString();
-
-    let rows: XceedTicketRow[] = parsedTickets.data
+    let rows: XceedTicketRow[] = ticketsFetch.items
       .filter((ticket) => !!ticket.qrCode)
       .map((ticket): XceedTicketRow => {
         const email = normalizeEmail(ticket.email ?? null);
@@ -358,6 +425,12 @@ export async function GET(req: NextRequest) {
             xceed_event_ref: xceedEventRef,
             xceed_event_uuid: (eventRow as any).xceed_event_uuid ?? null,
             synced_at: nowIso,
+            offer: {
+              type: ticket.offer?.type ?? null,
+              name: ticket.offer?.name ?? null,
+              description: ticket.offer?.description ?? null,
+            },
+            booking: ticket.booking ?? null,
             ticket,
           },
           buyer_email: email,
@@ -368,95 +441,81 @@ export async function GET(req: NextRequest) {
       });
 
     let sourceUsed: "tickets" | "bookings_fallback" = "tickets";
-
-    // Fallback su /v1/bookings se /v1/tickets non restituisce nulla
     if (rows.length === 0) {
-      const bookingsUrl =
-        `${baseUrl}/v1/bookings` +
-        `?offset=${encodeURIComponent(offset)}` +
-        `&limit=${encodeURIComponent(limit)}` +
-        `&events=${encodeURIComponent(xceedTicketsEventId)}` +
-        `&includeCancelledTickets=${encodeURIComponent(
-          includeCancelledTickets
-        )}`;
+      const bookingsFetch = await fetchAllBookingPages(
+        baseUrl,
+        apiKey,
+        xceedTicketsEventId,
+        includeCancelledTickets,
+        100
+      );
 
-      const bookingsFetch = await fetchJson(bookingsUrl, apiKey);
-
-      if (
-        bookingsFetch.parsed &&
-        bookingsFetch.ok &&
-        bookingsFetch.parsed?.success &&
-        Array.isArray(bookingsFetch.parsed.data)
-      ) {
-        const parsedBookings = bookingsFetch.parsed as XceedBookingsResponse;
-
-        rows = parsedBookings.data.flatMap(
-          (booking): XceedTicketRow[] => {
-            const passes = Array.isArray(booking.passes)
-              ? booking.passes
-              : [];
-
-            return passes
-              .filter((pass) => !!pass.qrCode)
-              .map((pass): XceedTicketRow => {
-                const email = normalizeEmail(
-                  pass.email ?? booking.buyer?.email ?? null
-                );
-                const phone = normalizePhone(
-                  pass.phone ?? booking.buyer?.phone ?? null
-                );
-                const fullName =
-                  buildFullName(pass.firstName, pass.lastName) ||
-                  buildFullName(
-                    booking.buyer?.firstName,
-                    booking.buyer?.lastName
-                  );
-
-                const buyerEmail = normalizeEmail(
-                  booking.buyer?.email ?? null
-                );
-                const buyerPhone = normalizePhone(
-                  booking.buyer?.phone ?? null
-                );
-
-                return {
-                  event_id: localEventId,
-                  qr_code: String(pass.qrCode),
-                  status:
-                    pass.isActive === false
-                      ? "cancelled"
-                      : pass.hasCheckedIn
-                      ? "checked_in"
-                      : "active",
-                  full_name: fullName,
-                  email,
-                  phone,
-                  booking_date: toIsoFromEpochMaybe(booking.purchasedAt),
-                  transaction_id:
-                    booking.legacyId != null
-                      ? String(booking.legacyId)
-                      : null,
-                  imported_at: nowIso,
-                  raw: {
-                    source: "bookings_fallback",
-                    xceed_event_ref: xceedEventRef,
-                    xceed_event_uuid:
-                      (eventRow as any).xceed_event_uuid ?? null,
-                    synced_at: nowIso,
-                    booking,
-                    pass,
-                  },
-                  buyer_email: buyerEmail,
-                  buyer_phone: buyerPhone,
-                  buyer_email_norm: buyerEmail,
-                  buyer_phone_norm: buyerPhone,
-                };
-              });
-          }
+      if (!bookingsFetch.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            xceedStatus: bookingsFetch.status,
+            error: bookingsFetch.error || "Xceed bookings request failed",
+            xceedEventRef,
+            xceedTicketsEventId,
+          },
+          { status: bookingsFetch.status || 502 }
         );
-
-        sourceUsed = "bookings_fallback";
       }
+
+      rows = bookingsFetch.items.flatMap((booking): XceedTicketRow[] => {
+        const passes = Array.isArray(booking.passes) ? booking.passes : [];
+
+        return passes
+          .filter((pass) => !!pass.qrCode)
+          .map((pass): XceedTicketRow => {
+            const email = normalizeEmail(pass.email ?? booking.buyer?.email ?? null);
+            const phone = normalizePhone(pass.phone ?? booking.buyer?.phone ?? null);
+            const fullName =
+              buildFullName(pass.firstName, pass.lastName) ||
+              buildFullName(booking.buyer?.firstName, booking.buyer?.lastName);
+
+            const buyerEmail = normalizeEmail(booking.buyer?.email ?? null);
+            const buyerPhone = normalizePhone(booking.buyer?.phone ?? null);
+
+            return {
+              event_id: localEventId,
+              qr_code: String(pass.qrCode),
+              status:
+                pass.isActive === false
+                  ? "cancelled"
+                  : pass.hasCheckedIn
+                  ? "checked_in"
+                  : "active",
+              full_name: fullName,
+              email,
+              phone,
+              booking_date: toIsoFromEpochMaybe(booking.purchasedAt),
+              transaction_id:
+                booking.legacyId != null ? String(booking.legacyId) : null,
+              imported_at: nowIso,
+              raw: {
+                source: "bookings_fallback",
+                xceed_event_ref: xceedEventRef,
+                xceed_event_uuid: (eventRow as any).xceed_event_uuid ?? null,
+                synced_at: nowIso,
+                offer: {
+                  type: booking.offer?.type ?? null,
+                  name: booking.offer?.name ?? null,
+                  description: booking.offer?.description ?? null,
+                },
+                booking,
+                pass,
+              },
+              buyer_email: buyerEmail,
+              buyer_phone: buyerPhone,
+              buyer_email_norm: buyerEmail,
+              buyer_phone_norm: buyerPhone,
+            };
+          });
+      });
+
+      sourceUsed = "bookings_fallback";
     }
 
     if (rows.length === 0) {
@@ -514,8 +573,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error ? error.message : "Unknown error",
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );
