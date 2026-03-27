@@ -80,7 +80,7 @@ type XceedBookingsResponse = {
 };
 
 type XceedTicketRowRaw = {
-  source: "tickets" | "bookings_fallback";
+  source: "tickets" | "bookings_only" | "tickets+bookings_merge";
   xceed_event_ref: string;
   xceed_event_uuid: string | null;
   synced_at: string;
@@ -109,6 +109,11 @@ type XceedTicketRow = {
   buyer_phone: string | null;
   buyer_email_norm: string | null;
   buyer_phone_norm: string | null;
+};
+
+type BookingPassIndexItem = {
+  booking: XceedBooking;
+  pass: XceedBookingPass;
 };
 
 function normalizeEmail(email: string | null | undefined) {
@@ -141,6 +146,22 @@ function toIsoFromEpochMaybe(value?: number | null) {
   const d = new Date(ms);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
+}
+
+function normalizeOfferType(v?: string | null) {
+  const s = String(v ?? "").trim().toLowerCase().replace(/_/g, "-");
+  if (!s) return null;
+  if (s === "guestlist" || s === "guest-list") return "guest-list";
+  if (s === "ticket") return "ticket";
+  return s;
+}
+
+function pickFirstNonEmpty(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const s = String(value ?? "").trim();
+    if (s) return s;
+  }
+  return null;
 }
 
 async function fetchJson(url: string, apiKey: string) {
@@ -278,6 +299,201 @@ async function fetchAllBookingPages(
   return { ok: true, status: 200, items };
 }
 
+function buildBookingPassIndex(bookings: XceedBooking[]) {
+  const byQr = new Map<string, BookingPassIndexItem>();
+
+  for (const booking of bookings) {
+    const passes = Array.isArray(booking.passes) ? booking.passes : [];
+    for (const pass of passes) {
+      const qr = String(pass.qrCode ?? "").trim();
+      if (!qr) continue;
+      byQr.set(qr, { booking, pass });
+    }
+  }
+
+  return byQr;
+}
+
+function buildRowFromTicket(params: {
+  localEventId: string;
+  xceedEventRef: string;
+  xceedEventUuid: string | null;
+  nowIso: string;
+  ticket: XceedTicket;
+  bookingPassMatch?: BookingPassIndexItem | null;
+}): XceedTicketRow | null {
+  const { localEventId, xceedEventRef, xceedEventUuid, nowIso, ticket, bookingPassMatch } = params;
+
+  const qr = String(ticket.qrCode ?? "").trim();
+  if (!qr) return null;
+
+  const matchedBooking = bookingPassMatch?.booking ?? null;
+  const matchedPass = bookingPassMatch?.pass ?? null;
+
+  const email = normalizeEmail(
+    ticket.email ??
+      matchedPass?.email ??
+      matchedBooking?.buyer?.email ??
+      null
+  );
+
+  const phone = normalizePhone(
+    ticket.phone ??
+      matchedPass?.phone ??
+      matchedBooking?.buyer?.phone ??
+      null
+  );
+
+  const fullName =
+    buildFullName(ticket.firstName, ticket.lastName) ||
+    buildFullName(matchedPass?.firstName, matchedPass?.lastName) ||
+    buildFullName(matchedBooking?.buyer?.firstName, matchedBooking?.buyer?.lastName);
+
+  const buyerEmail = normalizeEmail(
+    matchedBooking?.buyer?.email ??
+      ticket.email ??
+      matchedPass?.email ??
+      null
+  );
+
+  const buyerPhone = normalizePhone(
+    matchedBooking?.buyer?.phone ??
+      ticket.phone ??
+      matchedPass?.phone ??
+      null
+  );
+
+  const resolvedOfferType = normalizeOfferType(
+    pickFirstNonEmpty(
+      matchedBooking?.offer?.type ?? null,
+      ticket.offer?.type ?? null
+    )
+  );
+
+  const resolvedOfferName = pickFirstNonEmpty(
+    matchedBooking?.offer?.name ?? null,
+    ticket.offer?.name ?? null
+  );
+
+  const resolvedOfferDescription = pickFirstNonEmpty(
+    matchedBooking?.offer?.description ?? null,
+    ticket.offer?.description ?? null
+  );
+
+  const bookingDate = toIsoFromEpochMaybe(
+    matchedBooking?.purchasedAt ?? ticket.booking?.purchasedAt ?? null
+  );
+
+  const transactionId = pickFirstNonEmpty(
+    matchedBooking?.legacyId != null ? String(matchedBooking.legacyId) : null,
+    ticket.booking?.bookingId != null ? String(ticket.booking.bookingId) : null
+  );
+
+  const status: XceedTicketRow["status"] =
+    ticket.isActive === false || matchedPass?.isActive === false
+      ? "cancelled"
+      : ticket.hasCheckedIn || matchedPass?.hasCheckedIn
+      ? "checked_in"
+      : "active";
+
+  return {
+    event_id: localEventId,
+    qr_code: qr,
+    status,
+    full_name: fullName,
+    email,
+    phone,
+    booking_date: bookingDate,
+    transaction_id: transactionId,
+    imported_at: nowIso,
+    raw: {
+      source: matchedBooking ? "tickets+bookings_merge" : "tickets",
+      xceed_event_ref: xceedEventRef,
+      xceed_event_uuid: xceedEventUuid,
+      synced_at: nowIso,
+      offer: {
+        type: resolvedOfferType,
+        name: resolvedOfferName,
+        description: resolvedOfferDescription,
+      },
+      booking: matchedBooking,
+      ticket,
+      pass: matchedPass,
+    },
+    buyer_email: buyerEmail,
+    buyer_phone: buyerPhone,
+    buyer_email_norm: buyerEmail,
+    buyer_phone_norm: buyerPhone,
+  };
+}
+
+function buildRowsFromBookingsOnly(params: {
+  localEventId: string;
+  xceedEventRef: string;
+  xceedEventUuid: string | null;
+  nowIso: string;
+  bookings: XceedBooking[];
+  skipQrs?: Set<string>;
+}) {
+  const { localEventId, xceedEventRef, xceedEventUuid, nowIso, bookings, skipQrs } = params;
+  const rows: XceedTicketRow[] = [];
+
+  for (const booking of bookings) {
+    const passes = Array.isArray(booking.passes) ? booking.passes : [];
+
+    for (const pass of passes) {
+      const qr = String(pass.qrCode ?? "").trim();
+      if (!qr) continue;
+      if (skipQrs?.has(qr)) continue;
+
+      const email = normalizeEmail(pass.email ?? booking.buyer?.email ?? null);
+      const phone = normalizePhone(pass.phone ?? booking.buyer?.phone ?? null);
+
+      const fullName =
+        buildFullName(pass.firstName, pass.lastName) ||
+        buildFullName(booking.buyer?.firstName, booking.buyer?.lastName);
+
+      const buyerEmail = normalizeEmail(booking.buyer?.email ?? null);
+      const buyerPhone = normalizePhone(booking.buyer?.phone ?? null);
+
+      rows.push({
+        event_id: localEventId,
+        qr_code: qr,
+        status:
+          pass.isActive === false
+            ? "cancelled"
+            : pass.hasCheckedIn
+            ? "checked_in"
+            : "active",
+        full_name: fullName,
+        email,
+        phone,
+        booking_date: toIsoFromEpochMaybe(booking.purchasedAt),
+        transaction_id: booking.legacyId != null ? String(booking.legacyId) : null,
+        imported_at: nowIso,
+        raw: {
+          source: "bookings_only",
+          xceed_event_ref: xceedEventRef,
+          xceed_event_uuid: xceedEventUuid,
+          synced_at: nowIso,
+          offer: {
+            type: normalizeOfferType(booking.offer?.type ?? null),
+            name: booking.offer?.name ?? null,
+            description: booking.offer?.description ?? null,
+          },
+          booking,
+          pass,
+        },
+        buyer_email: buyerEmail,
+        buyer_phone: buyerPhone,
+        buyer_email_norm: buyerEmail,
+        buyer_phone_norm: buyerPhone,
+      });
+    }
+  }
+
+  return rows;
+}
 export async function GET(req: NextRequest) {
   const apiKey = process.env.XCEED_API_KEY;
   const baseUrl = process.env.XCEED_BASE_URL;
@@ -300,26 +516,57 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const xceedEventRef = String(searchParams.get("eventId") || "").trim();
-  const includeCancelledTickets =
-    searchParams.get("includeCancelledTickets") || "true";
+  const localEventIdFromQuery = String(searchParams.get("localEventId") || "").trim();
+  const includeCancelledTickets = searchParams.get("includeCancelledTickets") || "true";
 
-  if (!xceedEventRef) {
+  if (!xceedEventRef && !localEventIdFromQuery) {
     return NextResponse.json(
-      { ok: false, error: "Missing required query param: eventId" },
+      { ok: false, error: "Missing required query param: eventId or localEventId" },
       { status: 400 }
     );
   }
+
+
+
 
   try {
     const supabase = createClient(supabaseUrl, supabaseServiceRole, {
       auth: { persistSession: false },
     });
 
-    let { data: eventRow, error: eventErr } = await supabase
-      .from("events")
-      .select("id, name, xceed_event_ref, xceed_event_uuid")
-      .eq("xceed_event_ref", xceedEventRef)
-      .maybeSingle();
+    let eventRow: any = null;
+    let eventErr: any = null;
+
+    if (localEventIdFromQuery) {
+      const localTry = await supabase
+        .from("events")
+        .select("id, name, xceed_event_ref, xceed_event_uuid")
+        .eq("id", localEventIdFromQuery)
+        .maybeSingle();
+
+      eventRow = localTry.data;
+      eventErr = localTry.error;
+    } else {
+      const firstTry = await supabase
+        .from("events")
+        .select("id, name, xceed_event_ref, xceed_event_uuid")
+        .eq("xceed_event_ref", xceedEventRef)
+        .maybeSingle();
+
+      eventRow = firstTry.data;
+      eventErr = firstTry.error;
+
+      if (!eventRow && !eventErr) {
+        const secondTry = await supabase
+          .from("events")
+          .select("id, name, xceed_event_ref, xceed_event_uuid")
+          .eq("xceed_event_uuid", xceedEventRef)
+          .maybeSingle();
+
+        eventRow = secondTry.data;
+        eventErr = secondTry.error;
+      }
+    }
 
     if (eventErr) {
       return NextResponse.json(
@@ -327,32 +574,11 @@ export async function GET(req: NextRequest) {
           ok: false,
           error: "Failed to resolve local event",
           details: eventErr.message,
-          xceedEventRef,
+          xceedEventRef: xceedEventRef || null,
+          localEventId: localEventIdFromQuery || null,
         },
         { status: 500 }
       );
-    }
-
-    if (!eventRow) {
-      const secondTry = await supabase
-        .from("events")
-        .select("id, name, xceed_event_ref, xceed_event_uuid")
-        .eq("xceed_event_uuid", xceedEventRef)
-        .maybeSingle();
-
-      if (secondTry.error) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "Failed to resolve local event",
-            details: secondTry.error.message,
-            xceedEventRef,
-          },
-          { status: 500 }
-        );
-      }
-
-      eventRow = secondTry.data;
     }
 
     if (!eventRow?.id) {
@@ -367,20 +593,18 @@ export async function GET(req: NextRequest) {
     }
 
     const localEventId = String(eventRow.id);
+    const xceedEventUuid = String((eventRow as any).xceed_event_uuid || "").trim() || null;
     const xceedTicketsEventId =
-      String((eventRow as any).xceed_event_uuid || "").trim() ||
+      xceedEventUuid ||
       String((eventRow as any).xceed_event_ref || "").trim() ||
       xceedEventRef;
 
     const nowIso = new Date().toISOString();
 
-    const ticketsFetch = await fetchAllTicketPages(
-      baseUrl,
-      apiKey,
-      xceedTicketsEventId,
-      includeCancelledTickets,
-      100
-    );
+    const [ticketsFetch, bookingsFetch] = await Promise.all([
+      fetchAllTicketPages(baseUrl, apiKey, xceedTicketsEventId, includeCancelledTickets, 100),
+      fetchAllBookingPages(baseUrl, apiKey, xceedTicketsEventId, includeCancelledTickets, 100),
+    ]);
 
     if (!ticketsFetch.ok) {
       return NextResponse.json(
@@ -395,128 +619,46 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    let rows: XceedTicketRow[] = ticketsFetch.items
-      .filter((ticket) => !!ticket.qrCode)
-      .map((ticket): XceedTicketRow => {
-        const email = normalizeEmail(ticket.email ?? null);
-        const phone = normalizePhone(ticket.phone ?? null);
-        const fullName = buildFullName(ticket.firstName, ticket.lastName);
-
-        return {
-          event_id: localEventId,
-          qr_code: ticket.qrCode,
-          status:
-            ticket.isActive === false
-              ? "cancelled"
-              : ticket.hasCheckedIn
-              ? "checked_in"
-              : "active",
-          full_name: fullName,
-          email,
-          phone,
-          booking_date: toIsoFromEpochMaybe(ticket.booking?.purchasedAt),
-          transaction_id:
-            ticket.booking?.bookingId != null
-              ? String(ticket.booking.bookingId)
-              : null,
-          imported_at: nowIso,
-          raw: {
-            source: "tickets",
-            xceed_event_ref: xceedEventRef,
-            xceed_event_uuid: (eventRow as any).xceed_event_uuid ?? null,
-            synced_at: nowIso,
-            offer: {
-              type: ticket.offer?.type ?? null,
-              name: ticket.offer?.name ?? null,
-              description: ticket.offer?.description ?? null,
-            },
-            booking: ticket.booking ?? null,
-            ticket,
-          },
-          buyer_email: email,
-          buyer_phone: phone,
-          buyer_email_norm: email,
-          buyer_phone_norm: phone,
-        };
-      });
-
-    let sourceUsed: "tickets" | "bookings_fallback" = "tickets";
-    if (rows.length === 0) {
-      const bookingsFetch = await fetchAllBookingPages(
-        baseUrl,
-        apiKey,
-        xceedTicketsEventId,
-        includeCancelledTickets,
-        100
+    if (!bookingsFetch.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          xceedStatus: bookingsFetch.status,
+          error: bookingsFetch.error || "Xceed bookings request failed",
+          xceedEventRef,
+          xceedTicketsEventId,
+        },
+        { status: bookingsFetch.status || 502 }
       );
-
-      if (!bookingsFetch.ok) {
-        return NextResponse.json(
-          {
-            ok: false,
-            xceedStatus: bookingsFetch.status,
-            error: bookingsFetch.error || "Xceed bookings request failed",
-            xceedEventRef,
-            xceedTicketsEventId,
-          },
-          { status: bookingsFetch.status || 502 }
-        );
-      }
-
-      rows = bookingsFetch.items.flatMap((booking): XceedTicketRow[] => {
-        const passes = Array.isArray(booking.passes) ? booking.passes : [];
-
-        return passes
-          .filter((pass) => !!pass.qrCode)
-          .map((pass): XceedTicketRow => {
-            const email = normalizeEmail(pass.email ?? booking.buyer?.email ?? null);
-            const phone = normalizePhone(pass.phone ?? booking.buyer?.phone ?? null);
-            const fullName =
-              buildFullName(pass.firstName, pass.lastName) ||
-              buildFullName(booking.buyer?.firstName, booking.buyer?.lastName);
-
-            const buyerEmail = normalizeEmail(booking.buyer?.email ?? null);
-            const buyerPhone = normalizePhone(booking.buyer?.phone ?? null);
-
-            return {
-              event_id: localEventId,
-              qr_code: String(pass.qrCode),
-              status:
-                pass.isActive === false
-                  ? "cancelled"
-                  : pass.hasCheckedIn
-                  ? "checked_in"
-                  : "active",
-              full_name: fullName,
-              email,
-              phone,
-              booking_date: toIsoFromEpochMaybe(booking.purchasedAt),
-              transaction_id:
-                booking.legacyId != null ? String(booking.legacyId) : null,
-              imported_at: nowIso,
-              raw: {
-                source: "bookings_fallback",
-                xceed_event_ref: xceedEventRef,
-                xceed_event_uuid: (eventRow as any).xceed_event_uuid ?? null,
-                synced_at: nowIso,
-                offer: {
-                  type: booking.offer?.type ?? null,
-                  name: booking.offer?.name ?? null,
-                  description: booking.offer?.description ?? null,
-                },
-                booking,
-                pass,
-              },
-              buyer_email: buyerEmail,
-              buyer_phone: buyerPhone,
-              buyer_email_norm: buyerEmail,
-              buyer_phone_norm: buyerPhone,
-            };
-          });
-      });
-
-      sourceUsed = "bookings_fallback";
     }
+
+    const bookingIndex = buildBookingPassIndex(bookingsFetch.items);
+
+    const ticketRows: XceedTicketRow[] = ticketsFetch.items
+      .map((ticket) =>
+        buildRowFromTicket({
+          localEventId,
+          xceedEventRef,
+          xceedEventUuid,
+          nowIso,
+          ticket,
+          bookingPassMatch: bookingIndex.get(String(ticket.qrCode ?? "").trim()) || null,
+        })
+      )
+      .filter((row): row is XceedTicketRow => !!row);
+
+    const existingQrs = new Set(ticketRows.map((r) => r.qr_code));
+
+    const bookingOnlyRows = buildRowsFromBookingsOnly({
+      localEventId,
+      xceedEventRef,
+      xceedEventUuid,
+      nowIso,
+      bookings: bookingsFetch.items,
+      skipQrs: existingQrs,
+    });
+
+    const rows = [...ticketRows, ...bookingOnlyRows];
 
     if (rows.length === 0) {
       return NextResponse.json({
@@ -526,9 +668,11 @@ export async function GET(req: NextRequest) {
         xceedTicketsEventId,
         localEventId,
         localEventName: eventRow.name ?? null,
-        fetched: 0,
+        fetched_tickets: ticketsFetch.items.length,
+        fetched_bookings: bookingsFetch.items.length,
+        merged_rows: 0,
         upserted: 0,
-        source: sourceUsed,
+        source: "tickets+bookings_merge",
         message: "No tickets returned by Xceed",
       });
     }
@@ -539,7 +683,7 @@ export async function GET(req: NextRequest) {
         onConflict: "event_id,qr_code",
       })
       .select(
-        "id, event_id, qr_code, status, full_name, email, booking_date, transaction_id"
+        "id, event_id, qr_code, status, full_name, email, booking_date, transaction_id, raw"
       );
 
     if (upsertError) {
@@ -551,11 +695,25 @@ export async function GET(req: NextRequest) {
           xceedEventRef,
           xceedTicketsEventId,
           localEventId,
-          source: sourceUsed,
+          source: "tickets+bookings_merge",
         },
         { status: 500 }
       );
     }
+
+    const preview =
+      upsertedRows?.slice(0, 5).map((r: any) => ({
+        id: r.id,
+        qr_code: r.qr_code,
+        status: r.status,
+        full_name: r.full_name,
+        email: r.email,
+        booking_date: r.booking_date,
+        transaction_id: r.transaction_id,
+        offer_type: r.raw?.offer?.type ?? null,
+        offer_name: r.raw?.offer?.name ?? null,
+        source: r.raw?.source ?? null,
+      })) ?? [];
 
     return NextResponse.json({
       ok: true,
@@ -564,10 +722,12 @@ export async function GET(req: NextRequest) {
       xceedTicketsEventId,
       localEventId,
       localEventName: eventRow.name ?? null,
-      fetched: rows.length,
+      fetched_tickets: ticketsFetch.items.length,
+      fetched_bookings: bookingsFetch.items.length,
+      merged_rows: rows.length,
       upserted: upsertedRows?.length ?? 0,
-      source: sourceUsed,
-      preview: upsertedRows?.slice(0, 5) ?? [],
+      source: "tickets+bookings_merge",
+      preview,
     });
   } catch (error) {
     return NextResponse.json(

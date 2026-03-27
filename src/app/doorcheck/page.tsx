@@ -35,11 +35,11 @@ type DoorcheckOkResponse = {
   ticket_booking_date?: string | null;
   ticket_type?: string | null;
   ticket_type_label?: string | null;
-ticket_offer_type_debug?: {
-  from_label?: string | null;
-  from_type?: string | null;
-  raw_offer_type?: string | null;
-} | null;
+  ticket_offer_type_debug?: {
+    from_label?: string | null;
+    from_type?: string | null;
+    raw_offer_type?: string | null;
+  } | null;
 
   member_found?: boolean;
   member_group?: "ordinary" | "loyalty" | "staff" | null;
@@ -141,6 +141,35 @@ type AttendanceResp =
           scanned_code: string | null;
         }>;
       };
+    };
+
+type SyncTicketsResp =
+  | { ok: false; error: string; details?: string }
+  | {
+      ok: true;
+      xceedStatus?: number;
+      xceedEventRef?: string | null;
+      xceedTicketsEventId?: string | null;
+      localEventId?: string | null;
+      localEventName?: string | null;
+      fetched_tickets?: number;
+      fetched_bookings?: number;
+      merged_rows?: number;
+      upserted?: number;
+      source?: string | null;
+      preview?: Array<{
+        id: string;
+        qr_code: string;
+        status: string;
+        full_name: string | null;
+        email: string | null;
+        booking_date: string | null;
+        transaction_id: string | null;
+        offer_type: string | null;
+        offer_name: string | null;
+        source: string | null;
+      }>;
+      message?: string;
     };
 
 function sleep(ms: number) {
@@ -340,6 +369,9 @@ export default function DoorCheckPage() {
   const [attLoading, setAttLoading] = useState(false);
   const [attErr, setAttErr] = useState<string | null>(null);
   const [attData, setAttData] = useState<AttendanceResp | null>(null);
+
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncRes, setSyncRes] = useState<SyncTicketsResp | null>(null);
 
   const [ticketsOffset, setTicketsOffset] = useState(0);
   const [checkinsOffset, setCheckinsOffset] = useState(0);
@@ -887,6 +919,48 @@ export default function DoorCheckPage() {
     }
   }
 
+  async function refreshTicketsSync() {
+    const eid = eventId.trim();
+    if (!eid) {
+      alert("Seleziona un evento.");
+      return;
+    }
+
+    setSyncLoading(true);
+    setSyncRes(null);
+
+    try {
+      const r = await fetch(
+        `/api/xceed/sync-tickets?localEventId=${encodeURIComponent(eid)}&includeCancelledTickets=true`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      const j = (await r.json()) as SyncTicketsResp;
+      setSyncRes(j);
+
+      if (!r.ok || !("ok" in j) || !j.ok) {
+        return;
+      }
+
+      if (attOpen) {
+        await loadAttendance(true);
+      }
+
+      setRes(null);
+      setLastDeniedCode(null);
+    } catch (e: any) {
+      setSyncRes({
+        ok: false,
+        error: e?.message || "Errore sync biglietti",
+      });
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!attOpen) return;
     loadAttendance(true);
@@ -1051,7 +1125,6 @@ export default function DoorCheckPage() {
                   />
                 </label>
               </div>
-
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
@@ -1060,6 +1133,15 @@ export default function DoorCheckPage() {
                   className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
                 >
                   {scanStarting ? "📷 Avvio camera..." : "📷 Scan (camera)"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={refreshTicketsSync}
+                  disabled={syncLoading || !eventId.trim()}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+                >
+                  {syncLoading ? "↻ Sync in corso..." : "↻ Refresh biglietti"}
                 </button>
 
                 <button
@@ -1106,6 +1188,48 @@ export default function DoorCheckPage() {
 
                 {scanErr ? <span className="text-xs text-red-300">{scanErr}</span> : null}
               </div>
+
+              {syncRes ? (
+                "ok" in syncRes && syncRes.ok ? (
+                  <div className="mt-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
+                    <div className="text-sm font-semibold text-emerald-100">Sync biglietti completata</div>
+
+                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[12px] text-emerald-50/90 font-mono">
+                      <div>event: {syncRes.localEventName || syncRes.localEventId || "-"}</div>
+                      <div>xceed status: {String(syncRes.xceedStatus ?? "-")}</div>
+                      <div>tickets: {String(syncRes.fetched_tickets ?? 0)}</div>
+                      <div>bookings: {String(syncRes.fetched_bookings ?? 0)}</div>
+                      <div>merged rows: {String(syncRes.merged_rows ?? 0)}</div>
+                      <div>upserted: {String(syncRes.upserted ?? 0)}</div>
+                    </div>
+
+                    {syncRes.preview?.length ? (
+                      <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+                        <div className="text-xs font-semibold text-white/80">Preview</div>
+                        <div className="mt-2 space-y-2">
+                          {syncRes.preview.slice(0, 3).map((p) => (
+                            <div key={p.id} className="text-[11px] text-white/70 font-mono break-all">
+                              {p.full_name || "—"} · {p.qr_code} · {p.offer_type || "-"} · {p.offer_name || "-"}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-2xl border border-red-400/20 bg-red-400/10 p-4">
+                    <div className="text-sm font-semibold text-red-100">Errore sync biglietti</div>
+                    <div className="mt-2 text-[12px] text-red-50/90 font-mono break-all">
+                      {(syncRes as any).error || "Errore"}
+                    </div>
+                    {(syncRes as any).details ? (
+                      <div className="mt-1 text-[11px] text-red-100/70 font-mono break-all">
+                        {(syncRes as any).details}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              ) : null}
 
               {scanOpen ? (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
@@ -1241,6 +1365,7 @@ export default function DoorCheckPage() {
                 </div>
               )}
             </section>
+
             <section className="mt-4">
               {!res ? (
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
@@ -1379,34 +1504,31 @@ export default function DoorCheckPage() {
                             </div>
                           ) : null}
 
-       <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
-  {ticketTypeLabel ? (
-    <div>
-      type label: <span className="text-white/80">{ticketTypeLabel}</span>
-    </div>
-  ) : null}
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
+                            {ticketTypeLabel ? (
+                              <div>
+                                type label: <span className="text-white/80">{ticketTypeLabel}</span>
+                              </div>
+                            ) : null}
 
-  {resAny.ticket_type ? (
-    <div>
-      raw type: <span className="text-white/80">{resAny.ticket_type}</span>
-    </div>
-  ) : null}
+                            {resAny.ticket_type ? (
+                              <div>
+                                raw type: <span className="text-white/80">{resAny.ticket_type}</span>
+                              </div>
+                            ) : null}
 
-  {resAny.ticket_offer_type_debug?.raw_offer_type ? (
-    <div>
-      raw offer.type: <span className="text-white/80">{resAny.ticket_offer_type_debug.raw_offer_type}</span>
-    </div>
-  ) : null}
+                            {resAny.ticket_offer_type_debug?.raw_offer_type ? (
+                              <div>
+                                raw offer.type: <span className="text-white/80">{resAny.ticket_offer_type_debug.raw_offer_type}</span>
+                              </div>
+                            ) : null}
 
-  {resAny.ticket_transaction_id ? <div>tx: {resAny.ticket_transaction_id}</div> : null}
+                            {resAny.ticket_transaction_id ? <div>tx: {resAny.ticket_transaction_id}</div> : null}
 
-  {resAny.ticket_booking_date ? (
-    <div>booking: {String(resAny.ticket_booking_date)}</div>
-  ) : null}
-</div>                   
-
-
-
+                            {resAny.ticket_booking_date ? (
+                              <div>booking: {String(resAny.ticket_booking_date)}</div>
+                            ) : null}
+                          </div>
                         </div>
                       ) : null}
 
