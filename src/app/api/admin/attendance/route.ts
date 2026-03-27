@@ -8,13 +8,17 @@ function supabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
+
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
 
 function json(ok: boolean, payload: any, status = 200) {
-  return NextResponse.json({ ok, ...payload }, { status, headers: { "Cache-Control": "no-store, max-age=0" } });
+  return NextResponse.json(
+    { ok, ...payload },
+    { status, headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
 
 function clampInt(v: string | null, def: number, min: number, max: number) {
@@ -29,30 +33,79 @@ function normQ(s: string | null) {
 }
 
 function safeLike(q: string) {
-  // escape % only (Supabase/PG ILIKE)
   return `%${q.replace(/%/g, "\\%")}%`;
 }
 
 function pickOfferTitle(raw: any) {
-  return raw?.offer?.title ?? raw?.offer_title ?? raw?.ticket?.offerTitle ?? raw?.ticket?.extracted?.offer_title ?? null;
+  return (
+    raw?.offer?.name ??
+    raw?.offer?.title ??
+    raw?.offer_name ??
+    raw?.ticket?.offer?.name ??
+    raw?.ticket?.offerTitle ??
+    raw?.ticket?.extracted?.offer_title ??
+    null
+  );
 }
+
 function pickOfferDesc(raw: any) {
   return (
     raw?.offer?.description ??
     raw?.offer_description ??
+    raw?.ticket?.offer?.description ??
     raw?.ticket?.offerDescription ??
     raw?.ticket?.extracted?.offer_description ??
     null
   );
 }
-function pickTxId(raw: any) {
-  return raw?.transactionId ?? raw?.transaction_id ?? raw?.transaction?.id ?? null;
-}
-function pickBookingDate(raw: any) {
-  return raw?.bookingDate ?? raw?.booking_date ?? raw?.createdAt ?? raw?.created_at ?? null;
+
+function pickOfferType(raw: any) {
+  return (
+    raw?.offer?.type ??
+    raw?.offer_type ??
+    raw?.ticket?.offer?.type ??
+    raw?.ticket?.extracted?.offer_type ??
+    null
+  );
 }
 
-// helper: resolve names for checkins (members + legacy_people)
+function pickOfferTypeLabel(raw: any) {
+  const t = pickOfferType(raw);
+  if (!t) return null;
+
+  const s = String(t).trim().toLowerCase().replace(/_/g, "-");
+
+  if (s === "guestlist" || s === "guest-list") return "Guest List";
+  if (s === "ticket") return "Ticket";
+
+  return s
+    .split("-")
+    .map((x: string) => (x ? x.charAt(0).toUpperCase() + x.slice(1) : ""))
+    .join(" ");
+}
+
+function pickTxId(raw: any) {
+  return (
+    raw?.booking?.bookingId ??
+    raw?.booking?.legacyId ??
+    raw?.transactionId ??
+    raw?.transaction_id ??
+    raw?.transaction?.id ??
+    null
+  );
+}
+
+function pickBookingDate(raw: any) {
+  return (
+    raw?.booking?.purchasedAt ??
+    raw?.bookingDate ??
+    raw?.booking_date ??
+    raw?.createdAt ??
+    raw?.created_at ??
+    null
+  );
+}
+
 async function enrichCheckins(supabase: any, rows: any[]) {
   const memberIds = Array.from(new Set(rows.map((c) => c.member_id).filter(Boolean))) as string[];
   const legacyIds = Array.from(new Set(rows.map((c) => c.legacy_person_id).filter(Boolean))) as string[];
@@ -106,7 +159,7 @@ async function enrichCheckins(supabase: any, rows: any[]) {
       display_name,
       email,
       phone,
-      scanned_code: c.scanned_code || null, // solo debug
+      scanned_code: c.scanned_code || null,
     };
   });
 }
@@ -121,13 +174,12 @@ export async function GET(req: Request) {
 
     const scope = String(searchParams.get("scope") || "both").trim().toLowerCase(); // tickets|checkins|both
     const q = normQ(searchParams.get("q"));
-    const limit = clampInt(searchParams.get("limit"), 200, 1, 500);
+    const limit = clampInt(searchParams.get("limit"), 100, 1, 500);
     const offset = clampInt(searchParams.get("offset"), 0, 0, 100000);
 
     const view = String(searchParams.get("view") || "missing").trim().toLowerCase(); // missing|entered|all
     const kind = String(searchParams.get("kind") || "ALL").trim().toUpperCase(); // ALL|ETS|SRL|XCEED
 
-    // 1) Event flags
     const { data: ev, error: evErr } = await supabase
       .from("events")
       .select("id,name,starts_at,require_ticket,require_membership")
@@ -137,7 +189,9 @@ export async function GET(req: Request) {
     if (evErr) throw new Error(evErr.message);
     if (!ev) return json(false, { error: "Event not found" }, 404);
 
-    // ✅ NEW: CHECKINS SUMMARY (totale entrati reali)
+    // --------------------------------------------------
+    // CHECKINS SUMMARY
+    // --------------------------------------------------
     const { count: checkins_total, error: chkTotErr } = await supabase
       .from("checkins")
       .select("id", { count: "exact", head: true })
@@ -153,7 +207,6 @@ export async function GET(req: Request) {
 
     if (chkAllowErr) throw new Error(chkAllowErr.message);
 
-    // ✅ NEW (opzionale ma utile): breakdown per kind
     const { count: checkins_ets_allowed, error: chkEtsErr } = await supabase
       .from("checkins")
       .select("id", { count: "exact", head: true })
@@ -181,46 +234,62 @@ export async function GET(req: Request) {
 
     if (chkSrlErr) throw new Error(chkSrlErr.message);
 
-    // 2) TICKETS SUMMARY (come prima)
-    const { count: tickets_total, error: ctAllErr } = await supabase
+    // --------------------------------------------------
+    // TICKETS SUMMARY - QUERIES SEPARATE REALI
+    // --------------------------------------------------
+    const { count: tickets_total, error: tAllErr } = await supabase
       .from("xceed_tickets")
       .select("id", { count: "exact", head: true })
       .eq("event_id", event_id);
 
-    if (ctAllErr) throw new Error(ctAllErr.message);
+    if (tAllErr) throw new Error(tAllErr.message);
 
-    const { count: tickets_checked_in, error: ctInErr } = await supabase
+    const { count: tickets_checked_in, error: tInErr } = await supabase
       .from("xceed_tickets")
       .select("id", { count: "exact", head: true })
       .eq("event_id", event_id)
       .not("checkin_id", "is", null);
 
-    if (ctInErr) throw new Error(ctInErr.message);
+    if (tInErr) throw new Error(tInErr.message);
+
+    const { count: tickets_missing, error: tMissingErr } = await supabase
+      .from("xceed_tickets")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event_id)
+      .is("checkin_id", null);
+
+    if (tMissingErr) throw new Error(tMissingErr.message);
 
     const total = Number(tickets_total || 0);
     const checked = Number(tickets_checked_in || 0);
-    const missingCount = Math.max(0, total - checked);
+    const missingCount = Number(tickets_missing || 0);
 
-    // 3) Tickets list
+    // --------------------------------------------------
+    // TICKETS PAYLOAD - SOLO PAGINA CORRENTE
+    // --------------------------------------------------
     let ticketsPayload: any = null;
+
     if (scope === "tickets" || scope === "both") {
-      let tq = supabase
+      let baseQuery = supabase
         .from("xceed_tickets")
         .select("id,qr_code,full_name,email,phone,checkin_id,imported_at,raw", { count: "exact" })
-        .eq("event_id", event_id)
-        .order("imported_at", { ascending: false });
+        .eq("event_id", event_id);
 
-      if (view === "missing") tq = tq.is("checkin_id", null);
-      else if (view === "entered") tq = tq.not("checkin_id", "is", null);
+      if (view === "missing") {
+        baseQuery = baseQuery.is("checkin_id", null);
+      } else if (view === "entered") {
+        baseQuery = baseQuery.not("checkin_id", "is", null);
+      }
 
       if (q) {
         const like = safeLike(q);
-        tq = tq.or(`full_name.ilike.${like},email.ilike.${like},phone.ilike.${like}`);
+        baseQuery = baseQuery.or(`full_name.ilike.${like},email.ilike.${like},phone.ilike.${like}`);
       }
 
-      tq = tq.range(offset, offset + limit - 1);
+      const { data: tickets, error: tErr, count: tickets_filtered_count } = await baseQuery
+        .order("imported_at", { ascending: false })
+        .range(offset, offset + limit - 1);
 
-      const { data: tickets, error: tErr, count: tickets_filtered_count } = await tq;
       if (tErr) throw new Error(tErr.message);
 
       const rows = (tickets || []).map((x: any) => {
@@ -235,6 +304,8 @@ export async function GET(req: Request) {
           imported_at: x.imported_at || null,
           offer_title: pickOfferTitle(raw),
           offer_description: pickOfferDesc(raw),
+          offer_type: pickOfferType(raw),
+          offer_type_label: pickOfferTypeLabel(raw),
           transaction_id: pickTxId(raw),
           booking_date: pickBookingDate(raw),
         };
@@ -254,10 +325,12 @@ export async function GET(req: Request) {
       };
     }
 
-    // 4) Checkins list
+    // --------------------------------------------------
+    // CHECKINS PAYLOAD
+    // --------------------------------------------------
     let checkinsPayload: any = null;
+
     if (scope === "checkins" || scope === "both") {
-      // ultimi 20 check-in (sempre reali, indipendenti da offset/q)
       const { data: lastRaw, error: lastErr } = await supabase
         .from("checkins")
         .select("id,created_at,kind,method,result,member_id,legacy_person_id,scanned_code")
@@ -268,7 +341,6 @@ export async function GET(req: Request) {
       if (lastErr) throw new Error(lastErr.message);
       const last20 = await enrichCheckins(supabase, lastRaw || []);
 
-      // base query
       let cq = supabase
         .from("checkins")
         .select("id,created_at,kind,method,result,member_id,legacy_person_id,scanned_code", { count: "exact" })
@@ -278,14 +350,14 @@ export async function GET(req: Request) {
       if (kind && kind !== "ALL") cq = cq.eq("kind", kind);
 
       if (!q) {
-        // ✅ NO SEARCH: paginazione DB perfetta
-        cq = cq.range(offset, offset + limit - 1);
+        const { data: rawCheckins, error: cErr, count: checkins_filtered_count } = await cq.range(
+          offset,
+          offset + limit - 1
+        );
 
-        const { data: rawCheckins, error: cErr, count: checkins_filtered_count } = await cq;
         if (cErr) throw new Error(cErr.message);
 
         const enriched = await enrichCheckins(supabase, rawCheckins || []);
-
         const filteredCount = Number(checkins_filtered_count || 0);
         const has_more = offset + enriched.length < filteredCount;
 
@@ -300,7 +372,6 @@ export async function GET(req: Request) {
           last_checkins: last20,
         };
       } else {
-        // ✅ SEARCH: fetch “ampio”, enrich, filter, poi slice(offset..offset+limit)
         const maxScan = Math.min(5000, Math.max(offset + limit * 6, 800));
         const { data: rawScan, error: scanErr } = await cq.range(0, maxScan - 1);
         if (scanErr) throw new Error(scanErr.message);
@@ -324,7 +395,7 @@ export async function GET(req: Request) {
           limit,
           offset,
           has_more,
-          checkins_filtered_count: null,
+          checkins_filtered_count: filtered.length,
           checkins: page,
           last_checkins: last20,
         };
@@ -340,7 +411,6 @@ export async function GET(req: Request) {
         require_membership: !!(ev as any).require_membership,
       },
       summary: {
-        // ✅ NEW: presenze reali (checkins)
         checkins_total: Number(checkins_total || 0),
         checkins_allowed: Number(checkins_allowed || 0),
         checkins_allowed_by_kind: {
@@ -349,7 +419,6 @@ export async function GET(req: Request) {
           SRL: Number(checkins_srl_allowed || 0),
         },
 
-        // esistente: biglietti (xceed_tickets)
         tickets_total: total,
         tickets_checked_in: checked,
         tickets_missing: missingCount,
