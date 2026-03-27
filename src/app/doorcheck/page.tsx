@@ -34,6 +34,8 @@ type DoorcheckOkResponse = {
   ticket_transaction_id?: string | null;
   ticket_booking_date?: string | null;
   ticket_type?: string | null;
+  ticket_type_label?: string | null;
+
   member_found?: boolean;
   member_group?: "ordinary" | "loyalty" | "staff" | null;
   member_group_label?: string | null;
@@ -98,6 +100,8 @@ type AttendanceResp =
           imported_at: string | null;
           offer_title: string | null;
           offer_description: string | null;
+          offer_type?: string | null;
+          offer_type_label?: string | null;
           transaction_id: string | null;
           booking_date: string | null;
         }>;
@@ -205,6 +209,92 @@ function panelClasses(color?: string, allowed?: boolean) {
   }
 }
 
+function normalizeTicketType(input?: string | null) {
+  const t = String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-");
+
+  if (!t) return null;
+  if (t === "guestlist" || t === "guest-list") return "guest-list";
+  if (t === "ticket") return "ticket";
+  return t;
+}
+
+function prettifyTicketType(input?: string | null) {
+  const t = normalizeTicketType(input);
+  if (!t) return null;
+  if (t === "guest-list") return "Guest List";
+  if (t === "ticket") return "Ticket";
+
+  return t
+    .split("-")
+    .map((x) => (x ? x.charAt(0).toUpperCase() + x.slice(1) : ""))
+    .join(" ");
+}
+
+function ticketTypeBadgeClasses(ticketType?: string | null) {
+  const t = normalizeTicketType(ticketType);
+
+  switch (t) {
+    case "guest-list":
+      return "border-fuchsia-400/30 bg-fuchsia-400/15 text-fuchsia-100";
+    case "ticket":
+      return "border-sky-400/30 bg-sky-400/15 text-sky-100";
+    case "staff":
+      return "border-cyan-400/30 bg-cyan-400/15 text-cyan-100";
+    case "table":
+      return "border-amber-400/30 bg-amber-400/15 text-amber-100";
+    default:
+      return "border-white/15 bg-white/10 text-white";
+  }
+}
+
+function personStatusBadge(res: DoorcheckOkResponse) {
+  if (res.member_group === "staff") {
+    return {
+      label: "STAFF",
+      className: "border-cyan-400/30 bg-cyan-400/15 text-cyan-100",
+    };
+  }
+
+  if (res.member_found) {
+    return {
+      label: "SOCIO",
+      className: "border-emerald-400/30 bg-emerald-400/15 text-emerald-100",
+    };
+  }
+
+  return {
+    label: "NON SOCIO",
+    className: "border-rose-400/30 bg-rose-400/15 text-rose-100",
+  };
+}
+
+function kindBadgeClasses(kind?: string | null) {
+  switch (String(kind || "").toUpperCase()) {
+    case "ETS":
+      return "border-emerald-400/30 bg-emerald-400/15 text-emerald-100";
+    case "XCEED":
+      return "border-sky-400/30 bg-sky-400/15 text-sky-100";
+    case "SRL":
+      return "border-white/15 bg-white/10 text-white";
+    default:
+      return "border-white/10 bg-black/20 text-white/70";
+  }
+}
+
+function entryStatusBadgeClasses(entered: boolean) {
+  return entered
+    ? "border-emerald-400/30 bg-emerald-400/15 text-emerald-100"
+    : "border-amber-400/30 bg-amber-400/15 text-amber-100";
+}
+
+function compactText(v?: string | null) {
+  const s = String(v || "").trim();
+  return s || null;
+}
+
 export default function DoorCheckPage() {
   const [eventId, setEventId] = useState("");
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -293,7 +383,6 @@ export default function DoorCheckPage() {
     setScanErr(null);
     setScanStarting(false);
   };
-
   useEffect(() => {
     if (!scanOpen) return;
     const prevOverscroll = (document.body.style as any).overscrollBehavior;
@@ -324,6 +413,7 @@ export default function DoorCheckPage() {
       if (did) setDeviceId(did);
     } catch {}
   }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -750,7 +840,8 @@ export default function DoorCheckPage() {
       } as any;
 
       if ((merged as any).tickets_payload && typeof (merged as any).tickets_payload.has_more === "undefined") {
-        (merged as any).tickets_payload.has_more = (((merged as any).tickets_payload.tickets?.length ?? 0) as number) >= attLimit;
+        (merged as any).tickets_payload.has_more =
+          (((merged as any).tickets_payload.tickets?.length ?? 0) as number) >= attLimit;
       }
       if ((merged as any).checkins_payload && typeof (merged as any).checkins_payload.has_more === "undefined") {
         (merged as any).checkins_payload.has_more =
@@ -811,6 +902,7 @@ export default function DoorCheckPage() {
     if (!attData || !("ok" in attData) || !attData.ok) return false;
     return !!attData.checkins_payload?.has_more && !attLoading;
   }, [attData, attLoading]);
+
   return (
     <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-2xl mx-auto">
@@ -1055,14 +1147,13 @@ export default function DoorCheckPage() {
                 <button
                   type="button"
                   onClick={() => {
-                  setRes(null);
-                  setQr("");
-                  setManualOpen(false);
-                  setLastDeniedCode(null);
-                  setInviteQrOpen(false);
-                  setInviteQrUrl("");
-                   }}
-
+                    setRes(null);
+                    setQr("");
+                    setManualOpen(false);
+                    setLastDeniedCode(null);
+                    setInviteQrOpen(false);
+                    setInviteQrUrl("");
+                  }}
                   className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
                 >
                   Reset scan
@@ -1145,7 +1236,6 @@ export default function DoorCheckPage() {
                 </div>
               )}
             </section>
-
             <section className="mt-4">
               {!res ? (
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-white/60">
@@ -1163,33 +1253,52 @@ export default function DoorCheckPage() {
                   const memberStatus = String(resAny.member_status_raw || "").trim();
                   const inviteUrl = String(resAny.membership_invite_url || "").trim();
 
+                  const ticketTypeNorm = normalizeTicketType(resAny.ticket_type);
+                  const ticketTypeLabel = truthy(resAny.ticket_type_label || "") || prettifyTicketType(resAny.ticket_type);
+                  const personBadge = personStatusBadge(resAny);
+
                   const hasTicketInfo =
                     !!String(resAny?.ticket_offer_title || "").trim() ||
                     !!String(resAny?.ticket_offer_description || "").trim() ||
                     !!String(resAny?.ticket_transaction_id || "").trim() ||
-                    !!String(resAny?.ticket_booking_date || "").trim();
+                    !!String(resAny?.ticket_booking_date || "").trim() ||
+                    !!String(resAny?.ticket_type || "").trim() ||
+                    !!String(resAny?.ticket_type_label || "").trim();
 
                   const hasMemberInfo =
                     !!resAny.member_found ||
                     !!memberLabel ||
                     !!memberStatus ||
                     !!resAny.member_access_note ||
-                    !!resAny.priority_access;
+                    !!resAny.priority_access ||
+                    resAny.member_group === "staff";
 
                   return (
                     <div className={`rounded-2xl border p-5 ${panelClasses(ui?.color, allowedNow)}`}>
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="text-lg font-semibold">{allowedNow ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
+
                         {ui?.badge ? (
                           <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${badgeClasses(ui?.color, allowedNow)}`}>
                             {ui.badge}
                           </span>
                         ) : null}
+
                         {resAny.kind ? (
                           <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/70">
                             {resAny.kind}
                           </span>
                         ) : null}
+
+                        {ticketTypeLabel ? (
+                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${ticketTypeBadgeClasses(ticketTypeNorm)}`}>
+                            {String(ticketTypeLabel).toUpperCase()}
+                          </span>
+                        ) : null}
+
+                        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${personBadge.className}`}>
+                          {personBadge.label}
+                        </span>
                       </div>
 
                       {humanMessage ? (
@@ -1212,8 +1321,8 @@ export default function DoorCheckPage() {
                           <div className="text-sm font-semibold">👤 Membership</div>
 
                           <div className="mt-2 flex flex-wrap gap-2">
-                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
-                              {resAny.member_found ? "Socio riconosciuto" : "Non socio"}
+                            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${personBadge.className}`}>
+                              {personBadge.label}
                             </span>
 
                             {memberLabel ? (
@@ -1245,8 +1354,22 @@ export default function DoorCheckPage() {
                         <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
                           <div className="text-sm font-semibold">🎫 Ticket</div>
 
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {ticketTypeLabel ? (
+                              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${ticketTypeBadgeClasses(ticketTypeNorm)}`}>
+                                {ticketTypeLabel}
+                              </span>
+                            ) : null}
+
+                            {resAny.ticket_offer_title ? (
+                              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+                                {resAny.ticket_offer_title}
+                              </span>
+                            ) : null}
+                          </div>
+
                           {resAny.ticket_offer_title ? (
-                            <div className="mt-2 text-sm text-white/90">
+                            <div className="mt-3 text-sm text-white/90">
                               <span className="text-white/50">Offer:</span> {resAny.ticket_offer_title}
                             </div>
                           ) : null}
@@ -1257,59 +1380,60 @@ export default function DoorCheckPage() {
                             </div>
                           ) : null}
 
-                          
-<div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
-  {resAny.ticket_type ? (
-    <div>
-      type: <span className="text-white/80">{resAny.ticket_type}</span>
-    </div>
-  ) : null}
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
+                            {ticketTypeLabel ? (
+                              <div>
+                                type label: <span className="text-white/80">{ticketTypeLabel}</span>
+                              </div>
+                            ) : null}
 
-  {resAny.ticket_transaction_id ? <div>tx: {resAny.ticket_transaction_id}</div> : null}
+                            {resAny.ticket_type ? (
+                              <div>
+                                raw type: <span className="text-white/80">{resAny.ticket_type}</span>
+                              </div>
+                            ) : null}
 
-  {resAny.ticket_booking_date ? (
-    <div>booking: {String(resAny.ticket_booking_date)}</div>
-  ) : null}
-</div>
+                            {resAny.ticket_transaction_id ? <div>tx: {resAny.ticket_transaction_id}</div> : null}
 
-
+                            {resAny.ticket_booking_date ? (
+                              <div>booking: {String(resAny.ticket_booking_date)}</div>
+                            ) : null}
+                          </div>
                         </div>
                       ) : null}
 
+                      {!allowedNow && inviteUrl ? (
+                        <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
+                          <div className="text-sm font-semibold text-sky-100">🪪 Non socio</div>
+                          <div className="mt-1 text-xs text-sky-50/80">
+                            Ticket trovato, ma membership non presente o richiesta per l’accesso.
+                          </div>
 
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <a
+                              href={inviteUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
+                            >
+                              Apri iscrizione Wally
+                            </a>
 
-{!allowedNow && inviteUrl ? (
-  <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
-    <div className="text-sm font-semibold text-sky-100">🪪 Non socio</div>
-    <div className="mt-1 text-xs text-sky-50/80">
-      Ticket trovato, ma membership non presente o richiesta per l’accesso.
-    </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInviteQrUrl(inviteUrl);
+                                setInviteQrOpen(true);
+                              }}
+                              className="inline-flex rounded-xl border border-white/20 bg-black/20 px-4 py-2 text-sm font-semibold text-white hover:bg-black/30"
+                            >
+                              Mostra QR iscrizione
+                            </button>
+                          </div>
 
-    <div className="mt-3 flex flex-wrap gap-3">
-      <a
-        href={inviteUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold"
-      >
-        Apri iscrizione Wally
-      </a>
-
-      <button
-        type="button"
-        onClick={() => {
-          setInviteQrUrl(inviteUrl);
-          setInviteQrOpen(true);
-        }}
-        className="inline-flex rounded-xl border border-white/20 bg-black/20 px-4 py-2 text-sm font-semibold text-white hover:bg-black/30"
-      >
-        Mostra QR iscrizione
-      </button>
-    </div>
-
-    <div className="mt-3 text-[11px] text-sky-50/60 break-all">{inviteUrl}</div>
-  </div>
-) : null}
+                          <div className="mt-3 text-[11px] text-sky-50/60 break-all">{inviteUrl}</div>
+                        </div>
+                      ) : null}
 
                       {isDenied && denyReasonEff === "not_found" ? (
                         <div className="mt-3 text-sm text-white/80">
@@ -1490,17 +1614,40 @@ export default function DoorCheckPage() {
                             ) : (
                               (attData.checkins_payload?.checkins || []).map((c) => (
                                 <div key={c.id} className="rounded-xl border border-white/10 bg-black/30 p-3">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="text-sm text-white/90">
-                                      {c.display_name || "—"} <span className="text-white/50">· {String(c.kind || "—")}</span>
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-sm font-semibold text-white/95 break-words">{c.display_name || "—"}</div>
+
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${kindBadgeClasses(c.kind)}`}>
+                                          {String(c.kind || "UNKNOWN").toUpperCase()}
+                                        </span>
+
+                                        <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${entryStatusBadgeClasses(true)}`}>
+                                          ENTRATO
+                                        </span>
+
+                                        {c.result ? (
+                                          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/80">
+                                            {String(c.result)}
+                                          </span>
+                                        ) : null}
+                                      </div>
                                     </div>
-                                    <div className="text-[11px] text-white/50 font-mono">{fmtTS(c.created_at)}</div>
+
+                                    <div className="text-[11px] text-white/50 font-mono whitespace-nowrap">{fmtTS(c.created_at)}</div>
                                   </div>
-                                  <div className="mt-1 text-[11px] text-white/50 font-mono">
-                                    {c.email || ""} {c.phone ? ` · ${c.phone}` : ""} {c.method ? ` · ${c.method}` : ""}
-                                  </div>
+
+                                  {(compactText(c.email) || compactText(c.phone) || compactText(c.method)) ? (
+                                    <div className="mt-2 text-[11px] text-white/50 font-mono break-words">
+                                      {compactText(c.email) || ""}
+                                      {compactText(c.phone) ? ` · ${c.phone}` : ""}
+                                      {compactText(c.method) ? ` · ${c.method}` : ""}
+                                    </div>
+                                  ) : null}
+
                                   {attDebug && c.scanned_code ? (
-                                    <div className="mt-1 text-[11px] text-white/40 font-mono">code: {c.scanned_code}</div>
+                                    <div className="mt-1 text-[11px] text-white/40 font-mono break-all">code: {c.scanned_code}</div>
                                   ) : null}
                                 </div>
                               ))
@@ -1535,33 +1682,89 @@ export default function DoorCheckPage() {
                             {(attData.tickets_payload?.tickets || []).length === 0 ? (
                               <div className="text-sm text-white/60">Nessun ticket trovato.</div>
                             ) : (
-                              (attData.tickets_payload?.tickets || []).map((t) => (
-                                <div key={t.id} className="rounded-xl border border-white/10 bg-black/30 p-3">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="text-sm text-white/90">{t.full_name || "—"}</div>
-                                    <div className="text-[11px] text-white/50 font-mono">
-                                      {t.checkin_id ? "✅ entrato" : "⏳ da entrare"}
-                                    </div>
-                                  </div>
-                                  <div className="mt-1 text-[11px] text-white/50 font-mono">
-                                    {t.email || ""} {t.phone ? ` · ${t.phone}` : ""}{" "}
-                                    {t.booking_date ? ` · booking: ${String(t.booking_date)}` : ""}
-                                  </div>
+                              (attData.tickets_payload?.tickets || []).map((t) => {
+                                const entered = !!t.checkin_id;
+                                const offerTypeNorm = normalizeTicketType(t.offer_type || null);
+                                const offerTypeLabel =
+                                  truthy(t.offer_type_label || "") ||
+                                  prettifyTicketType(t.offer_type || null);
 
-                                  {t.offer_title ? (
-                                    <div className="mt-2 text-xs text-white/80">
-                                      <span className="text-white/50">Offer:</span> {t.offer_title}
-                                    </div>
-                                  ) : null}
+                                return (
+                                  <div key={t.id} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div className="min-w-0 flex-1">
+                                        <div className="text-sm font-semibold text-white/95 break-words">{t.full_name || "—"}</div>
 
-                                  {attDebug && (t.transaction_id || t.offer_description) ? (
-                                    <div className="mt-2 text-[11px] text-white/50 font-mono">
-                                      {t.transaction_id ? `tx: ${t.transaction_id}` : ""}
-                                      {t.offer_description ? ` · ${String(t.offer_description).slice(0, 140)}…` : ""}
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                          <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${entryStatusBadgeClasses(entered)}`}>
+                                            {entered ? "ENTRATO" : "DA ENTRARE"}
+                                          </span>
+
+                                          {offerTypeLabel ? (
+                                            <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${ticketTypeBadgeClasses(offerTypeNorm)}`}>
+                                              {offerTypeLabel.toUpperCase()}
+                                            </span>
+                                          ) : null}
+
+                                          {t.offer_title ? (
+                                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/80">
+                                              {t.offer_title}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </div>
+
+                                      <div className="text-[11px] text-white/50 font-mono whitespace-nowrap">
+                                        {entered ? "✅ check-in" : "⏳ pending"}
+                                      </div>
                                     </div>
-                                  ) : null}
-                                </div>
-                              ))
+
+                                    {(compactText(t.email) || compactText(t.phone) || compactText(t.booking_date)) ? (
+                                      <div className="mt-2 text-[11px] text-white/50 font-mono break-words">
+                                        {compactText(t.email) || ""}
+                                        {compactText(t.phone) ? ` · ${t.phone}` : ""}
+                                        {compactText(t.booking_date) ? ` · booking: ${String(t.booking_date)}` : ""}
+                                      </div>
+                                    ) : null}
+
+                                    {t.offer_title ? (
+                                      <div className="mt-2 text-xs text-white/85">
+                                        <span className="text-white/50">Offer:</span> {t.offer_title}
+                                      </div>
+                                    ) : null}
+
+                                    {t.offer_description ? (
+                                      <div className="mt-1 text-[11px] text-white/60 whitespace-pre-wrap">
+                                        {String(t.offer_description)}
+                                      </div>
+                                    ) : null}
+
+                                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/45 font-mono">
+                                      {offerTypeLabel ? (
+                                        <div>
+                                          type label: <span className="text-white/80">{offerTypeLabel}</span>
+                                        </div>
+                                      ) : null}
+
+                                      {t.offer_type ? (
+                                        <div>
+                                          raw type: <span className="text-white/80">{t.offer_type}</span>
+                                        </div>
+                                      ) : null}
+
+                                      {t.transaction_id ? <div>tx: {t.transaction_id}</div> : null}
+
+                                      {t.imported_at ? <div>imported: {fmtTS(t.imported_at)}</div> : null}
+                                    </div>
+
+                                    {attDebug && t.checkin_id ? (
+                                      <div className="mt-2 text-[11px] text-white/35 font-mono break-all">
+                                        checkin_id: {t.checkin_id}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })
                             )}
                           </div>
 
@@ -1586,17 +1789,34 @@ export default function DoorCheckPage() {
                           <div className="mt-3 space-y-2">
                             {(attData.checkins_payload.last_checkins || []).map((c) => (
                               <div key={c.id} className="rounded-xl border border-white/10 bg-black/30 p-3">
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="text-sm text-white/90">
-                                    {c.display_name || "—"} <span className="text-white/50">· {String(c.kind || "—")}</span>
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-sm font-semibold text-white/95 break-words">{c.display_name || "—"}</div>
+
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${kindBadgeClasses(c.kind)}`}>
+                                        {String(c.kind || "UNKNOWN").toUpperCase()}
+                                      </span>
+
+                                      <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${entryStatusBadgeClasses(true)}`}>
+                                        ENTRATO
+                                      </span>
+                                    </div>
                                   </div>
-                                  <div className="text-[11px] text-white/50 font-mono">{fmtTS(c.created_at)}</div>
+
+                                  <div className="text-[11px] text-white/50 font-mono whitespace-nowrap">{fmtTS(c.created_at)}</div>
                                 </div>
-                                <div className="mt-1 text-[11px] text-white/50 font-mono">
-                                  {c.email || ""} {c.phone ? ` · ${c.phone}` : ""} {c.method ? ` · ${c.method}` : ""}
-                                </div>
+
+                                {(compactText(c.email) || compactText(c.phone) || compactText(c.method)) ? (
+                                  <div className="mt-2 text-[11px] text-white/50 font-mono break-words">
+                                    {compactText(c.email) || ""}
+                                    {compactText(c.phone) ? ` · ${c.phone}` : ""}
+                                    {compactText(c.method) ? ` · ${c.method}` : ""}
+                                  </div>
+                                ) : null}
+
                                 {attDebug && c.scanned_code ? (
-                                  <div className="mt-1 text-[11px] text-white/40 font-mono">code: {c.scanned_code}</div>
+                                  <div className="mt-1 text-[11px] text-white/40 font-mono break-all">code: {c.scanned_code}</div>
                                 ) : null}
                               </div>
                             ))}
@@ -1612,7 +1832,6 @@ export default function DoorCheckPage() {
                 </div>
               </div>
             ) : null}
-
 
             {inviteQrOpen ? (
               <div className="fixed inset-0 z-[60]">
@@ -1683,12 +1902,6 @@ export default function DoorCheckPage() {
                 </div>
               </div>
             ) : null}
-
-
-
-
-
-
           </>
         )}
       </div>

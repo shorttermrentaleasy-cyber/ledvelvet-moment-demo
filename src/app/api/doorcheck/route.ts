@@ -44,6 +44,13 @@ type UiInfo = {
   badge: string;
 };
 
+type XceedTicketMeta = {
+  ticket_type: string | null;
+  ticket_type_label: string | null;
+  ticket_offer_title: string | null;
+  ticket_offer_description: string | null;
+};
+
 const NO_MEMBERSHIP: MembershipInfo = {
   member_found: false,
   member_group: null,
@@ -87,6 +94,43 @@ function asString(v: any): string {
   return String(v).trim();
 }
 
+function parseMaybeJson(raw: any): any {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw;
+  if (typeof raw !== "string") return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeTicketType(input: string | null | undefined): string | null {
+  const v = String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-");
+
+  if (!v) return null;
+  if (v === "guestlist" || v === "guest-list") return "guest-list";
+  if (v === "ticket") return "ticket";
+  return v;
+}
+
+function ticketTypeLabel(input: string | null | undefined): string | null {
+  const t = normalizeTicketType(input);
+  if (!t) return null;
+
+  if (t === "guest-list") return "Guest List";
+  if (t === "ticket") return "Ticket";
+
+  return t
+    .split("-")
+    .map((p) => (p ? p.charAt(0).toUpperCase() + p.slice(1) : ""))
+    .join(" ");
+}
+
 function toHumanMessage(input: { kind?: string; status?: string; reason?: string }): string {
   const reason = (input.reason || "").trim();
 
@@ -110,27 +154,68 @@ function toHumanMessage(input: { kind?: string; status?: string; reason?: string
   return "";
 }
 
-function getXceedRawField(raw: any, keys: string[]): string | null {
+function getXceedRawField(rawInput: any, keys: string[]): string | null {
+  const raw = parseMaybeJson(rawInput);
   if (!raw || typeof raw !== "object") return null;
+
   for (const k of keys) {
-    if (raw[k] !== undefined && raw[k] !== null) {
-      const s = asString(raw[k]);
+    if ((raw as any)[k] !== undefined && (raw as any)[k] !== null) {
+      const s = asString((raw as any)[k]);
       if (s) return s;
     }
   }
   return null;
 }
 
-function getXceedTicketType(raw: any): string | null {
-  return (
-    raw?.ticket?.offer?.type ??
-    raw?.booking?.offer?.type ??
-    raw?.offer?.type ??
-    getXceedRawField(raw, ["Offer type", "Offer Type", "offer_type", "offerType"]) ??
-    null
-  );
+function pickFirstString(values: Array<any>): string | null {
+  for (const v of values) {
+    const s = asString(v);
+    if (s) return s;
+  }
+  return null;
 }
 
+function extractXceedTicketMeta(rawInput: any): XceedTicketMeta {
+  const raw = parseMaybeJson(rawInput);
+
+  const ticketTypeRaw = pickFirstString([
+    raw?.ticket?.offer?.type,
+    raw?.booking?.offer?.type,
+    raw?.offer?.type,
+    raw?.ticket?.type,
+    raw?.booking?.type,
+    getXceedRawField(raw, ["Offer type", "Offer Type", "offer_type", "offerType"]),
+  ]);
+
+  const offerTitle = pickFirstString([
+    raw?.ticket?.offer?.name,
+    raw?.booking?.offer?.name,
+    raw?.offer?.name,
+    getXceedRawField(raw, ["Offer title", "Offer Title", "offer_title", "offerTitle"]),
+  ]);
+
+  const offerDescription = pickFirstString([
+    raw?.ticket?.offer?.description,
+    raw?.booking?.offer?.description,
+    raw?.offer?.description,
+    getXceedRawField(raw, [
+      "Offer Description",
+      "Offer description",
+      "offer_description",
+      "offerDescription",
+    ]),
+  ]);
+
+  const ticket_type = normalizeTicketType(ticketTypeRaw);
+  const ticket_type_label = ticketTypeLabel(ticket_type);
+
+  return {
+    ticket_type,
+    ticket_type_label,
+    ticket_offer_title: offerTitle,
+    ticket_offer_description: offerDescription,
+  };
+}
 function buildMembershipInfo(params: {
   membershipGroup?: string | null;
   status?: string | null;
@@ -196,18 +281,20 @@ function buildUiInfo(params: {
   memberGroupLabel?: string | null;
   priorityAccess?: boolean;
   ticketOfferTitle?: string | null;
+  ticketTypeLabel?: string | null;
 }): UiInfo {
   const kind = params.kind;
   const allowed = Boolean(params.allowed);
   const memberGroupLabel = String(params.memberGroupLabel || "").trim();
   const priorityAccess = Boolean(params.priorityAccess);
   const ticketOfferTitle = String(params.ticketOfferTitle || "").trim();
+  const ticketTypeLabel = String(params.ticketTypeLabel || "").trim();
 
   if (!allowed) {
     return {
       type: kind,
       color: "red",
-      badge: memberGroupLabel || ticketOfferTitle || kind,
+      badge: memberGroupLabel || ticketTypeLabel || ticketOfferTitle || kind,
     };
   }
 
@@ -230,7 +317,7 @@ function buildUiInfo(params: {
     return {
       type: "XCEED",
       color: "blue",
-      badge: ticketOfferTitle || "Ticket Xceed",
+      badge: ticketTypeLabel || ticketOfferTitle || "Ticket Xceed",
     };
   }
 
@@ -366,6 +453,7 @@ async function findMemberByBarcodeOrCard(
     status: (m as any).status ?? null,
   };
 }
+
 async function memberAlreadyCheckedIn(
   supabase: ReturnType<typeof supabaseAdmin>,
   eventId: string,
@@ -484,7 +572,6 @@ async function memberHasAvailableTicketForEvent(
   if (error) throw new Error(error.message);
   return !!(data && data.length > 0);
 }
-
 async function linkMemberTicketToCheckin(params: {
   supabase: ReturnType<typeof supabaseAdmin>;
   eventId: string;
@@ -658,7 +745,7 @@ export async function POST(req: Request) {
       if (qrRaw && !qrRaw.startsWith("MANUAL")) {
         const { data: t, error: tErr } = await supabase
           .from("xceed_tickets")
-          .select("id, checkin_id, legacy_person_id, full_name, email, phone")
+          .select("id, checkin_id, legacy_person_id, full_name, email, phone, transaction_id, booking_date, raw")
           .eq("event_id", eventId)
           .eq("qr_code", qrRaw)
           .maybeSingle();
@@ -666,7 +753,9 @@ export async function POST(req: Request) {
         if (tErr) throw new Error(tErr.message);
         if ((t as any)?.id) manualXceedTicket = t;
 
+        const tMeta = extractXceedTicketMeta((t as any)?.raw);
         const tCheckinId = String((t as any)?.checkin_id ?? "").trim();
+
         if (tCheckinId) {
           const nm = String((t as any)?.full_name ?? "").trim() || fullName || "Xceed guest";
           const resp: any = {
@@ -677,11 +766,18 @@ export async function POST(req: Request) {
             checkin_id: tCheckinId,
             legacy_person_id: (t as any)?.legacy_person_id ?? null,
             display_name: nm,
+            ticket_offer_title: tMeta.ticket_offer_title,
+            ticket_offer_description: tMeta.ticket_offer_description,
+            ticket_transaction_id: asString((t as any)?.transaction_id) || null,
+            ticket_booking_date: (t as any)?.booking_date || null,
+            ticket_type: tMeta.ticket_type,
+            ticket_type_label: tMeta.ticket_type_label,
             ...NO_MEMBERSHIP,
             ui: buildUiInfo({
               kind: "XCEED",
               allowed: true,
-              ticketOfferTitle: "Ticket Xceed",
+              ticketOfferTitle: tMeta.ticket_offer_title,
+              ticketTypeLabel: tMeta.ticket_type_label,
             }),
           };
           resp.message = toHumanMessage(resp);
@@ -783,6 +879,7 @@ export async function POST(req: Request) {
           inviteEligible: false,
         })
       : { ...NO_MEMBERSHIP };
+
     if (member) {
       const alreadyId = await memberAlreadyCheckedIn(supabase, eventId, member.id);
       if (alreadyId) {
@@ -908,16 +1005,9 @@ export async function POST(req: Request) {
       const buyerEmail = normalizeEmail((ticket as any).email ?? null);
       const buyerPhone = normalizePhone((ticket as any).phone ?? null);
 
-      const raw = (ticket as any).raw || null;
-      const offerTitle =
-        getXceedRawField(raw, ["Offer title", "Offer Title", "offer_title", "offerTitle"]) || null;
-      const offerDescription =
-        getXceedRawField(raw, ["Offer Description", "Offer description", "offer_description", "offerDescription"]) ||
-        null;
-
+      const ticketMeta = extractXceedTicketMeta((ticket as any).raw);
       const ticket_transaction_id = asString((ticket as any).transaction_id) || null;
       const ticket_booking_date = (ticket as any).booking_date || null;
-      const ticket_type = getXceedTicketType(raw);
 
       const ticketCheckinId = String((ticket as any).checkin_id ?? "").trim();
       if (ticketCheckinId) {
@@ -938,38 +1028,35 @@ export async function POST(req: Request) {
                 inviteEligible: false,
               });
 
+        const resolvedKind =
+          resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED";
+
         const resp: any = {
           ok: true,
           allowed: true,
-          kind:
-            resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED",
+          kind: resolvedKind,
           status: "Already Checked IN",
           checkin_id: ticketCheckinId,
-          member_id:
-            resolvedMember && !(resolvedMember as any).ambiguous
-              ? (resolvedMember as any).id
-              : null,
-          legacy_person_id:
-            resolvedMember && !(resolvedMember as any).ambiguous
-              ? null
-              : (ticket as any).legacy_person_id ?? null,
+          member_id: resolvedKind === "ETS" ? (resolvedMember as any).id : null,
+          legacy_person_id: resolvedKind === "ETS" ? null : (ticket as any).legacy_person_id ?? null,
           display_name:
-            resolvedMember && !(resolvedMember as any).ambiguous
+            resolvedKind === "ETS"
               ? (resolvedMember as any).display_name || buyerName
               : buyerName,
           ...alreadyCheckedMembershipInfo,
-          ticket_offer_title: offerTitle,
-          ticket_offer_description: offerDescription,
+          ticket_offer_title: ticketMeta.ticket_offer_title,
+          ticket_offer_description: ticketMeta.ticket_offer_description,
           ticket_transaction_id,
           ticket_booking_date,
-          ticket_type,
+          ticket_type: ticketMeta.ticket_type,
+          ticket_type_label: ticketMeta.ticket_type_label,
           ui: buildUiInfo({
-            kind:
-              resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED",
+            kind: resolvedKind,
             allowed: true,
             memberGroupLabel: alreadyCheckedMembershipInfo.member_group_label,
             priorityAccess: alreadyCheckedMembershipInfo.priority_access,
-            ticketOfferTitle: offerTitle,
+            ticketOfferTitle: ticketMeta.ticket_offer_title,
+            ticketTypeLabel: ticketMeta.ticket_type_label,
           }),
         };
 
@@ -1003,17 +1090,19 @@ export async function POST(req: Request) {
             reason: "ambiguous_member_match",
             display_name: buyerName,
             ...xceedMembershipInfo,
-            ticket_offer_title: offerTitle,
-            ticket_offer_description: offerDescription,
+            ticket_offer_title: ticketMeta.ticket_offer_title,
+            ticket_offer_description: ticketMeta.ticket_offer_description,
             ticket_transaction_id,
             ticket_booking_date,
-            ticket_type,
+            ticket_type: ticketMeta.ticket_type,
+            ticket_type_label: ticketMeta.ticket_type_label,
             ui: buildUiInfo({
               kind: "XCEED",
               allowed: false,
               memberGroupLabel: xceedMembershipInfo.member_group_label,
               priorityAccess: xceedMembershipInfo.priority_access,
-              ticketOfferTitle: offerTitle,
+              ticketOfferTitle: ticketMeta.ticket_offer_title,
+              ticketTypeLabel: ticketMeta.ticket_type_label,
             }),
           };
           resp.message = toHumanMessage(resp);
@@ -1033,17 +1122,19 @@ export async function POST(req: Request) {
             membership_invite_url: buyerEmail
               ? `https://www.wallyfor.com/step1.php?ref=1d7439beb34f751e1db481e40592079e`
               : null,
-            ticket_offer_title: offerTitle,
-            ticket_offer_description: offerDescription,
+            ticket_offer_title: ticketMeta.ticket_offer_title,
+            ticket_offer_description: ticketMeta.ticket_offer_description,
             ticket_transaction_id,
             ticket_booking_date,
-            ticket_type,
+            ticket_type: ticketMeta.ticket_type,
+            ticket_type_label: ticketMeta.ticket_type_label,
             ui: buildUiInfo({
               kind: "XCEED",
               allowed: false,
               memberGroupLabel: xceedMembershipInfo.member_group_label,
               priorityAccess: xceedMembershipInfo.priority_access,
-              ticketOfferTitle: offerTitle,
+              ticketOfferTitle: ticketMeta.ticket_offer_title,
+              ticketTypeLabel: ticketMeta.ticket_type_label,
             }),
           };
           resp.message = toHumanMessage(resp);
@@ -1063,17 +1154,19 @@ export async function POST(req: Request) {
             checkin_id: alreadyEtsId,
             display_name: (m as any).display_name || buyerName,
             ...xceedMembershipInfo,
-            ticket_offer_title: offerTitle,
-            ticket_offer_description: offerDescription,
+            ticket_offer_title: ticketMeta.ticket_offer_title,
+            ticket_offer_description: ticketMeta.ticket_offer_description,
             ticket_transaction_id,
             ticket_booking_date,
-            ticket_type,
+            ticket_type: ticketMeta.ticket_type,
+            ticket_type_label: ticketMeta.ticket_type_label,
             ui: buildUiInfo({
               kind: "ETS",
               allowed: true,
               memberGroupLabel: xceedMembershipInfo.member_group_label,
               priorityAccess: xceedMembershipInfo.priority_access,
-              ticketOfferTitle: offerTitle,
+              ticketOfferTitle: ticketMeta.ticket_offer_title,
+              ticketTypeLabel: ticketMeta.ticket_type_label,
             }),
           };
           resp.message = toHumanMessage(resp);
@@ -1110,17 +1203,19 @@ export async function POST(req: Request) {
           checkin_id: (ins as any)?.id || null,
           display_name: (m as any).display_name || buyerName,
           ...xceedMembershipInfo,
-          ticket_offer_title: offerTitle,
-          ticket_offer_description: offerDescription,
+          ticket_offer_title: ticketMeta.ticket_offer_title,
+          ticket_offer_description: ticketMeta.ticket_offer_description,
           ticket_transaction_id,
           ticket_booking_date,
-          ticket_type,
+          ticket_type: ticketMeta.ticket_type,
+          ticket_type_label: ticketMeta.ticket_type_label,
           ui: buildUiInfo({
             kind: "ETS",
             allowed: true,
             memberGroupLabel: xceedMembershipInfo.member_group_label,
             priorityAccess: xceedMembershipInfo.priority_access,
-            ticketOfferTitle: offerTitle,
+            ticketOfferTitle: ticketMeta.ticket_offer_title,
+            ticketTypeLabel: ticketMeta.ticket_type_label,
           }),
         };
         resp.message = toHumanMessage(resp);
@@ -1169,17 +1264,19 @@ export async function POST(req: Request) {
           membership_invite_url: buyerEmail
             ? `https://www.wallyfor.com/step1.php?ref=1d7439beb34f751e1db481e40592079e`
             : null,
-          ticket_offer_title: offerTitle,
-          ticket_offer_description: offerDescription,
+          ticket_offer_title: ticketMeta.ticket_offer_title,
+          ticket_offer_description: ticketMeta.ticket_offer_description,
           ticket_transaction_id,
           ticket_booking_date,
-          ticket_type,
+          ticket_type: ticketMeta.ticket_type,
+          ticket_type_label: ticketMeta.ticket_type_label,
           ui: buildUiInfo({
             kind: "XCEED",
             allowed: true,
             memberGroupLabel: xceedGuestAlreadyMembershipInfo.member_group_label,
             priorityAccess: xceedGuestAlreadyMembershipInfo.priority_access,
-            ticketOfferTitle: offerTitle,
+            ticketOfferTitle: ticketMeta.ticket_offer_title,
+            ticketTypeLabel: ticketMeta.ticket_type_label,
           }),
         };
         resp.message = toHumanMessage(resp);
@@ -1223,17 +1320,19 @@ export async function POST(req: Request) {
         membership_invite_url: buyerEmail
           ? `https://www.wallyfor.com/step1.php?ref=1d7439beb34f751e1db481e40592079e`
           : null,
-        ticket_offer_title: offerTitle,
-        ticket_offer_description: offerDescription,
+        ticket_offer_title: ticketMeta.ticket_offer_title,
+        ticket_offer_description: ticketMeta.ticket_offer_description,
         ticket_transaction_id,
         ticket_booking_date,
-        ticket_type,
+        ticket_type: ticketMeta.ticket_type,
+        ticket_type_label: ticketMeta.ticket_type_label,
         ui: buildUiInfo({
           kind: "XCEED",
           allowed: true,
           memberGroupLabel: xceedGuestMembershipInfo.member_group_label,
           priorityAccess: xceedGuestMembershipInfo.priority_access,
-          ticketOfferTitle: offerTitle,
+          ticketOfferTitle: ticketMeta.ticket_offer_title,
+          ticketTypeLabel: ticketMeta.ticket_type_label,
         }),
       };
       resp.message = toHumanMessage(resp);
