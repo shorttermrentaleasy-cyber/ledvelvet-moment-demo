@@ -247,6 +247,7 @@ async function fetchAllTicketPages(
 
   return { ok: true, status: 200, items };
 }
+
 async function fetchAllBookingPages(
   baseUrl: string,
   apiKey: string,
@@ -330,44 +331,19 @@ function buildRowFromTicket(params: {
   const matchedBooking = bookingPassMatch?.booking ?? null;
   const matchedPass = bookingPassMatch?.pass ?? null;
 
-  const email = normalizeEmail(
-    ticket.email ??
-      matchedPass?.email ??
-      matchedBooking?.buyer?.email ??
-      null
-  );
-
-  const phone = normalizePhone(
-    ticket.phone ??
-      matchedPass?.phone ??
-      matchedBooking?.buyer?.phone ??
-      null
-  );
+  const email = normalizeEmail(ticket.email ?? matchedPass?.email ?? matchedBooking?.buyer?.email ?? null);
+  const phone = normalizePhone(ticket.phone ?? matchedPass?.phone ?? matchedBooking?.buyer?.phone ?? null);
 
   const fullName =
     buildFullName(ticket.firstName, ticket.lastName) ||
     buildFullName(matchedPass?.firstName, matchedPass?.lastName) ||
     buildFullName(matchedBooking?.buyer?.firstName, matchedBooking?.buyer?.lastName);
 
-  const buyerEmail = normalizeEmail(
-    matchedBooking?.buyer?.email ??
-      ticket.email ??
-      matchedPass?.email ??
-      null
-  );
-
-  const buyerPhone = normalizePhone(
-    matchedBooking?.buyer?.phone ??
-      ticket.phone ??
-      matchedPass?.phone ??
-      null
-  );
+  const buyerEmail = normalizeEmail(matchedBooking?.buyer?.email ?? ticket.email ?? matchedPass?.email ?? null);
+  const buyerPhone = normalizePhone(matchedBooking?.buyer?.phone ?? ticket.phone ?? matchedPass?.phone ?? null);
 
   const resolvedOfferType = normalizeOfferType(
-    pickFirstNonEmpty(
-      matchedBooking?.offer?.type ?? null,
-      ticket.offer?.type ?? null
-    )
+    pickFirstNonEmpty(matchedBooking?.offer?.type ?? null, ticket.offer?.type ?? null)
   );
 
   const resolvedOfferName = pickFirstNonEmpty(
@@ -494,6 +470,64 @@ function buildRowsFromBookingsOnly(params: {
 
   return rows;
 }
+
+function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
+  const map = new Map<string, XceedTicketRow>();
+
+  for (const row of rows) {
+    const eventId = String(row.event_id || "").trim();
+    const qr = String(row.qr_code || "").trim();
+    if (!eventId || !qr) continue;
+
+    const key = `${eventId}__${qr}`;
+    const existing = map.get(key);
+
+    if (!existing) {
+      map.set(key, row);
+      continue;
+    }
+
+    const existingSource = existing.raw?.source || "";
+    const incomingSource = row.raw?.source || "";
+
+    const existingOfferType = String(existing.raw?.offer?.type || "").trim();
+    const incomingOfferType = String(row.raw?.offer?.type || "").trim();
+
+    const existingHasBetterType =
+      existingOfferType === "guest-list" || existingOfferType === "table" || existingOfferType === "staff";
+
+    const incomingHasBetterType =
+      incomingOfferType === "guest-list" || incomingOfferType === "table" || incomingOfferType === "staff";
+
+    if (incomingHasBetterType && !existingHasBetterType) {
+      map.set(key, row);
+      continue;
+    }
+
+    if (incomingSource === "tickets+bookings_merge" && existingSource !== "tickets+bookings_merge") {
+      map.set(key, row);
+      continue;
+    }
+
+    if (!existing.full_name && row.full_name) {
+      map.set(key, { ...existing, ...row });
+      continue;
+    }
+
+    if (!existing.email && row.email) {
+      map.set(key, { ...existing, ...row });
+      continue;
+    }
+
+    if (!existing.phone && row.phone) {
+      map.set(key, { ...existing, ...row });
+      continue;
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 export async function GET(req: NextRequest) {
   const apiKey = process.env.XCEED_API_KEY;
   const baseUrl = process.env.XCEED_BASE_URL;
@@ -525,9 +559,6 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     );
   }
-
-
-
 
   try {
     const supabase = createClient(supabaseUrl, supabaseServiceRole, {
@@ -586,7 +617,8 @@ export async function GET(req: NextRequest) {
         {
           ok: false,
           error: "No local event found for this Xceed identifier",
-          xceedEventRef,
+          xceedEventRef: xceedEventRef || null,
+          localEventId: localEventIdFromQuery || null,
         },
         { status: 404 }
       );
@@ -594,9 +626,11 @@ export async function GET(req: NextRequest) {
 
     const localEventId = String(eventRow.id);
     const xceedEventUuid = String((eventRow as any).xceed_event_uuid || "").trim() || null;
+    const resolvedXceedEventRef =
+      String((eventRow as any).xceed_event_ref || "").trim() || xceedEventRef || "";
     const xceedTicketsEventId =
       xceedEventUuid ||
-      String((eventRow as any).xceed_event_ref || "").trim() ||
+      resolvedXceedEventRef ||
       xceedEventRef;
 
     const nowIso = new Date().toISOString();
@@ -612,8 +646,9 @@ export async function GET(req: NextRequest) {
           ok: false,
           xceedStatus: ticketsFetch.status,
           error: ticketsFetch.error || "Xceed tickets request failed",
-          xceedEventRef,
+          xceedEventRef: resolvedXceedEventRef || null,
           xceedTicketsEventId,
+          localEventId,
         },
         { status: ticketsFetch.status || 502 }
       );
@@ -625,8 +660,9 @@ export async function GET(req: NextRequest) {
           ok: false,
           xceedStatus: bookingsFetch.status,
           error: bookingsFetch.error || "Xceed bookings request failed",
-          xceedEventRef,
+          xceedEventRef: resolvedXceedEventRef || null,
           xceedTicketsEventId,
+          localEventId,
         },
         { status: bookingsFetch.status || 502 }
       );
@@ -638,7 +674,7 @@ export async function GET(req: NextRequest) {
       .map((ticket) =>
         buildRowFromTicket({
           localEventId,
-          xceedEventRef,
+          xceedEventRef: resolvedXceedEventRef,
           xceedEventUuid,
           nowIso,
           ticket,
@@ -651,80 +687,53 @@ export async function GET(req: NextRequest) {
 
     const bookingOnlyRows = buildRowsFromBookingsOnly({
       localEventId,
-      xceedEventRef,
+      xceedEventRef: resolvedXceedEventRef,
       xceedEventUuid,
       nowIso,
       bookings: bookingsFetch.items,
       skipQrs: existingQrs,
     });
 
-function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
-  const map = new Map<string, XceedTicketRow>();
-
-  for (const row of rows) {
-    const eventId = String(row.event_id || "").trim();
-    const qr = String(row.qr_code || "").trim();
-    if (!eventId || !qr) continue;
-
-    const key = `${eventId}__${qr}`;
-    const existing = map.get(key);
-
-    if (!existing) {
-      map.set(key, row);
-      continue;
-    }
-
-    const existingSource = existing.raw?.source || "";
-    const incomingSource = row.raw?.source || "";
-
-    const existingOfferType = String(existing.raw?.offer?.type || "").trim();
-    const incomingOfferType = String(row.raw?.offer?.type || "").trim();
-
-    const existingHasBetterType =
-      existingOfferType === "guest-list" || existingOfferType === "table" || existingOfferType === "staff";
-
-    const incomingHasBetterType =
-      incomingOfferType === "guest-list" || incomingOfferType === "table" || incomingOfferType === "staff";
-
-    if (incomingHasBetterType && !existingHasBetterType) {
-      map.set(key, row);
-      continue;
-    }
-
-    if (incomingSource === "tickets+bookings_merge" && existingSource !== "tickets+bookings_merge") {
-      map.set(key, row);
-      continue;
-    }
-
-    if (!existing.full_name && row.full_name) {
-      map.set(key, { ...existing, ...row });
-      continue;
-    }
-  }
-
-  return Array.from(map.values());
-}
-
     const mergedRows = [...ticketRows, ...bookingOnlyRows];
     const rows = dedupeRowsByEventAndQr(mergedRows);
 
-
-    
-
     if (rows.length === 0) {
+      const { count: totalRowsAfterSync, error: countErr } = await supabase
+        .from("xceed_tickets")
+        .select("id", { count: "exact", head: true })
+        .eq("event_id", localEventId);
+
+      if (countErr) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Supabase count failed on xceed_tickets after sync",
+            details: countErr.message,
+            xceedEventRef: resolvedXceedEventRef || null,
+            xceedTicketsEventId,
+            localEventId,
+          },
+          { status: 500 }
+        );
+      }
+
       return NextResponse.json({
         ok: true,
         xceedStatus: ticketsFetch.status,
-        xceedEventRef,
+        xceedEventRef: resolvedXceedEventRef || null,
         xceedTicketsEventId,
         localEventId,
         localEventName: eventRow.name ?? null,
         fetched_tickets: ticketsFetch.items.length,
         fetched_bookings: bookingsFetch.items.length,
-        merged_rows: 0,
+        merged_rows: mergedRows.length,
+        deduped_rows: 0,
+        duplicates_removed: mergedRows.length,
         upserted: 0,
+        total_rows_after_sync: Number(totalRowsAfterSync || 0),
         source: "tickets+bookings_merge",
         message: "No tickets returned by Xceed",
+        preview: [],
       });
     }
 
@@ -733,9 +742,7 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
       .upsert(rows, {
         onConflict: "event_id,qr_code",
       })
-      .select(
-        "id, event_id, qr_code, status, full_name, email, booking_date, transaction_id, raw"
-      );
+      .select("id, event_id, qr_code, status, full_name, email, booking_date, transaction_id, raw");
 
     if (upsertError) {
       return NextResponse.json(
@@ -743,7 +750,27 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
           ok: false,
           error: "Supabase upsert failed on xceed_tickets",
           details: upsertError.message,
-          xceedEventRef,
+          xceedEventRef: resolvedXceedEventRef || null,
+          xceedTicketsEventId,
+          localEventId,
+          source: "tickets+bookings_merge",
+        },
+        { status: 500 }
+      );
+    }
+
+    const { count: totalRowsAfterSync, error: countErr } = await supabase
+      .from("xceed_tickets")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", localEventId);
+
+    if (countErr) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Supabase count failed on xceed_tickets after sync",
+          details: countErr.message,
+          xceedEventRef: resolvedXceedEventRef || null,
           xceedTicketsEventId,
           localEventId,
           source: "tickets+bookings_merge",
@@ -766,10 +793,10 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
         source: r.raw?.source ?? null,
       })) ?? [];
 
-     return NextResponse.json({
+    return NextResponse.json({
       ok: true,
       xceedStatus: ticketsFetch.status,
-      xceedEventRef,
+      xceedEventRef: resolvedXceedEventRef || null,
       xceedTicketsEventId,
       localEventId,
       localEventName: eventRow.name ?? null,
@@ -779,11 +806,10 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
       deduped_rows: rows.length,
       duplicates_removed: mergedRows.length - rows.length,
       upserted: upsertedRows?.length ?? 0,
+      total_rows_after_sync: Number(totalRowsAfterSync || 0),
       source: "tickets+bookings_merge",
       preview,
     });
-
-
   } catch (error) {
     return NextResponse.json(
       {

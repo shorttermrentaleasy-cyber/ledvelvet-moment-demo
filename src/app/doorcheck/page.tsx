@@ -143,6 +143,7 @@ type AttendanceResp =
       };
     };
 
+
 type SyncTicketsResp =
   | { ok: false; error: string; details?: string }
   | {
@@ -158,6 +159,7 @@ type SyncTicketsResp =
       deduped_rows?: number;
       duplicates_removed?: number;
       upserted?: number;
+      total_rows_after_sync?: number;
       source?: string | null;
       preview?: Array<{
         id: string;
@@ -1215,6 +1217,7 @@ export default function DoorCheckPage() {
                       <div>deduped rows: {String(syncRes.deduped_rows ?? 0)}</div>
                       <div>duplicates removed: {String(syncRes.duplicates_removed ?? 0)}</div>
                       <div>upserted: {String(syncRes.upserted ?? 0)}</div>
+                      <div>total after sync: {String(syncRes.total_rows_after_sync ?? 0)}</div>
                     </div>
 
                     {syncRes.preview?.length ? (
