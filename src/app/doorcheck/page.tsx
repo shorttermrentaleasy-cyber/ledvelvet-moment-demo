@@ -947,12 +947,21 @@ export default function DoorCheckPage() {
         return;
       }
 
+      setAttData(null);
+      setTicketsOffset(0);
+      setCheckinsOffset(0);
+      setAttErr(null);
+
+
       if (attOpen) {
         await loadAttendance(true);
       }
 
       setRes(null);
       setLastDeniedCode(null);
+
+
+
     } catch (e: any) {
       setSyncRes({
         ok: false,
@@ -966,7 +975,7 @@ export default function DoorCheckPage() {
   useEffect(() => {
     if (!attOpen) return;
     loadAttendance(true);
-  }, [attOpen, attTab, attKind, attQDebounced]);
+  }, [attOpen, attTab, attKind, attQDebounced, eventId]);
 
   const drawerTitle = useMemo(() => {
     if (attTab === "missing") return "Da entrare (ticket)";
@@ -1162,6 +1171,7 @@ export default function DoorCheckPage() {
                     setAttData(null);
                     setTicketsOffset(0);
                     setCheckinsOffset(0);
+                    setAttErr(null);
                   }}
                   disabled={!apiKeyOk || !eventId.trim()}
                   className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
