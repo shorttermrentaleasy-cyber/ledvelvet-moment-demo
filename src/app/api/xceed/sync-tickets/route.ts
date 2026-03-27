@@ -658,7 +658,58 @@ export async function GET(req: NextRequest) {
       skipQrs: existingQrs,
     });
 
-    const rows = [...ticketRows, ...bookingOnlyRows];
+function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
+  const map = new Map<string, XceedTicketRow>();
+
+  for (const row of rows) {
+    const eventId = String(row.event_id || "").trim();
+    const qr = String(row.qr_code || "").trim();
+    if (!eventId || !qr) continue;
+
+    const key = `${eventId}__${qr}`;
+    const existing = map.get(key);
+
+    if (!existing) {
+      map.set(key, row);
+      continue;
+    }
+
+    const existingSource = existing.raw?.source || "";
+    const incomingSource = row.raw?.source || "";
+
+    const existingOfferType = String(existing.raw?.offer?.type || "").trim();
+    const incomingOfferType = String(row.raw?.offer?.type || "").trim();
+
+    const existingHasBetterType =
+      existingOfferType === "guest-list" || existingOfferType === "table" || existingOfferType === "staff";
+
+    const incomingHasBetterType =
+      incomingOfferType === "guest-list" || incomingOfferType === "table" || incomingOfferType === "staff";
+
+    if (incomingHasBetterType && !existingHasBetterType) {
+      map.set(key, row);
+      continue;
+    }
+
+    if (incomingSource === "tickets+bookings_merge" && existingSource !== "tickets+bookings_merge") {
+      map.set(key, row);
+      continue;
+    }
+
+    if (!existing.full_name && row.full_name) {
+      map.set(key, { ...existing, ...row });
+      continue;
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+    const mergedRows = [...ticketRows, ...bookingOnlyRows];
+    const rows = dedupeRowsByEventAndQr(mergedRows);
+
+
+    
 
     if (rows.length === 0) {
       return NextResponse.json({
@@ -715,7 +766,7 @@ export async function GET(req: NextRequest) {
         source: r.raw?.source ?? null,
       })) ?? [];
 
-    return NextResponse.json({
+     return NextResponse.json({
       ok: true,
       xceedStatus: ticketsFetch.status,
       xceedEventRef,
@@ -724,11 +775,15 @@ export async function GET(req: NextRequest) {
       localEventName: eventRow.name ?? null,
       fetched_tickets: ticketsFetch.items.length,
       fetched_bookings: bookingsFetch.items.length,
-      merged_rows: rows.length,
+      merged_rows: mergedRows.length,
+      deduped_rows: rows.length,
+      duplicates_removed: mergedRows.length - rows.length,
       upserted: upsertedRows?.length ?? 0,
       source: "tickets+bookings_merge",
       preview,
     });
+
+
   } catch (error) {
     return NextResponse.json(
       {

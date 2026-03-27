@@ -155,6 +155,8 @@ type SyncTicketsResp =
       fetched_tickets?: number;
       fetched_bookings?: number;
       merged_rows?: number;
+      deduped_rows?: number;
+      duplicates_removed?: number;
       upserted?: number;
       source?: string | null;
       preview?: Array<{
@@ -1200,6 +1202,8 @@ export default function DoorCheckPage() {
                       <div>tickets: {String(syncRes.fetched_tickets ?? 0)}</div>
                       <div>bookings: {String(syncRes.fetched_bookings ?? 0)}</div>
                       <div>merged rows: {String(syncRes.merged_rows ?? 0)}</div>
+                      <div>deduped rows: {String(syncRes.deduped_rows ?? 0)}</div>
+                      <div>duplicates removed: {String(syncRes.duplicates_removed ?? 0)}</div>
                       <div>upserted: {String(syncRes.upserted ?? 0)}</div>
                     </div>
 
@@ -1317,7 +1321,7 @@ export default function DoorCheckPage() {
                 </div>
               )}
 
-              {manualOpen && (
+              {manualOpen ? (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
                   <div className="text-sm font-semibold">Ospite (SRL) – inserimento rapido</div>
                   <div className="mt-1 text-xs text-white/60">Minimo: Nome oppure Telefono. (Consigliato: entrambi)</div>
@@ -1363,7 +1367,7 @@ export default function DoorCheckPage() {
                     </button>
                   </div>
                 </div>
-              )}
+              ) : null}
             </section>
 
             <section className="mt-4">
@@ -1388,12 +1392,12 @@ export default function DoorCheckPage() {
                   const personBadge = personStatusBadge(resAny);
 
                   const hasTicketInfo =
-                    !!String(resAny?.ticket_offer_title || "").trim() ||
-                    !!String(resAny?.ticket_offer_description || "").trim() ||
-                    !!String(resAny?.ticket_transaction_id || "").trim() ||
-                    !!String(resAny?.ticket_booking_date || "").trim() ||
-                    !!String(resAny?.ticket_type || "").trim() ||
-                    !!String(resAny?.ticket_type_label || "").trim();
+                    !!String(resAny.ticket_offer_title || "").trim() ||
+                    !!String(resAny.ticket_offer_description || "").trim() ||
+                    !!String(resAny.ticket_transaction_id || "").trim() ||
+                    !!String(resAny.ticket_booking_date || "").trim() ||
+                    !!String(resAny.ticket_type || "").trim() ||
+                    !!String(resAny.ticket_type_label || "").trim();
 
                   const hasMemberInfo =
                     !!resAny.member_found ||
@@ -1691,10 +1695,26 @@ export default function DoorCheckPage() {
                         {String((attData as any).event?.require_membership)}
                       </div>
 
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-                        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                          <div className="text-xs text-white/60">Entrati (totali)</div>
-                          <div className="text-lg font-semibold">{(attData as any).summary?.checkins_allowed ?? 0}</div>
+                      <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                        <div className="rounded-xl border border-sky-400/20 bg-sky-400/10 p-3">
+                          <div className="text-xs text-sky-100/70">Biglietti totali</div>
+                          <div className="text-2xl font-semibold text-sky-100">
+                            {(attData as any).summary?.tickets_total ?? 0}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3">
+                          <div className="text-xs text-amber-100/70">Da entrare</div>
+                          <div className="text-2xl font-semibold text-amber-100">
+                            {(attData as any).summary?.tickets_missing ?? 0}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3">
+                          <div className="text-xs text-emerald-100/70">Entrati (totali)</div>
+                          <div className="text-2xl font-semibold text-emerald-100">
+                            {(attData as any).summary?.checkins_allowed ?? 0}
+                          </div>
                         </div>
 
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
