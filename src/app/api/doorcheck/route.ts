@@ -216,14 +216,17 @@ function extractXceedTicketMeta(rawInput: any): XceedTicketMeta {
     ticket_offer_description: offerDescription,
   };
 }
+
 function buildMembershipInfo(params: {
   membershipGroup?: string | null;
   status?: string | null;
   requireActiveMembership?: boolean;
   inviteEligible?: boolean;
 }): MembershipInfo {
-  const group = String(params.membershipGroup || "").trim();
+  const rawGroup = String(params.membershipGroup || "").trim();
+  const group = rawGroup.toLowerCase();
   const status = String(params.status || "").trim() || null;
+  const statusNorm = String(status || "").trim().toLowerCase();
   const requireActiveMembership = Boolean(params.requireActiveMembership);
   const inviteEligible = Boolean(params.inviteEligible);
 
@@ -231,20 +234,44 @@ function buildMembershipInfo(params: {
   let member_group_label: string | null = null;
   let priority_access = false;
 
-  if (group === "Soci Ordinari") {
+  if (
+    group === "soci ordinari" ||
+    group === "socio ordinario" ||
+    group === "socio" ||
+    group === "member" ||
+    group === "membro"
+  ) {
     member_group = "ordinary";
-    member_group_label = "Soci Ordinari";
-  } else if (group === "Loyalty Clubber") {
+    member_group_label = rawGroup || "Socio";
+  } else if (
+    group === "loyalty clubber" ||
+    group === "loyalty" ||
+    group === "gold" ||
+    group === "vip"
+  ) {
     member_group = "loyalty";
-    member_group_label = "Loyalty Clubber";
+    member_group_label = rawGroup || "Loyalty Clubber";
     priority_access = true;
-  } else if (group === "Staff") {
+  } else if (
+    group === "staff" ||
+    group === "team" ||
+    group === "crew"
+  ) {
     member_group = "staff";
-    member_group_label = "Staff";
+    member_group_label = rawGroup || "Staff";
     priority_access = true;
   }
 
-  const member_found = !!member_group_label;
+  const hasRecognizedGroup = !!member_group_label;
+  const hasMembershipStatus =
+    statusNorm === "attiva" ||
+    statusNorm === "active" ||
+    statusNorm === "non attiva" ||
+    statusNorm === "inactive" ||
+    statusNorm === "pending" ||
+    statusNorm === "suspended";
+
+  const member_found = hasRecognizedGroup || hasMembershipStatus;
 
   let member_active_for_access = false;
   let member_access_note: string | null = null;
@@ -255,7 +282,7 @@ function buildMembershipInfo(params: {
   } else if (!requireActiveMembership) {
     member_active_for_access = true;
     member_access_note = "membership recognized; active check not enforced";
-  } else if (status === "ATTIVA") {
+  } else if (statusNorm === "attiva" || statusNorm === "active") {
     member_active_for_access = true;
     member_access_note = "membership active";
   } else {
@@ -274,6 +301,10 @@ function buildMembershipInfo(params: {
     eligible_for_membership_invite: !member_found && inviteEligible,
   };
 }
+
+
+
+
 
 function buildUiInfo(params: {
   kind: "ETS" | "XCEED" | "SRL" | "UNKNOWN";
@@ -1050,6 +1081,17 @@ export async function POST(req: Request) {
           ticket_booking_date,
           ticket_type: ticketMeta.ticket_type,
           ticket_type_label: ticketMeta.ticket_type_label,
+ticket_offer_type_debug: {
+  from_label: ticketMeta.ticket_type_label,
+  from_type: ticketMeta.ticket_type,
+  raw_offer_type:
+    parseMaybeJson((ticket as any).raw)?.offer?.type ??
+    parseMaybeJson((ticket as any).raw)?.ticket?.offer?.type ??
+    parseMaybeJson((ticket as any).raw)?.booking?.offer?.type ??
+    null,
+},
+
+
           ui: buildUiInfo({
             kind: resolvedKind,
             allowed: true,

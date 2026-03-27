@@ -35,6 +35,11 @@ type DoorcheckOkResponse = {
   ticket_booking_date?: string | null;
   ticket_type?: string | null;
   ticket_type_label?: string | null;
+ticket_offer_type_debug?: {
+  from_label?: string | null;
+  from_type?: string | null;
+  raw_offer_type?: string | null;
+} | null;
 
   member_found?: boolean;
   member_group?: "ordinary" | "loyalty" | "staff" | null;
@@ -1278,12 +1283,6 @@ export default function DoorCheckPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="text-lg font-semibold">{allowedNow ? "✅ ACCESSO OK" : "⛔ ACCESSO NEGATO"}</div>
 
-                        {ui?.badge ? (
-                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${badgeClasses(ui?.color, allowedNow)}`}>
-                            {ui.badge}
-                          </span>
-                        ) : null}
-
                         {resAny.kind ? (
                           <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/70">
                             {resAny.kind}
@@ -1380,25 +1379,34 @@ export default function DoorCheckPage() {
                             </div>
                           ) : null}
 
-                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
-                            {ticketTypeLabel ? (
-                              <div>
-                                type label: <span className="text-white/80">{ticketTypeLabel}</span>
-                              </div>
-                            ) : null}
+       <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-white/50 font-mono">
+  {ticketTypeLabel ? (
+    <div>
+      type label: <span className="text-white/80">{ticketTypeLabel}</span>
+    </div>
+  ) : null}
 
-                            {resAny.ticket_type ? (
-                              <div>
-                                raw type: <span className="text-white/80">{resAny.ticket_type}</span>
-                              </div>
-                            ) : null}
+  {resAny.ticket_type ? (
+    <div>
+      raw type: <span className="text-white/80">{resAny.ticket_type}</span>
+    </div>
+  ) : null}
 
-                            {resAny.ticket_transaction_id ? <div>tx: {resAny.ticket_transaction_id}</div> : null}
+  {resAny.ticket_offer_type_debug?.raw_offer_type ? (
+    <div>
+      raw offer.type: <span className="text-white/80">{resAny.ticket_offer_type_debug.raw_offer_type}</span>
+    </div>
+  ) : null}
 
-                            {resAny.ticket_booking_date ? (
-                              <div>booking: {String(resAny.ticket_booking_date)}</div>
-                            ) : null}
-                          </div>
+  {resAny.ticket_transaction_id ? <div>tx: {resAny.ticket_transaction_id}</div> : null}
+
+  {resAny.ticket_booking_date ? (
+    <div>booking: {String(resAny.ticket_booking_date)}</div>
+  ) : null}
+</div>                   
+
+
+
                         </div>
                       ) : null}
 
