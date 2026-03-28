@@ -143,7 +143,6 @@ type AttendanceResp =
       };
     };
 
-
 type SyncTicketsResp =
   | { ok: false; error: string; details?: string }
   | {
@@ -333,6 +332,7 @@ function compactText(v?: string | null) {
   return s || null;
 }
 
+
 export default function DoorCheckPage() {
   const [eventId, setEventId] = useState("");
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -424,6 +424,7 @@ export default function DoorCheckPage() {
     setScanErr(null);
     setScanStarting(false);
   };
+
   useEffect(() => {
     if (!scanOpen) return;
     const prevOverscroll = (document.body.style as any).overscrollBehavior;
@@ -822,14 +823,6 @@ export default function DoorCheckPage() {
     setAttErr(null);
   }
 
-  async function fetchAttendanceSummary(eid: string) {
-    const url = `/api/admin/attendance?event_id=${encodeURIComponent(eid)}&limit=1&offset=0&scope=both&view=all`;
-    const r = await fetch(url, { cache: "no-store" });
-    const j = (await r.json()) as AttendanceResp;
-    if (!r.ok || !j?.ok) throw new Error((j as any)?.error || "Errore summary presenze");
-    return j as Extract<AttendanceResp, { ok: true }>;
-  }
-
   async function loadAttendance(reset = true) {
     const eid = eventId.trim();
     if (!eid) {
@@ -854,8 +847,6 @@ export default function DoorCheckPage() {
     if (reset) resetAttendanceStateForNewQuery();
 
     try {
-      const summaryResp = await fetchAttendanceSummary(eid);
-
       let url = `/api/admin/attendance?event_id=${encodeURIComponent(eid)}&limit=${attLimit}&offset=${off}&scope=${scope}`;
 
       if (scope === "tickets") {
@@ -870,50 +861,48 @@ export default function DoorCheckPage() {
       const r = await fetch(url, { cache: "no-store" });
       const payloadResp = (await r.json()) as AttendanceResp;
 
-      if (!r.ok || !payloadResp?.ok) throw new Error((payloadResp as any)?.error || "Errore caricamento presenze");
-
-      const merged: AttendanceResp = {
-        ok: true,
-        event: (summaryResp as any).event,
-        summary: (summaryResp as any).summary,
-        ...(payloadResp as any).tickets_payload ? { tickets_payload: (payloadResp as any).tickets_payload } : {},
-        ...(payloadResp as any).checkins_payload ? { checkins_payload: (payloadResp as any).checkins_payload } : {},
-      } as any;
-
-      if ((merged as any).tickets_payload && typeof (merged as any).tickets_payload.has_more === "undefined") {
-        (merged as any).tickets_payload.has_more =
-          (((merged as any).tickets_payload.tickets?.length ?? 0) as number) >= attLimit;
+      if (!r.ok || !payloadResp?.ok) {
+        throw new Error((payloadResp as any)?.error || "Errore caricamento presenze");
       }
-      if ((merged as any).checkins_payload && typeof (merged as any).checkins_payload.has_more === "undefined") {
-        (merged as any).checkins_payload.has_more =
-          (((merged as any).checkins_payload.checkins?.length ?? 0) as number) >= attLimit;
+
+      const merged = payloadResp as Extract<AttendanceResp, { ok: true }>;
+
+      if (merged.tickets_payload && typeof merged.tickets_payload.has_more === "undefined") {
+        merged.tickets_payload.has_more = (merged.tickets_payload.tickets?.length ?? 0) >= attLimit;
+      }
+
+      if (merged.checkins_payload && typeof merged.checkins_payload.has_more === "undefined") {
+        merged.checkins_payload.has_more = (merged.checkins_payload.checkins?.length ?? 0) >= attLimit;
       }
 
       setAttData((prev) => {
         if (reset || !prev || !("ok" in prev) || !prev.ok) return merged;
 
         const old = prev as any;
-        const next = merged as any;
+        const next = { ...merged } as any;
 
         if (old.tickets_payload && next.tickets_payload) {
-          next.tickets_payload.tickets = [...(old.tickets_payload.tickets || []), ...(next.tickets_payload.tickets || [])];
+          next.tickets_payload = {
+            ...next.tickets_payload,
+            tickets: [...(old.tickets_payload.tickets || []), ...(next.tickets_payload.tickets || [])],
+          };
         }
 
         if (old.checkins_payload && next.checkins_payload) {
-          next.checkins_payload.checkins = [
-            ...(old.checkins_payload.checkins || []),
-            ...(next.checkins_payload.checkins || []),
-          ];
+          next.checkins_payload = {
+            ...next.checkins_payload,
+            checkins: [...(old.checkins_payload.checkins || []), ...(next.checkins_payload.checkins || [])],
+          };
         }
 
         return next;
       });
 
       if (scope === "checkins") {
-        const got = ((merged as any).checkins_payload?.checkins?.length ?? 0) as number;
+        const got = merged.checkins_payload?.checkins?.length ?? 0;
         setCheckinsOffset((reset ? 0 : checkinsOffset) + got);
       } else {
-        const got = ((merged as any).tickets_payload?.tickets?.length ?? 0) as number;
+        const got = merged.tickets_payload?.tickets?.length ?? 0;
         setTicketsOffset((reset ? 0 : ticketsOffset) + got);
       }
     } catch (e: any) {
@@ -954,16 +943,12 @@ export default function DoorCheckPage() {
       setCheckinsOffset(0);
       setAttErr(null);
 
-
       if (attOpen) {
         await loadAttendance(true);
       }
 
       setRes(null);
       setLastDeniedCode(null);
-
-
-
     } catch (e: any) {
       setSyncRes({
         ok: false,
@@ -994,7 +979,6 @@ export default function DoorCheckPage() {
     if (!attData || !("ok" in attData) || !attData.ok) return false;
     return !!attData.checkins_payload?.has_more && !attLoading;
   }, [attData, attLoading]);
-
   return (
     <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-2xl mx-auto">
@@ -1091,6 +1075,7 @@ export default function DoorCheckPage() {
                     setAttData(null);
                     setTicketsOffset(0);
                     setCheckinsOffset(0);
+                    setAttErr(null);
                   }}
                   className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-sm outline-none focus:border-white/30"
                 >
@@ -1138,6 +1123,7 @@ export default function DoorCheckPage() {
                   />
                 </label>
               </div>
+
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
@@ -1712,14 +1698,18 @@ export default function DoorCheckPage() {
                         <div className="rounded-xl border border-sky-400/20 bg-sky-400/10 p-3">
                           <div className="text-xs text-sky-100/70">Biglietti totali</div>
                           <div className="text-2xl font-semibold text-sky-100">
-                            {(attData as any).summary?.tickets_total ?? 0}
+                            {attTab === "tickets"
+                              ? (attData as any).tickets_payload?.tickets_filtered_count ?? (attData as any).summary?.tickets_total ?? 0
+                              : (attData as any).summary?.tickets_total ?? 0}
                           </div>
                         </div>
 
                         <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3">
                           <div className="text-xs text-amber-100/70">Da entrare</div>
                           <div className="text-2xl font-semibold text-amber-100">
-                            {(attData as any).summary?.tickets_missing ?? 0}
+                            {attTab === "missing"
+                              ? (attData as any).tickets_payload?.tickets_filtered_count ?? (attData as any).summary?.tickets_missing ?? 0
+                              : (attData as any).summary?.tickets_missing ?? 0}
                           </div>
                         </div>
 
