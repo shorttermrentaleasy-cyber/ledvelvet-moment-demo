@@ -51,6 +51,20 @@ type XceedTicketMeta = {
   ticket_offer_description: string | null;
 };
 
+type DoorAlert = {
+  show: boolean;
+  level: "info" | "warning" | "priority";
+  code:
+    | "xceed_not_member"
+    | "xceed_priority_loyalty"
+    | "xceed_priority_member"
+    | "xceed_standard_ticket";
+  title: string;
+  message: string;
+  cta_label?: string | null;
+  cta_action?: "open_membership_qr" | null;
+};
+
 const NO_MEMBERSHIP: MembershipInfo = {
   member_found: false,
   member_group: null,
@@ -252,11 +266,7 @@ function buildMembershipInfo(params: {
     member_group = "loyalty";
     member_group_label = rawGroup || "Loyalty Clubber";
     priority_access = true;
-  } else if (
-    group === "staff" ||
-    group === "team" ||
-    group === "crew"
-  ) {
+  } else if (group === "staff" || group === "team" || group === "crew") {
     member_group = "staff";
     member_group_label = rawGroup || "Staff";
     priority_access = true;
@@ -302,10 +312,144 @@ function buildMembershipInfo(params: {
   };
 }
 
+function normText(v: unknown) {
+  return String(v || "").trim();
+}
 
+function normKey(v: unknown) {
+  return normText(v)
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
+function containsAny(haystack: unknown, needles: string[]) {
+  const h = normKey(haystack);
+  if (!h) return false;
+  return needles.some((n) => h.includes(normKey(n)));
+}
 
+function isPriorityOffer(params: {
+  ticketType?: string | null;
+  ticketTypeLabel?: string | null;
+  offerTitle?: string | null;
+  offerDescription?: string | null;
+  memberGroup?: string | null;
+  memberGroupLabel?: string | null;
+  priorityAccess?: boolean | null;
+}) {
+  if (params.priorityAccess) return true;
 
+  const values = [
+    params.ticketType,
+    params.ticketTypeLabel,
+    params.offerTitle,
+    params.offerDescription,
+    params.memberGroup,
+    params.memberGroupLabel,
+  ];
+
+  const priorityHints = [
+    "loyalty",
+    "loyalty club",
+    "priority",
+    "priority access",
+    "gold",
+    "gold access",
+    "member priority",
+    "fast lane",
+    "skip line",
+    "ora dorata",
+    "tramonto access",
+  ];
+
+  return values.some((v) => containsAny(v, priorityHints));
+}
+
+function buildDoorAlert(params: {
+  kind?: string | null;
+  memberFound?: boolean | null;
+  memberGroup?: string | null;
+  memberGroupLabel?: string | null;
+  priorityAccess?: boolean | null;
+  membershipInviteUrl?: string | null;
+  ticketType?: string | null;
+  ticketTypeLabel?: string | null;
+  offerTitle?: string | null;
+  offerDescription?: string | null;
+}): DoorAlert | null {
+  const kind = normText(params.kind).toUpperCase();
+  if (kind !== "XCEED") return null;
+
+  const memberFound = !!params.memberFound;
+  const inviteUrl = normText(params.membershipInviteUrl);
+  const isPriority = isPriorityOffer({
+    ticketType: params.ticketType,
+    ticketTypeLabel: params.ticketTypeLabel,
+    offerTitle: params.offerTitle,
+    offerDescription: params.offerDescription,
+    memberGroup: params.memberGroup,
+    memberGroupLabel: params.memberGroupLabel,
+    priorityAccess: params.priorityAccess,
+  });
+
+  if (!memberFound) {
+    return {
+      show: true,
+      level: "warning",
+      code: "xceed_not_member",
+      title: "NON SOCIO",
+      message: inviteUrl
+        ? "Check-in Xceed rilevato. La persona non risulta socio: far completare subito la tessera."
+        : "Check-in Xceed rilevato. La persona non risulta socio.",
+      cta_label: inviteUrl ? "Apri iscrizione" : null,
+      cta_action: inviteUrl ? "open_membership_qr" : null,
+    };
+  }
+
+  if (isPriority) {
+    return {
+      show: true,
+      level: "priority",
+      code: "xceed_priority_loyalty",
+      title: "PRIORITY ACCESS",
+      message: "Ticket / profilo prioritario rilevato. Gestire accesso preferenziale.",
+      cta_label: null,
+      cta_action: null,
+    };
+  }
+
+  return {
+    show: true,
+    level: "info",
+    code: "xceed_standard_ticket",
+    title: "TICKET STANDARD",
+    message: "Check-in Xceed valido senza priorità speciale.",
+    cta_label: null,
+    cta_action: null,
+  };
+}
+
+function attachDoorAlert<T extends Record<string, any>>(resp: T): T & { door_alert?: DoorAlert | null } {
+  const door_alert = buildDoorAlert({
+    kind: resp.kind ?? null,
+    memberFound: resp.member_found ?? null,
+    memberGroup: resp.member_group ?? null,
+    memberGroupLabel: resp.member_group_label ?? null,
+    priorityAccess: resp.priority_access ?? null,
+    membershipInviteUrl: resp.membership_invite_url ?? null,
+    ticketType: resp.ticket_type ?? null,
+    ticketTypeLabel: resp.ticket_type_label ?? null,
+    offerTitle: resp.ticket_offer_title ?? null,
+    offerDescription: resp.ticket_offer_description ?? null,
+  });
+
+  return {
+    ...resp,
+    door_alert,
+  };
+}
 function buildUiInfo(params: {
   kind: "ETS" | "XCEED" | "SRL" | "UNKNOWN";
   allowed: boolean;
@@ -603,6 +747,7 @@ async function memberHasAvailableTicketForEvent(
   if (error) throw new Error(error.message);
   return !!(data && data.length > 0);
 }
+
 async function linkMemberTicketToCheckin(params: {
   supabase: ReturnType<typeof supabaseAdmin>;
   eventId: string;
@@ -734,7 +879,6 @@ async function upsertLegacyPerson(
   if (insErr) throw new Error(insErr.message);
   return { id: (ins as any).id as string, full_name: (ins as any).full_name as string | null };
 }
-
 export async function POST(req: Request) {
   try {
     const supabase = supabaseAdmin();
@@ -812,7 +956,7 @@ export async function POST(req: Request) {
             }),
           };
           resp.message = toHumanMessage(resp);
-          return NextResponse.json(resp);
+          return NextResponse.json(attachDoorAlert(resp));
         }
       }
 
@@ -1081,17 +1225,15 @@ export async function POST(req: Request) {
           ticket_booking_date,
           ticket_type: ticketMeta.ticket_type,
           ticket_type_label: ticketMeta.ticket_type_label,
-ticket_offer_type_debug: {
-  from_label: ticketMeta.ticket_type_label,
-  from_type: ticketMeta.ticket_type,
-  raw_offer_type:
-    parseMaybeJson((ticket as any).raw)?.offer?.type ??
-    parseMaybeJson((ticket as any).raw)?.ticket?.offer?.type ??
-    parseMaybeJson((ticket as any).raw)?.booking?.offer?.type ??
-    null,
-},
-
-
+          ticket_offer_type_debug: {
+            from_label: ticketMeta.ticket_type_label,
+            from_type: ticketMeta.ticket_type,
+            raw_offer_type:
+              parseMaybeJson((ticket as any).raw)?.offer?.type ??
+              parseMaybeJson((ticket as any).raw)?.ticket?.offer?.type ??
+              parseMaybeJson((ticket as any).raw)?.booking?.offer?.type ??
+              null,
+          },
           ui: buildUiInfo({
             kind: resolvedKind,
             allowed: true,
@@ -1103,7 +1245,7 @@ ticket_offer_type_debug: {
         };
 
         resp.message = toHumanMessage(resp);
-        return NextResponse.json(resp);
+        return NextResponse.json(resolvedKind === "XCEED" ? attachDoorAlert(resp) : resp);
       }
 
       if (policy.require_membership) {
@@ -1148,7 +1290,7 @@ ticket_offer_type_debug: {
             }),
           };
           resp.message = toHumanMessage(resp);
-          return NextResponse.json(resp);
+          return NextResponse.json(attachDoorAlert(resp));
         }
 
         if (!m) {
@@ -1180,7 +1322,7 @@ ticket_offer_type_debug: {
             }),
           };
           resp.message = toHumanMessage(resp);
-          return NextResponse.json(resp);
+          return NextResponse.json(attachDoorAlert(resp));
         }
 
         const alreadyEtsId = await memberAlreadyCheckedIn(supabase, eventId, (m as any).id);
@@ -1322,7 +1464,7 @@ ticket_offer_type_debug: {
           }),
         };
         resp.message = toHumanMessage(resp);
-        return NextResponse.json(resp);
+        return NextResponse.json(attachDoorAlert(resp));
       }
 
       const { data: ins, error: insErr } = await supabase
@@ -1341,7 +1483,10 @@ ticket_offer_type_debug: {
 
       if (insErr) throw new Error(insErr.message);
 
-      await supabase.from("xceed_tickets").update({ checkin_id: (ins as any)?.id || null }).eq("id", (ticket as any).id);
+      await supabase
+        .from("xceed_tickets")
+        .update({ checkin_id: (ins as any)?.id || null })
+        .eq("id", (ticket as any).id);
 
       const xceedGuestMembershipInfo = buildMembershipInfo({
         membershipGroup: null,
@@ -1378,7 +1523,7 @@ ticket_offer_type_debug: {
         }),
       };
       resp.message = toHumanMessage(resp);
-      return NextResponse.json(resp);
+      return NextResponse.json(attachDoorAlert(resp));
     }
 
     const { data: lp, error: lpErr } = await supabase
