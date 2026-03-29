@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const runtime = "nodejs";
@@ -25,6 +26,162 @@ function isHttpUrl(v: string) {
   } catch {
     return false;
   }
+}
+
+function supabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!url || !key) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+function toStartsAt(input: string): string | null {
+  const s = asString(input);
+  if (!s) return null;
+
+  // da form admin arriva tipicamente YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return `${s}T00:00:00.000Z`;
+  }
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+type ParsedXceedPublicUrl = {
+  isXceed: boolean;
+  xceedUrl: string | null;
+  legacyId: number | null;
+  channel: string | null;
+};
+
+function parseXceedPublicUrl(input: string): ParsedXceedPublicUrl {
+  const raw = asString(input);
+  if (!raw) {
+    return {
+      isXceed: false,
+      xceedUrl: null,
+      legacyId: null,
+      channel: null,
+    };
+  }
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return {
+      isXceed: false,
+      xceedUrl: raw,
+      legacyId: null,
+      channel: null,
+    };
+  }
+
+  const host = url.hostname.toLowerCase();
+  const isProdXceed = host === "xceed.me" || host.endsWith(".xceed.me");
+  if (!isProdXceed) {
+    return {
+      isXceed: false,
+      xceedUrl: raw,
+      legacyId: null,
+      channel: null,
+    };
+  }
+
+  const parts = url.pathname.split("/").filter(Boolean);
+
+  // Pattern atteso:
+  // /en/pisa/event/anfiteatro-vol-2/222493/channel/led-velvet
+  let legacyId: number | null = null;
+  let channel: string | null = null;
+
+  const channelIdx = parts.findIndex((p) => p.toLowerCase() === "channel");
+  if (channelIdx >= 0 && parts[channelIdx + 1]) {
+    channel = parts[channelIdx + 1].trim() || null;
+  }
+
+  const eventIdx = parts.findIndex((p) => p.toLowerCase() === "event");
+  if (eventIdx >= 0) {
+    for (let i = eventIdx + 1; i < parts.length; i++) {
+      if (/^\d+$/.test(parts[i])) {
+        const n = Number(parts[i]);
+        if (Number.isInteger(n) && n > 0) {
+          legacyId = n;
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    isXceed: true,
+    xceedUrl: raw,
+    legacyId,
+    channel,
+  };
+}
+
+type XceedEventFetchResult = {
+  ok: boolean;
+  legacyId: number | null;
+  eventUuid: string | null;
+  name: string | null;
+  startsAt: string | null;
+  venue: string | null;
+  city: string | null;
+};
+
+async function fetchXceedEventByLegacyId(
+  legacyId: number,
+  channel: string | null
+): Promise<XceedEventFetchResult> {
+  const qp = new URLSearchParams();
+  if (channel) qp.set("channel", channel);
+
+  const url = `https://events.xceed.me/v1/events/${legacyId}${qp.toString() ? `?${qp.toString()}` : ""}`;
+
+  const r = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!r.ok) {
+    return {
+      ok: false,
+      legacyId,
+      eventUuid: null,
+      name: null,
+      startsAt: null,
+      venue: null,
+      city: null,
+    };
+  }
+
+  const j = await r.json().catch(() => null);
+  const data = j?.data;
+
+  const startingTime =
+    typeof data?.startingTime === "number" && Number.isFinite(data.startingTime)
+      ? new Date(data.startingTime * 1000).toISOString()
+      : null;
+
+  return {
+    ok: Boolean(j?.success && data),
+    legacyId: typeof data?.legacyId === "number" ? data.legacyId : legacyId,
+    eventUuid: typeof data?.id === "string" ? data.id : null,
+    name: typeof data?.name === "string" ? data.name.trim() : null,
+    startsAt: startingTime,
+    venue: typeof data?.venue?.name === "string" ? data.venue.name.trim() : null,
+    city: typeof data?.venue?.city?.name === "string" ? data.venue.city.name.trim() : null,
+  };
 }
 
 export async function POST(req: Request) {
@@ -63,7 +220,7 @@ export async function POST(req: Request) {
       "Event Name": eventName,
     };
 
-    // optional fields
+    // optional Airtable fields
     if (body?.date) fields["date"] = asString(body.date);
     if (body?.City) fields["City"] = asString(body.City);
     if (body?.Venue) fields["Venue"] = asString(body.Venue);
@@ -79,22 +236,20 @@ export async function POST(req: Request) {
     // featured
     if (typeof body?.Featured === "boolean") fields["Featured"] = body.Featured;
 
-    // ✅ Sponsors linked record
+    // sponsors linked record
     if (sponsors.length) fields["Sponsors"] = sponsors;
 
     // attachments + url fields
     if (HeroImageUrl) fields["Hero Image"] = [{ url: HeroImageUrl }];
-    if (TeaserUrl) fields["Teaser"] = TeaserUrl; // URL field
-    if (AftermovieUrl) fields["Aftermovie"] = AftermovieUrl; // URL field
-
-    // Phase is computed -> DO NOT SET
+    if (TeaserUrl) fields["Teaser"] = TeaserUrl;
+    if (AftermovieUrl) fields["Aftermovie"] = AftermovieUrl;
 
     const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_EVENTS } = process.env;
     if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) {
       return NextResponse.json({ ok: false, error: "Missing Airtable env" }, { status: 500 });
     }
 
-    const r = await fetch(
+    const airtableRes = await fetch(
       `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_EVENTS)}`,
       {
         method: "POST",
@@ -106,17 +261,87 @@ export async function POST(req: Request) {
       }
     );
 
-    const text = await r.text();
-    if (!r.ok) {
-      console.error("Airtable create failed:", r.status, text);
+    const airtableText = await airtableRes.text();
+    if (!airtableRes.ok) {
+      console.error("Airtable create failed:", airtableRes.status, airtableText);
       return NextResponse.json(
-        { ok: false, error: "Airtable create failed", details: text },
-        { status: r.status }
+        { ok: false, error: "Airtable create failed", details: airtableText },
+        { status: airtableRes.status }
       );
     }
 
-    const created = text ? JSON.parse(text) : {};
-    return NextResponse.json({ ok: true, id: created?.id });
+    const created = airtableText ? JSON.parse(airtableText) : {};
+
+    // ---- bridge minimo verso Supabase events ----
+    const ticketUrl = asString(body?.TicketUrl);
+    const parsedXceed = parseXceedPublicUrl(ticketUrl);
+
+    let xceedEventRef: number | null = null;
+    let xceedEventUuid: string | null = null;
+
+    let finalName = eventName;
+    let finalStartsAt = toStartsAt(asString(body?.date));
+    let finalVenue = asString(body?.Venue) || null;
+    let finalCity = asString(body?.City) || null;
+    let finalXceedUrl = parsedXceed.isXceed ? parsedXceed.xceedUrl : null;
+
+    if (parsedXceed.isXceed && parsedXceed.legacyId) {
+      const xceedData = await fetchXceedEventByLegacyId(parsedXceed.legacyId, parsedXceed.channel);
+
+      xceedEventRef = xceedData.legacyId;
+      xceedEventUuid = xceedData.eventUuid;
+
+      // uso i dati Xceed come fallback forte, ma senza rompere l'input admin se mancasse qualcosa
+      finalName = xceedData.name || finalName;
+      finalStartsAt = xceedData.startsAt || finalStartsAt;
+      finalVenue = xceedData.venue || finalVenue;
+      finalCity = xceedData.city || finalCity;
+    }
+
+    const supabase = supabaseAdmin();
+
+    const insertPayload = {
+      name: finalName,
+      starts_at: finalStartsAt,
+      venue: finalVenue,
+      city: finalCity,
+      xceed_url: finalXceedUrl,
+      xceed_event_ref: xceedEventRef,
+      xceed_event_uuid: xceedEventUuid,
+      require_ticket: true,
+      require_membership: true,
+      require_active_membership: false,
+    };
+
+    const { data: insertedEvent, error: supabaseError } = await supabase
+      .from("events")
+      .insert(insertPayload)
+      .select("id")
+      .single();
+
+    if (supabaseError) {
+      console.error("Supabase events insert failed:", supabaseError);
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Supabase events insert failed",
+          airtableId: created?.id || null,
+          details: supabaseError.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      id: created?.id || null, // Airtable rec...
+      supabaseEventId: insertedEvent?.id || null,
+      xceed: {
+        isXceed: parsedXceed.isXceed,
+        legacyId: xceedEventRef,
+        eventUuid: xceedEventUuid,
+      },
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });
   }
