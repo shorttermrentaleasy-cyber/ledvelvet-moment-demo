@@ -308,7 +308,7 @@ export async function POST(req: Request) {
       xceed_url: finalXceedUrl,
       xceed_event_ref: xceedEventRef,
       xceed_event_uuid: xceedEventUuid,
-     
+     airtable_record_id: created?.id || null,
       require_ticket: true,
       require_membership: true,
       require_active_membership: false,
