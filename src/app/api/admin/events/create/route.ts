@@ -319,6 +319,8 @@ export async function POST(req: Request) {
       .insert(insertPayload)
       .select("id")
       .single();
+
+
 if (supabaseError) {
   console.error("Supabase events insert failed FULL:", {
     message: supabaseError.message,
@@ -329,20 +331,41 @@ if (supabaseError) {
     insertPayload,
   });
 
+  const pgCode = (supabaseError as any).code || null;
+  const pgDetails = (supabaseError as any).details || null;
+
+  const isDuplicateXceed =
+    pgCode === "23505" &&
+    typeof supabaseError.message === "string" &&
+    supabaseError.message.includes("events_xceed_event_ref_uniq");
+
+  if (isDuplicateXceed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Esiste già un evento in Supabase con questo link Xceed. Per evitare sovrascritture automatiche, il salvataggio DoorCheck non è stato aggiornato. Verifica l'evento esistente o usa un link Xceed diverso.",
+        airtableId: created?.id || null,
+        pg_details: pgDetails,
+        pg_code: pgCode,
+      },
+      { status: 409 }
+    );
+  }
+
   return NextResponse.json(
     {
       ok: false,
       error: "Supabase events insert failed",
       airtableId: created?.id || null,
       details: supabaseError.message,
-      pg_details: (supabaseError as any).details || null,
+      pg_details: pgDetails,
       pg_hint: (supabaseError as any).hint || null,
-      pg_code: (supabaseError as any).code || null,
+      pg_code: pgCode,
     },
     { status: 500 }
   );
 }
-    
 
 
 
