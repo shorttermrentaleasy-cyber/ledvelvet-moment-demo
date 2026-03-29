@@ -319,19 +319,34 @@ export async function POST(req: Request) {
       .insert(insertPayload)
       .select("id")
       .single();
+if (supabaseError) {
+  console.error("Supabase events insert failed FULL:", {
+    message: supabaseError.message,
+    details: (supabaseError as any).details,
+    hint: (supabaseError as any).hint,
+    code: (supabaseError as any).code,
+    createdId: created?.id || null,
+    insertPayload,
+  });
 
-    if (supabaseError) {
-      console.error("Supabase events insert failed:", supabaseError);
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Supabase events insert failed",
-          airtableId: created?.id || null,
-          details: supabaseError.message,
-        },
-        { status: 500 }
-      );
-    }
+  return NextResponse.json(
+    {
+      ok: false,
+      error: "Supabase events insert failed",
+      airtableId: created?.id || null,
+      details: supabaseError.message,
+      pg_details: (supabaseError as any).details || null,
+      pg_hint: (supabaseError as any).hint || null,
+      pg_code: (supabaseError as any).code || null,
+    },
+    { status: 500 }
+  );
+}
+    
+
+
+
+
 
     return NextResponse.json({
       ok: true,
