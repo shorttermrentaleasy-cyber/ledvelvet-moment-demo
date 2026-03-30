@@ -1,11 +1,11 @@
 import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import AdminTopbarClient from "../../AdminTopbarClient";
 
 const HERO_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
-// ✅ nuovo: link YouTube Studio (upload teaser/aftermovie)
 const YT_STUDIO_VIDEOS_URL = "https://studio.youtube.com/channel/UCfQf25gurELioXHUNN8fSNQ/videos/";
 
 export const dynamic = "force-dynamic";
@@ -14,27 +14,34 @@ function unauthorized() {
   redirect("/admin/login");
 }
 
+function supabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!url || !key) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 function normalizeDriveImageUrl(input: string): string {
   const s = String(input || "").trim();
   if (!s) return "";
 
-  // Already a direct "uc" link
   if (s.includes("drive.google.com/uc?") && s.includes("id=")) return s;
 
-  // Try extract file id from common Google Drive share URLs
-  // 1) /file/d/<ID>/view
   const m1 = s.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (m1?.[1]) return `https://drive.google.com/uc?export=view&id=${m1[1]}`;
 
-  // 2) open?id=<ID>
   const m2 = s.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
   if (m2?.[1]) return `https://drive.google.com/uc?export=view&id=${m2[1]}`;
 
-  // 3) uc?id=<ID> (various)
   const m3 = s.match(/drive\.google\.com\/uc\?(?:.*&)?id=([a-zA-Z0-9_-]+)/);
   if (m3?.[1]) return `https://drive.google.com/uc?export=view&id=${m3[1]}`;
 
-  // Not a drive link we recognize -> keep as-is (could be a normal https image)
   return s;
 }
 
@@ -63,6 +70,146 @@ function normalizeDate(v: any): string {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function toStartsAt(input: string): string | null {
+  const s = String(input || "").trim();
+  if (!s) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return `${s}T00:00:00.000Z`;
+  }
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+type ParsedXceedPublicUrl = {
+  isXceed: boolean;
+  xceedUrl: string | null;
+  legacyId: number | null;
+  channel: string | null;
+};
+
+function parseXceedPublicUrl(input: string): ParsedXceedPublicUrl {
+  const raw = String(input || "").trim();
+  if (!raw) {
+    return {
+      isXceed: false,
+      xceedUrl: null,
+      legacyId: null,
+      channel: null,
+    };
+  }
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return {
+      isXceed: false,
+      xceedUrl: raw,
+      legacyId: null,
+      channel: null,
+    };
+  }
+
+  const host = url.hostname.toLowerCase();
+  const isProdXceed = host === "xceed.me" || host.endsWith(".xceed.me");
+  if (!isProdXceed) {
+    return {
+      isXceed: false,
+      xceedUrl: raw,
+      legacyId: null,
+      channel: null,
+    };
+  }
+
+  const parts = url.pathname.split("/").filter(Boolean);
+
+  let legacyId: number | null = null;
+  let channel: string | null = null;
+
+  const channelIdx = parts.findIndex((p) => p.toLowerCase() === "channel");
+  if (channelIdx >= 0 && parts[channelIdx + 1]) {
+    channel = parts[channelIdx + 1].trim() || null;
+  }
+
+  const eventIdx = parts.findIndex((p) => p.toLowerCase() === "event");
+  if (eventIdx >= 0) {
+    for (let i = eventIdx + 1; i < parts.length; i++) {
+      if (/^\d+$/.test(parts[i])) {
+        const n = Number(parts[i]);
+        if (Number.isInteger(n) && n > 0) {
+          legacyId = n;
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    isXceed: true,
+    xceedUrl: raw,
+    legacyId,
+    channel,
+  };
+}
+
+type XceedEventFetchResult = {
+  ok: boolean;
+  legacyId: number | null;
+  eventUuid: string | null;
+  name: string | null;
+  startsAt: string | null;
+  venue: string | null;
+  city: string | null;
+};
+
+async function fetchXceedEventByLegacyId(
+  legacyId: number,
+  channel: string | null
+): Promise<XceedEventFetchResult> {
+  const qp = new URLSearchParams();
+  if (channel) qp.set("channel", channel);
+
+  const url = `https://events.xceed.me/v1/events/${legacyId}${qp.toString() ? `?${qp.toString()}` : ""}`;
+
+  const r = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!r.ok) {
+    return {
+      ok: false,
+      legacyId,
+      eventUuid: null,
+      name: null,
+      startsAt: null,
+      venue: null,
+      city: null,
+    };
+  }
+
+  const j = await r.json().catch(() => null);
+  const data = j?.data;
+
+  const startingTime =
+    typeof data?.startingTime === "number" && Number.isFinite(data.startingTime)
+      ? new Date(data.startingTime * 1000).toISOString()
+      : null;
+
+  return {
+    ok: Boolean(j?.success && data),
+    legacyId: typeof data?.legacyId === "number" ? data.legacyId : legacyId,
+    eventUuid: typeof data?.id === "string" ? data.id : null,
+    name: typeof data?.name === "string" ? data.name.trim() : null,
+    startsAt: startingTime,
+    venue: typeof data?.venue?.name === "string" ? data.venue.name.trim() : null,
+    city: typeof data?.venue?.city?.name === "string" ? data.venue.city.name.trim() : null,
+  };
 }
 
 type SponsorOption = { id: string; label: string };
@@ -179,18 +326,22 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     "use server";
 
     const { AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_EVENTS } = process.env;
-    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) redirect(`/admin/events/edit?id=${id}`);
+    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) {
+      redirect(`/admin/events/edit?id=${id}`);
+    }
 
     const sponsorsSelected = formData.getAll("sponsors").map(String);
     const heroRaw = String(formData.get("heroImageUrl") || "").trim();
     const hero = normalizeDriveImageUrl(heroRaw);
     const teaser = String(formData.get("teaserUrl") || "").trim();
     const after = String(formData.get("aftermovieUrl") || "").trim();
-    // ✅ valida SOLO se non vuoto
+
     if ((hero && !isHttpUrl(hero)) || (teaser && !isHttpUrl(teaser)) || (after && !isHttpUrl(after))) {
       redirect(`/admin/events/edit?id=${id}`);
     }
 
+    const eventName = String(formData.get("eventName") || "").trim();
+    const date = normalizeDate(formData.get("date"));
     const ticketPlatform = String(formData.get("ticketPlatform") || "").trim();
     const ticketUrl = String(formData.get("ticketUrl") || "").trim();
     const city = String(formData.get("city") || "").trim();
@@ -199,8 +350,8 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     const notes = String(formData.get("notes") || "").trim();
 
     const fields: Record<string, any> = {
-      "Event Name": String(formData.get("eventName") || "").trim(),
-      date: normalizeDate(formData.get("date")),
+      "Event Name": eventName,
+      date,
       City: city || null,
       Venue: venue || null,
       Status: status || null,
@@ -216,7 +367,7 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     fields["Teaser"] = teaser ? teaser : null;
     fields["Aftermovie"] = after ? after : null;
 
-    const r = await fetch(
+    const airtableRes = await fetch(
       `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_EVENTS)}/${id}`,
       {
         method: "PATCH",
@@ -228,8 +379,62 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
       }
     );
 
-    if (!r.ok) {
-      console.error("Airtable update error:", await r.text());
+    if (!airtableRes.ok) {
+      console.error("Airtable update error:", await airtableRes.text());
+      redirect(`/admin/events/edit?id=${id}`);
+    }
+
+    // ---- sync minima verso Supabase events ----
+    const parsedXceed = parseXceedPublicUrl(ticketUrl);
+
+    let xceedEventRef: number | null = null;
+    let xceedEventUuid: string | null = null;
+
+    let finalName = eventName;
+    let finalStartsAt = toStartsAt(date);
+    let finalVenue = venue || null;
+    let finalCity = city || null;
+    let finalXceedUrl = parsedXceed.isXceed ? parsedXceed.xceedUrl : null;
+
+    if (parsedXceed.isXceed && parsedXceed.legacyId) {
+      const xceedData = await fetchXceedEventByLegacyId(parsedXceed.legacyId, parsedXceed.channel);
+
+      xceedEventRef = xceedData.legacyId;
+      xceedEventUuid = xceedData.eventUuid;
+
+      finalName = xceedData.name || finalName;
+      finalStartsAt = xceedData.startsAt || finalStartsAt;
+      finalVenue = xceedData.venue || finalVenue;
+      finalCity = xceedData.city || finalCity;
+    }
+
+    const supabase = supabaseAdmin();
+
+    const updatePayload = {
+      name: finalName,
+      starts_at: finalStartsAt,
+      venue: finalVenue,
+      city: finalCity,
+      xceed_url: finalXceedUrl,
+      xceed_event_ref: xceedEventRef ? String(xceedEventRef) : null,
+      xceed_event_uuid: xceedEventUuid,
+    };
+
+    const { error: supabaseError } = await supabase
+      .from("events")
+      .update(updatePayload)
+      .eq("airtable_record_id", id);
+
+    if (supabaseError) {
+      console.error("Supabase events update failed:", {
+        message: supabaseError.message,
+        details: (supabaseError as any).details,
+        hint: (supabaseError as any).hint,
+        code: (supabaseError as any).code,
+        airtableRecordId: id,
+        updatePayload,
+      });
+
       redirect(`/admin/events/edit?id=${id}`);
     }
 
@@ -255,10 +460,7 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
         <form action={updateAction} style={styles.card}>
           <div style={styles.grid}>
             <Input label="Event name" name="eventName" defaultValue={f["Event Name"]} required />
-
-            {/* ✅ date: rende visibile l’icona calendario */}
             <Input label="Date" name="date" defaultValue={normalizeDate(f["date"])} type="date" />
-
             <Input label="City" name="city" defaultValue={f["City"]} />
             <Input label="Venue" name="venue" defaultValue={f["Venue"]} />
 
@@ -287,7 +489,6 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
               </div>
             </Field>
 
-            {/* ✅ Teaser con bottone YouTube Studio */}
             <Field label="Teaser URL (YouTube)">
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <input name="teaserUrl" defaultValue={teaserUrl} style={{ ...styles.input, flex: 1 }} />
@@ -340,7 +541,6 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
   );
 }
 
-/* helpers UI (identici) */
 function SponsorsPicker({ sponsors, defaultSelected }: { sponsors: SponsorOption[]; defaultSelected: string[] }) {
   const selectedCount = defaultSelected?.length || 0;
   return (
@@ -395,7 +595,6 @@ function Select({ label, name, defaultValue, options }: any) {
   );
 }
 
-/* styles: invariati (con 2 micro aggiunte) */
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: "100vh", background: "#070812", color: "#fff" },
   wrap: { maxWidth: 860, margin: "0 auto", padding: 16 },
@@ -416,8 +615,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.18)",
     padding: "0 12px",
     outline: "none",
-
-    // ✅ rende visibile l’icona calendario su input type="date" (Chrome/Safari)
     colorScheme: "dark",
   },
 
@@ -444,7 +641,6 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
   },
 
-  // ✅ nuovo bottone YouTube Studio (stile coerente, diverso dal Drive per riconoscerlo)
   ytBtn: {
     height: 40,
     padding: "0 14px",
