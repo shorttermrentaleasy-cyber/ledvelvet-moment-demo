@@ -371,6 +371,7 @@ export default function DoorCheckPage() {
   const [attQDebounced, setAttQDebounced] = useState("");
   const [attKind, setAttKind] = useState<"ALL" | "ETS" | "SRL" | "XCEED">("ALL");
   const [attLoading, setAttLoading] = useState(false);
+  const [attRefreshing, setAttRefreshing] = useState(false);
   const [attErr, setAttErr] = useState<string | null>(null);
   const [attData, setAttData] = useState<AttendanceResp | null>(null);
 
@@ -435,8 +436,8 @@ export default function DoorCheckPage() {
   }, [scanOpen]);
   
   useEffect(() => {
-    attLoadingRef.current = attLoading;
-  }, [attLoading]);
+    attLoadingRef.current = attLoading || attRefreshing;
+  }, [attLoading, attRefreshing]);
 
   useEffect(() => {
     try {
@@ -891,12 +892,18 @@ export default function DoorCheckPage() {
           ? 0
           : ticketsOffset;
 
-    const silent = !!options?.silent;
+     const silent = !!options?.silent;
+    const hasVisibleData = !!attData && "ok" in attData && attData.ok;
 
-    setAttLoading(true);
+    if (silent || hasVisibleData) {
+      setAttRefreshing(true);
+    } else {
+      setAttLoading(true);
+    }
+
     setAttErr(null);
 
-    if (reset && !silent) {
+    if (reset && !silent && !hasVisibleData) {
       resetAttendanceStateForNewQuery();
     }
 
@@ -983,6 +990,7 @@ export default function DoorCheckPage() {
       setAttErr(e?.message || "Errore");
     } finally {
       setAttLoading(false);
+      setAttRefreshing(false);
     }
   }
 
@@ -1033,9 +1041,10 @@ export default function DoorCheckPage() {
     }
   }
 
+
   useEffect(() => {
     if (!attOpen) return;
-    void loadAttendance(true);
+    void loadAttendance(true, { silent: !!attData && "ok" in attData && attData.ok });
   }, [attOpen, attTab, attKind, attQDebounced, eventId]);
 
   useEffect(() => {
@@ -1800,25 +1809,35 @@ export default function DoorCheckPage() {
                     )}
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        void loadAttendance(true);
-                      }}
-                      disabled={attLoading}
-                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
-                    >
-                      ↻ Aggiorna
-                    </button>
+
+
+                   <div className="mt-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void loadAttendance(true, { silent: true });
+                        }}
+                        disabled={attLoading || attRefreshing}
+                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+                      >
+                        ↻ Aggiorna
+                      </button>
+
+                      {attRefreshing ? (
+                        <span className="text-xs text-white/50">Aggiornamento…</span>
+                      ) : null}
+                    </div>
 
                     <label className="flex items-center gap-2 text-xs text-white/50 select-none">
                       <input type="checkbox" checked={attDebug} onChange={(e) => setAttDebug(e.target.checked)} />
                       debug
                     </label>
                   </div>
+
+
 
                   {"ok" in (attData || {}) && (attData as any)?.ok && summaryBox ? (
                     <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -1871,8 +1890,7 @@ export default function DoorCheckPage() {
                       </div>
                     </div>
                   ) : null}
-
-                  {attLoading ? (
+                  {attLoading && (!attData || !("ok" in attData) || !attData.ok) ? (
                     <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
                       Caricamento…
                     </div>
