@@ -699,7 +699,7 @@ export default function DoorCheckPage() {
           setTicketsOffset(0);
           setCheckinsOffset(0);
           setAttErr(null);
-          await loadAttendance(true);
+          await loadAttendance(true, { silent: true });
         }
       }
 
@@ -774,7 +774,7 @@ export default function DoorCheckPage() {
         setTicketsOffset(0);
         setCheckinsOffset(0);
         setAttErr(null);
-        await loadAttendance(true);
+        await loadAttendance(true, { silent: true });
       }
 
 
@@ -872,7 +872,7 @@ export default function DoorCheckPage() {
     setAttErr(null);
   }
 
-  async function loadAttendance(reset = true) {
+  async function loadAttendance(reset = true, options?: { silent?: boolean }) {
     const eid = eventId.trim();
     if (!eid) {
       setAttErr("Seleziona un evento.");
@@ -891,10 +891,12 @@ export default function DoorCheckPage() {
           ? 0
           : ticketsOffset;
 
+    const silent = !!options?.silent;
+
     setAttLoading(true);
     setAttErr(null);
 
-    if (reset) {
+    if (reset && !silent) {
       resetAttendanceStateForNewQuery();
     }
 
@@ -937,8 +939,14 @@ export default function DoorCheckPage() {
         merged.checkins_payload.has_more = (merged.checkins_payload.checkins?.length ?? 0) >= attLimit;
       }
 
+
       setAttData((prev) => {
-        if (reset || !prev || !("ok" in prev) || !prev.ok) {
+        if (!prev || !("ok" in prev) || !prev.ok) {
+          return merged;
+        }
+
+        // reset "vero" o refresh silenzioso: sostituisco la vista corrente
+        if (reset) {
           return merged;
         }
 
@@ -964,11 +972,13 @@ export default function DoorCheckPage() {
 
       if (scope === "checkins") {
         const got = merged.checkins_payload?.checkins?.length ?? 0;
-        setCheckinsOffset((reset ? 0 : checkinsOffset) + got);
+        setCheckinsOffset(reset ? got : checkinsOffset + got);
       } else {
         const got = merged.tickets_payload?.tickets?.length ?? 0;
-        setTicketsOffset((reset ? 0 : ticketsOffset) + got);
+        setTicketsOffset(reset ? got : ticketsOffset + got);
       }
+
+
     } catch (e: any) {
       setAttErr(e?.message || "Errore");
     } finally {
@@ -1008,7 +1018,7 @@ export default function DoorCheckPage() {
       setAttErr(null);
 
       if (attOpen) {
-        await loadAttendance(true);
+          await loadAttendance(true, { silent: true });
       }
 
       setRes(null);
@@ -1035,7 +1045,7 @@ export default function DoorCheckPage() {
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
       if (attLoadingRef.current) return;
-      void loadAttendance(true);
+      void loadAttendance(true, { silent: true });
     }, ATT_POLL_MS);
 
     return () => {
