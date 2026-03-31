@@ -164,6 +164,10 @@ async function enrichCheckins(supabase: any, rows: any[]) {
   });
 }
 
+function hasRealCheckinId(v: unknown) {
+  return String(v ?? "").trim().length > 0;
+}
+
 export async function GET(req: Request) {
   try {
     const supabase = supabaseAdmin();
@@ -202,7 +206,7 @@ export async function GET(req: Request) {
 
     const summaryTickets = summaryTicketsRows || [];
     const tickets_total = summaryTickets.length;
-    const tickets_checked_in = summaryTickets.filter((t: any) => !!t.checkin_id).length;
+    const tickets_checked_in = summaryTickets.filter((t: any) => hasRealCheckinId(t.checkin_id)).length;
     const tickets_missing = Math.max(0, tickets_total - tickets_checked_in);
 
     const { data: summaryCheckinsRows, error: summaryCheckinsErr } = await supabase
@@ -239,61 +243,72 @@ export async function GET(req: Request) {
     // --------------------------------------------------
     let ticketsPayload: any = null;
 
-    if (scope === "tickets" || scope === "both") {
-      let baseQuery = supabase
-        .from("xceed_tickets")
-        .select("id,qr_code,full_name,email,phone,checkin_id,imported_at,raw", { count: "exact" })
-        .eq("event_id", event_id);
+if (scope === "tickets" || scope === "both") {
+  let baseQuery = supabase
+    .from("xceed_tickets")
+    .select("id,qr_code,full_name,email,phone,checkin_id,imported_at,raw")
+    .eq("event_id", event_id)
+    .order("imported_at", { ascending: false });
 
-      if (view === "missing") {
-        baseQuery = baseQuery.is("checkin_id", null);
-      } else if (view === "entered") {
-        baseQuery = baseQuery.not("checkin_id", "is", null);
-      }
+  if (q) {
+    const like = safeLike(q);
+    baseQuery = baseQuery.or(`full_name.ilike.${like},email.ilike.${like},phone.ilike.${like}`);
+  }
 
-      if (q) {
-        const like = safeLike(q);
-        baseQuery = baseQuery.or(`full_name.ilike.${like},email.ilike.${like},phone.ilike.${like}`);
-      }
+  const { data: tickets, error: tErr } = await baseQuery;
 
-      const { data: tickets, error: tErr, count: tickets_filtered_count } = await baseQuery
-        .order("imported_at", { ascending: false })
-        .range(offset, offset + limit - 1);
+  if (tErr) throw new Error(tErr.message);
 
-      if (tErr) throw new Error(tErr.message);
+  const normalizedRows = (tickets || []).map((x: any) => {
+    const raw = x.raw || null;
+    const normalizedCheckinId = hasRealCheckinId(x.checkin_id) ? String(x.checkin_id).trim() : null;
 
-      const rows = (tickets || []).map((x: any) => {
-        const raw = x.raw || null;
-        return {
-          id: x.id,
-          qr_code: x.qr_code || null,
-          full_name: x.full_name || null,
-          email: x.email || null,
-          phone: x.phone || null,
-          checkin_id: x.checkin_id || null,
-          imported_at: x.imported_at || null,
-          offer_title: pickOfferTitle(raw),
-          offer_description: pickOfferDesc(raw),
-          offer_type: pickOfferType(raw),
-          offer_type_label: pickOfferTypeLabel(raw),
-          transaction_id: pickTxId(raw),
-          booking_date: pickBookingDate(raw),
-        };
-      });
+    return {
+      id: x.id,
+      qr_code: x.qr_code || null,
+      full_name: x.full_name || null,
+      email: x.email || null,
+      phone: x.phone || null,
+      checkin_id: normalizedCheckinId,
+      imported_at: x.imported_at || null,
+      offer_title: pickOfferTitle(raw),
+      offer_description: pickOfferDesc(raw),
+      offer_type: pickOfferType(raw),
+      offer_type_label: pickOfferTypeLabel(raw),
+      transaction_id: pickTxId(raw),
+      booking_date: pickBookingDate(raw),
+    };
+  });
 
-      const filteredCount = Number(tickets_filtered_count || 0);
-      const has_more = offset + rows.length < filteredCount;
+  let filteredRows = normalizedRows;
 
-      ticketsPayload = {
-        view,
-        q,
-        limit,
-        offset,
-        tickets_filtered_count: filteredCount,
-        has_more,
-        tickets: rows,
-      };
-    }
+  if (view === "missing") {
+    filteredRows = normalizedRows.filter((t: any) => !hasRealCheckinId(t.checkin_id));
+  } else if (view === "entered") {
+    filteredRows = normalizedRows.filter((t: any) => hasRealCheckinId(t.checkin_id));
+  }
+
+  const tickets_filtered_count = filteredRows.length;
+  const rows = filteredRows.slice(offset, offset + limit);
+  const has_more = offset + rows.length < tickets_filtered_count;
+
+  ticketsPayload = {
+    view,
+    q,
+    limit,
+    offset,
+    tickets_filtered_count,
+    has_more,
+    tickets: rows,
+  };
+} 
+
+
+
+
+
+
+
     // --------------------------------------------------
     // CHECKINS PAYLOAD
     // --------------------------------------------------
