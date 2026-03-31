@@ -1112,34 +1112,18 @@ useEffect(() => {
     return !!attData.checkins_payload?.has_more && !attLoading;
   }, [attData, attLoading]);
 
+const summaryBox = useMemo(() => {
+  if (!attData || !("ok" in attData) || !attData.ok) return null;
 
-    const summaryBox = useMemo(() => {
-    if (!attData || !("ok" in attData) || !attData.ok) return null;
+  const summary = attData.summary || {};
 
-    const summary = attData.summary || {};
-    const ticketsPayload = attData.tickets_payload || null;
-    const hasSearch = !!attQDebounced.trim();
-
-    let displayedTicketsTotal = summary.tickets_total ?? 0;
-    let displayedMissingTotal = summary.tickets_missing ?? 0;
-
-    // Se la lista ticket corrente è affidabile e NON c'è ricerca,
-    // usala per i box invece del summary generico.
-    if (!hasSearch && ticketsPayload) {
-      if (attTab === "tickets" && ticketsPayload.view === "all") {
-        displayedTicketsTotal = ticketsPayload.tickets_filtered_count ?? displayedTicketsTotal;
-      }
-
-      if (attTab === "missing" && ticketsPayload.view === "missing") {
-        displayedMissingTotal = ticketsPayload.tickets_filtered_count ?? displayedMissingTotal;
-      }
-    }
-
-    return {
-      displayedTicketsTotal,
-      displayedMissingTotal,
-    };
-  }, [attData, attTab, attQDebounced]);
+  return {
+    tickets_total: summary.tickets_total ?? 0,
+    tickets_missing: summary.tickets_missing ?? 0,
+    checkins_total: summary.checkins_allowed ?? 0, // o meglio: checkins_total lato API
+    checkins_by_kind: summary.checkins_allowed_by_kind ?? {},
+  };
+}, [attData]);
 
 
 
@@ -1893,39 +1877,39 @@ useEffect(() => {
                       <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                         <div className="rounded-xl border border-sky-400/20 bg-sky-400/10 p-3">
                           <div className="text-xs text-sky-100/70">Biglietti totali</div>
-                          <div className="text-2xl font-semibold text-sky-100">{summaryBox.displayedTicketsTotal}</div>
+                          <div className="text-2xl font-semibold text-sky-100">{summaryBox.tickets_total}</div>
                         </div>
 
                         <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3">
                           <div className="text-xs text-amber-100/70">Da entrare</div>
-                          <div className="text-2xl font-semibold text-amber-100">{summaryBox.displayedMissingTotal}</div>
+                          <div className="text-2xl font-semibold text-amber-100">{summaryBox.tickets_missing}</div>
                         </div>
 
                         <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3">
                           <div className="text-xs text-emerald-100/70">Entrati (totali)</div>
                           <div className="text-2xl font-semibold text-emerald-100">
-                            {(attData as any).summary?.checkins_allowed ?? 0}
+                            {summaryBox.checkins_total}
                           </div>
                         </div>
 
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
                           <div className="text-xs text-white/60">ETS</div>
                           <div className="text-lg font-semibold">
-                            {(attData as any).summary?.checkins_allowed_by_kind?.ETS ?? 0}
+                           {summaryBox.checkins_by_kind?.ETS ?? 0}
                           </div>
                         </div>
 
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
                           <div className="text-xs text-white/60">XCEED</div>
                           <div className="text-lg font-semibold">
-                            {(attData as any).summary?.checkins_allowed_by_kind?.XCEED ?? 0}
+                            {summaryBox.checkins_by_kind?.XCEED ?? 0}
                           </div>
                         </div>
 
                         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
                           <div className="text-xs text-white/60">SRL</div>
                           <div className="text-lg font-semibold">
-                            {(attData as any).summary?.checkins_allowed_by_kind?.SRL ?? 0}
+                             {summaryBox.checkins_by_kind?.SRL ?? 0}
                           </div>
                         </div>
                       </div>
