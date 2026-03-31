@@ -744,6 +744,8 @@ export async function GET(req: NextRequest) {
       })
       .select("id, event_id, qr_code, status, full_name, email, booking_date, transaction_id, raw");
 
+
+
     if (upsertError) {
       return NextResponse.json(
         {
@@ -758,6 +760,116 @@ export async function GET(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    // --------------------------------------------------
+    // BRIDGE XCEED checked-in -> local checkins + link back to xceed_tickets
+    // --------------------------------------------------
+    const checkedInRows = (upsertedRows || []).filter((r: any) => String(r.status || "").trim() === "checked_in");
+
+    if (checkedInRows.length > 0) {
+      const xceedTkIds = checkedInRows.map((r: any) => String(r.id));
+
+      const { data: existingCheckins, error: existingCheckinsErr } = await supabase
+        .from("checkins")
+        .select("id,event_id,xceed_tk_id")
+        .eq("event_id", localEventId)
+        .in("xceed_tk_id", xceedTkIds);
+
+      if (existingCheckinsErr) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Failed to load existing XCEED checkins",
+            details: existingCheckinsErr.message,
+            xceedEventRef: resolvedXceedEventRef || null,
+            xceedTicketsEventId,
+            localEventId,
+          },
+          { status: 500 }
+        );
+      }
+
+      const existingByTkId = new Map<string, any>();
+      for (const c of existingCheckins || []) {
+        const key = String((c as any).xceed_tk_id || "").trim();
+        if (key) existingByTkId.set(key, c);
+      }
+
+      const checkinsToInsert = checkedInRows
+        .filter((row: any) => !existingByTkId.has(String(row.id)))
+        .map((row: any) => {
+          const checkedInTime =
+            row.raw?.ticket?.checkedInTime ??
+            row.raw?.pass?.checkedInTime ??
+            null;
+
+          const checkinAt = toIsoFromEpochMaybe(checkedInTime) || nowIso;
+
+          return {
+            event_id: row.event_id,
+            member_id: null,
+            legacy_person_id: null,
+            checkin_at: checkinAt,
+            result: "allowed",
+            reason: "xceed_sync_checked_in",
+            method: "xceed_app_sync",
+            xceed_tk_id: String(row.id),
+            scanned_code: row.qr_code || null,
+            kind: "XCEED",
+          };
+        });
+
+      let insertedCheckins: any[] = [];
+
+      if (checkinsToInsert.length > 0) {
+        const { data: inserted, error: insertCheckinsErr } = await supabase
+          .from("checkins")
+          .insert(checkinsToInsert)
+          .select("id,event_id,xceed_tk_id");
+
+        if (insertCheckinsErr) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "Failed to insert local XCEED checkins",
+              details: insertCheckinsErr.message,
+              xceedEventRef: resolvedXceedEventRef || null,
+              xceedTicketsEventId,
+              localEventId,
+            },
+            { status: 500 }
+          );
+        }
+
+        insertedCheckins = inserted || [];
+      }
+
+      const finalCheckins = [...(existingCheckins || []), ...insertedCheckins];
+
+      for (const c of finalCheckins) {
+        if (!c?.id || !c?.xceed_tk_id) continue;
+
+        const { error: updErr } = await supabase
+          .from("xceed_tickets")
+          .update({ checkin_id: c.id })
+          .eq("id", c.xceed_tk_id);
+
+        if (updErr) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "Failed to update xceed_tickets.checkin_id",
+              details: updErr.message,
+              xceedEventRef: resolvedXceedEventRef || null,
+              xceedTicketsEventId,
+              localEventId,
+            },
+            { status: 500 }
+          );
+        }
+      }
+    }
+
 
     const { count: totalRowsAfterSync, error: countErr } = await supabase
       .from("xceed_tickets")
