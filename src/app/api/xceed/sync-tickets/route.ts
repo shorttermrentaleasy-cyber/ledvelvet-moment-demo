@@ -771,9 +771,9 @@ export async function GET(req: NextRequest) {
 
       const { data: existingCheckins, error: existingCheckinsErr } = await supabase
         .from("checkins")
-        .select("id,event_id,xceed_tk_id")
+        .select("id,event_id,xceed_tx_id")
         .eq("event_id", localEventId)
-        .in("xceed_tk_id", xceedTkIds);
+        .in("xceed_tx_id", xceedTkIds);
 
       if (existingCheckinsErr) {
         return NextResponse.json(
@@ -791,7 +791,7 @@ export async function GET(req: NextRequest) {
 
       const existingByTkId = new Map<string, any>();
       for (const c of existingCheckins || []) {
-        const key = String((c as any).xceed_tk_id || "").trim();
+        const key = String((c as any).xceed_tx_id || "").trim();
         if (key) existingByTkId.set(key, c);
       }
 
@@ -813,7 +813,7 @@ export async function GET(req: NextRequest) {
             result: "allowed",
             reason: "xceed_sync_checked_in",
             method: "xceed_app_sync",
-            xceed_tk_id: String(row.id),
+            xceed_tx_id: String(row.id),
             scanned_code: row.qr_code || null,
             kind: "XCEED",
           };
@@ -825,7 +825,7 @@ export async function GET(req: NextRequest) {
         const { data: inserted, error: insertCheckinsErr } = await supabase
           .from("checkins")
           .insert(checkinsToInsert)
-          .select("id,event_id,xceed_tk_id");
+          .select("id,event_id,xceed_tx_id");
 
         if (insertCheckinsErr) {
           return NextResponse.json(
@@ -847,12 +847,12 @@ export async function GET(req: NextRequest) {
       const finalCheckins = [...(existingCheckins || []), ...insertedCheckins];
 
       for (const c of finalCheckins) {
-        if (!c?.id || !c?.xceed_tk_id) continue;
+        if (!c?.id || !c?.xceed_tx_id) continue;
 
         const { error: updErr } = await supabase
           .from("xceed_tickets")
           .update({ checkin_id: c.id })
-          .eq("id", c.xceed_tk_id);
+          .eq("id", c.xceed_tx_id);
 
         if (updErr) {
           return NextResponse.json(
