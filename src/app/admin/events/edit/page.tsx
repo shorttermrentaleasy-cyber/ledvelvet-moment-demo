@@ -401,11 +401,6 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
 
       xceedEventRef = xceedData.legacyId;
       xceedEventUuid = xceedData.eventUuid;
-
-      finalName = xceedData.name || finalName;
-      finalStartsAt = xceedData.startsAt || finalStartsAt;
-      finalVenue = xceedData.venue || finalVenue;
-      finalCity = xceedData.city || finalCity;
     }
 
     const supabase = supabaseAdmin();

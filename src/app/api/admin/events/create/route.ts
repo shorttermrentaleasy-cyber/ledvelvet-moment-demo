@@ -28,6 +28,17 @@ function isHttpUrl(v: string) {
   }
 }
 
+function asBoolean(v: any, def = false): boolean {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (["true", "1", "on", "yes"].includes(s)) return true;
+    if (["false", "0", "off", "no", ""].includes(s)) return false;
+  }
+  if (typeof v === "number") return v !== 0;
+  return def;
+}
+
 function supabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
@@ -290,16 +301,12 @@ export async function POST(req: Request) {
 
       xceedEventRef = xceedData.legacyId;
       xceedEventUuid = xceedData.eventUuid;
-
-      // uso i dati Xceed come fallback forte, ma senza rompere l'input admin se mancasse qualcosa
-      finalName = xceedData.name || finalName;
-      finalStartsAt = xceedData.startsAt || finalStartsAt;
-      finalVenue = xceedData.venue || finalVenue;
-      finalCity = xceedData.city || finalCity;
     }
 
     const supabase = supabaseAdmin();
-
+    const requireTicket = asBoolean(body?.RequireTicket, true);
+    const requireMembership = asBoolean(body?.RequireMembership, true);
+    const requireActiveMembership = asBoolean(body?.RequireActiveMembership, false);
     const insertPayload = {
       name: finalName,
       starts_at: finalStartsAt,
@@ -308,10 +315,10 @@ export async function POST(req: Request) {
       xceed_url: finalXceedUrl,
       xceed_event_ref: xceedEventRef,
       xceed_event_uuid: xceedEventUuid,
-     airtable_record_id: created?.id || null,
-      require_ticket: true,
-      require_membership: true,
-      require_active_membership: false,
+      airtable_record_id: created?.id || null,
+      require_ticket: requireTicket,
+      require_membership: requireMembership,
+      require_active_membership: requireActiveMembership,
     };
 
     const { data: insertedEvent, error: supabaseError } = await supabase

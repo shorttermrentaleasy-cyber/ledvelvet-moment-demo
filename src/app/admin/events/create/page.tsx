@@ -106,6 +106,9 @@ export default function AdminCreateEventPage() {
     Featured: false,
     Notes: "",
     Sponsors: [] as string[], // rec...
+    RequireTicket: true,
+    RequireMembership: true,
+    RequireActiveMembership: false,
   });
 
   const featuredWarningText = useMemo(() => {
@@ -410,6 +413,27 @@ export default function AdminCreateEventPage() {
               <span>Featured event (Hero)</span>
               <input type="checkbox" name="Featured" checked={form.Featured} onChange={onChange} />
             </label>
+<div style={{ gridColumn: "1 / -1", display: "grid", gap: 10 }}>
+  <label style={styles.checkRow}>
+    <span>Require ticket</span>
+    <input type="checkbox" name="RequireTicket" checked={form.RequireTicket} onChange={onChange} />
+  </label>
+
+  <label style={styles.checkRow}>
+    <span>Require membership</span>
+    <input type="checkbox" name="RequireMembership" checked={form.RequireMembership} onChange={onChange} />
+  </label>
+
+  <label style={styles.checkRow}>
+    <span>Require active membership</span>
+    <input
+      type="checkbox"
+      name="RequireActiveMembership"
+      checked={form.RequireActiveMembership}
+      onChange={onChange}
+    />
+  </label>
+</div>
 
             <div style={{ gridColumn: "1 / -1" }}>
               <Field label="Notes">
