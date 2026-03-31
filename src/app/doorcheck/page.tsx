@@ -1112,29 +1112,21 @@ useEffect(() => {
     return !!attData.checkins_payload?.has_more && !attLoading;
   }, [attData, attLoading]);
 
-  const summaryBox = useMemo(() => {
+
+   const summaryBox = useMemo(() => {
     if (!attData || !("ok" in attData) || !attData.ok) return null;
 
     const summary = attData.summary || {};
-    const ticketsPayload = attData.tickets_payload || null;
-
-    const displayedTicketsTotal =
-      attTab === "tickets"
-        ? ticketsPayload?.tickets_filtered_count ?? summary.tickets_total ?? 0
-        : attTab === "missing"
-          ? (ticketsPayload?.tickets_filtered_count ?? 0) + (summary.tickets_checked_in ?? 0)
-          : summary.tickets_total ?? 0;
-
-    const displayedMissingTotal =
-      attTab === "missing"
-        ? ticketsPayload?.tickets_filtered_count ?? summary.tickets_missing ?? 0
-        : summary.tickets_missing ?? 0;
 
     return {
-      displayedTicketsTotal,
-      displayedMissingTotal,
+      displayedTicketsTotal: summary.tickets_total ?? 0,
+      displayedMissingTotal: summary.tickets_missing ?? 0,
     };
-  }, [attData, attTab]);
+  }, [attData]);
+
+
+
+
   return (
     <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-2xl mx-auto">
