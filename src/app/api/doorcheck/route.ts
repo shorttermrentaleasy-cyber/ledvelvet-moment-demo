@@ -450,6 +450,7 @@ function attachDoorAlert<T extends Record<string, any>>(resp: T): T & { door_ale
     door_alert,
   };
 }
+
 function buildUiInfo(params: {
   kind: "ETS" | "XCEED" | "SRL" | "UNKNOWN";
   allowed: boolean;
@@ -879,6 +880,41 @@ async function upsertLegacyPerson(
   if (insErr) throw new Error(insErr.message);
   return { id: (ins as any).id as string, full_name: (ins as any).full_name as string | null };
 }
+
+async function writeDoorAudit(
+  supabase: ReturnType<typeof supabaseAdmin>,
+  payload: {
+    event_id: string;
+    device_id?: string | null;
+    mode?: "scan" | "manual" | null;
+    scanned_code?: string | null;
+    resolved_kind?: "ETS" | "XCEED" | "SRL" | "UNKNOWN" | null;
+    result: "allowed" | "denied" | "already";
+    reason?: string | null;
+    status?: string | null;
+    member_id?: string | null;
+    legacy_person_id?: string | null;
+    checkin_id?: string | null;
+    display_name?: string | null;
+  }
+) {
+  const { error } = await supabase.from("doorcheck_audit").insert({
+    event_id: payload.event_id,
+    device_id: payload.device_id ?? null,
+    mode: payload.mode ?? null,
+    scanned_code: payload.scanned_code ?? null,
+    resolved_kind: payload.resolved_kind ?? null,
+    result: payload.result,
+    reason: payload.reason ?? null,
+    status: payload.status ?? null,
+    member_id: payload.member_id ?? null,
+    legacy_person_id: payload.legacy_person_id ?? null,
+    checkin_id: payload.checkin_id ?? null,
+    display_name: payload.display_name ?? null,
+  });
+
+  if (error) throw new Error(error.message);
+}
 export async function POST(req: Request) {
   try {
     const supabase = supabaseAdmin();
@@ -900,6 +936,7 @@ export async function POST(req: Request) {
 
     const mode = (body.mode || "scan").trim() as "scan" | "manual";
     const qrRaw = (body.qr || "").trim();
+    const deviceId = (body.device_id || "").trim() || null;
 
     if (mode === "scan" && !qrRaw) {
       return NextResponse.json({ ok: false, error: "Missing qr" }, { status: 400 });
@@ -956,6 +993,20 @@ export async function POST(req: Request) {
             }),
           };
           resp.message = toHumanMessage(resp);
+
+          await writeDoorAudit(supabase, {
+            event_id: eventId,
+            device_id: deviceId,
+            mode,
+            scanned_code,
+            resolved_kind: "XCEED",
+            result: "already",
+            status: "Already Checked IN",
+            legacy_person_id: (t as any)?.legacy_person_id ?? null,
+            checkin_id: tCheckinId,
+            display_name: nm,
+          });
+
           return NextResponse.json(attachDoorAlert(resp));
         }
       }
@@ -993,6 +1044,20 @@ export async function POST(req: Request) {
           }),
         };
         resp.message = toHumanMessage(resp);
+
+        await writeDoorAudit(supabase, {
+          event_id: eventId,
+          device_id: deviceId,
+          mode,
+          scanned_code,
+          resolved_kind: "SRL",
+          result: "already",
+          status: "Already Checked IN",
+          legacy_person_id: legacy.id,
+          checkin_id: alreadyId,
+          display_name: fullName || (legacy as any)?.full_name || null,
+        });
+
         return NextResponse.json(resp);
       }
 
@@ -1038,6 +1103,21 @@ export async function POST(req: Request) {
         }),
       };
       resp.message = toHumanMessage(resp);
+
+      await writeDoorAudit(supabase, {
+        event_id: eventId,
+        device_id: deviceId,
+        mode,
+        scanned_code,
+        resolved_kind: "SRL",
+        result: "allowed",
+        reason: "srl_created",
+        status: "created_and_checked_in",
+        legacy_person_id: legacy.id,
+        checkin_id: newCheckinId,
+        display_name: fullName || null,
+      });
+
       return NextResponse.json(resp);
     }
 
@@ -1085,6 +1165,20 @@ export async function POST(req: Request) {
           }),
         };
         resp.message = toHumanMessage(resp);
+
+        await writeDoorAudit(supabase, {
+          event_id: eventId,
+          device_id: deviceId,
+          mode,
+          scanned_code: qrRaw,
+          resolved_kind: "ETS",
+          result: "already",
+          status: "Already Checked IN",
+          member_id: member.id,
+          checkin_id: alreadyId,
+          display_name: member.display_name,
+        });
+
         return NextResponse.json(resp);
       }
 
@@ -1114,6 +1208,20 @@ export async function POST(req: Request) {
             }),
           };
           resp.message = toHumanMessage(resp);
+
+          await writeDoorAudit(supabase, {
+            event_id: eventId,
+            device_id: deviceId,
+            mode,
+            scanned_code: qrRaw,
+            resolved_kind: "ETS",
+            result: "denied",
+            reason: "missing_ticket",
+            status: "denied",
+            member_id: member.id,
+            display_name: member.display_name,
+          });
+
           return NextResponse.json(resp);
         }
       }
@@ -1163,6 +1271,21 @@ export async function POST(req: Request) {
         }),
       };
       resp.message = toHumanMessage(resp);
+
+      await writeDoorAudit(supabase, {
+        event_id: eventId,
+        device_id: deviceId,
+        mode,
+        scanned_code: qrRaw,
+        resolved_kind: "ETS",
+        result: "allowed",
+        reason: policy.require_ticket ? "ets_ok_ticket_ok" : "ets_ok",
+        status: "checked_in",
+        member_id: member.id,
+        checkin_id: newCheckinId,
+        display_name: member.display_name,
+      });
+
       return NextResponse.json(resp);
     }
 
@@ -1203,8 +1326,7 @@ export async function POST(req: Request) {
                 inviteEligible: false,
               });
 
-        const resolvedKind =
-          resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED";
+        const resolvedKind = resolvedMember && !(resolvedMember as any).ambiguous ? "ETS" : "XCEED";
 
         const resp: any = {
           ok: true,
@@ -1214,10 +1336,7 @@ export async function POST(req: Request) {
           checkin_id: ticketCheckinId,
           member_id: resolvedKind === "ETS" ? (resolvedMember as any).id : null,
           legacy_person_id: resolvedKind === "ETS" ? null : (ticket as any).legacy_person_id ?? null,
-          display_name:
-            resolvedKind === "ETS"
-              ? (resolvedMember as any).display_name || buyerName
-              : buyerName,
+          display_name: resolvedKind === "ETS" ? (resolvedMember as any).display_name || buyerName : buyerName,
           ...alreadyCheckedMembershipInfo,
           ticket_offer_title: ticketMeta.ticket_offer_title,
           ticket_offer_description: ticketMeta.ticket_offer_description,
@@ -1245,9 +1364,23 @@ export async function POST(req: Request) {
         };
 
         resp.message = toHumanMessage(resp);
+
+        await writeDoorAudit(supabase, {
+          event_id: eventId,
+          device_id: deviceId,
+          mode,
+          scanned_code: qrRaw,
+          resolved_kind: resolvedKind as "ETS" | "XCEED",
+          result: "already",
+          status: "Already Checked IN",
+          member_id: resolvedKind === "ETS" ? (resolvedMember as any).id : null,
+          legacy_person_id: resolvedKind === "ETS" ? null : (ticket as any).legacy_person_id ?? null,
+          checkin_id: ticketCheckinId,
+          display_name: resolvedKind === "ETS" ? (resolvedMember as any).display_name || buyerName : buyerName,
+        });
+
         return NextResponse.json(resolvedKind === "XCEED" ? attachDoorAlert(resp) : resp);
       }
-
       if (policy.require_membership) {
         const m = await resolveMemberByEmailOrPhone(supabase, buyerEmail, buyerPhone);
         const xceedMembershipInfo =
@@ -1290,6 +1423,19 @@ export async function POST(req: Request) {
             }),
           };
           resp.message = toHumanMessage(resp);
+
+          await writeDoorAudit(supabase, {
+            event_id: eventId,
+            device_id: deviceId,
+            mode,
+            scanned_code: qrRaw,
+            resolved_kind: "XCEED",
+            result: "denied",
+            reason: "ambiguous_member_match",
+            status: "denied",
+            display_name: buyerName,
+          });
+
           return NextResponse.json(attachDoorAlert(resp));
         }
 
@@ -1322,6 +1468,19 @@ export async function POST(req: Request) {
             }),
           };
           resp.message = toHumanMessage(resp);
+
+          await writeDoorAudit(supabase, {
+            event_id: eventId,
+            device_id: deviceId,
+            mode,
+            scanned_code: qrRaw,
+            resolved_kind: "XCEED",
+            result: "denied",
+            reason: "not_a_member",
+            status: "denied",
+            display_name: buyerName,
+          });
+
           return NextResponse.json(attachDoorAlert(resp));
         }
 
@@ -1354,6 +1513,20 @@ export async function POST(req: Request) {
             }),
           };
           resp.message = toHumanMessage(resp);
+
+          await writeDoorAudit(supabase, {
+            event_id: eventId,
+            device_id: deviceId,
+            mode,
+            scanned_code: qrRaw,
+            resolved_kind: "ETS",
+            result: "already",
+            status: "Already Checked IN",
+            member_id: (m as any).id,
+            checkin_id: alreadyEtsId,
+            display_name: (m as any).display_name || buyerName,
+          });
+
           return NextResponse.json(resp);
         }
 
@@ -1403,6 +1576,21 @@ export async function POST(req: Request) {
           }),
         };
         resp.message = toHumanMessage(resp);
+
+        await writeDoorAudit(supabase, {
+          event_id: eventId,
+          device_id: deviceId,
+          mode,
+          scanned_code: qrRaw,
+          resolved_kind: "ETS",
+          result: "allowed",
+          reason: "ets_via_xceed",
+          status: "checked_in",
+          member_id: (m as any).id,
+          checkin_id: (ins as any)?.id || null,
+          display_name: (m as any).display_name || buyerName,
+        });
+
         return NextResponse.json(resp);
       }
 
@@ -1464,6 +1652,20 @@ export async function POST(req: Request) {
           }),
         };
         resp.message = toHumanMessage(resp);
+
+        await writeDoorAudit(supabase, {
+          event_id: eventId,
+          device_id: deviceId,
+          mode,
+          scanned_code: qrRaw,
+          resolved_kind: "XCEED",
+          result: "already",
+          status: "Already Checked IN",
+          legacy_person_id: legacyPersonId,
+          checkin_id: alreadyLegacyId,
+          display_name: buyerName,
+        });
+
         return NextResponse.json(attachDoorAlert(resp));
       }
 
@@ -1523,6 +1725,21 @@ export async function POST(req: Request) {
         }),
       };
       resp.message = toHumanMessage(resp);
+
+      await writeDoorAudit(supabase, {
+        event_id: eventId,
+        device_id: deviceId,
+        mode,
+        scanned_code: qrRaw,
+        resolved_kind: "XCEED",
+        result: "allowed",
+        reason: policy.require_ticket ? "xceed_ok_ticket_ok" : "xceed_ok",
+        status: "checked_in",
+        legacy_person_id: legacyPersonId,
+        checkin_id: (ins as any)?.id || null,
+        display_name: buyerName,
+      });
+
       return NextResponse.json(attachDoorAlert(resp));
     }
 
@@ -1552,6 +1769,20 @@ export async function POST(req: Request) {
           }),
         };
         resp.message = toHumanMessage(resp);
+
+        await writeDoorAudit(supabase, {
+          event_id: eventId,
+          device_id: deviceId,
+          mode,
+          scanned_code: qrRaw,
+          resolved_kind: "SRL",
+          result: "already",
+          status: "Already Checked IN",
+          legacy_person_id: (lp as any).id,
+          checkin_id: alreadyId,
+          display_name: (lp as any).full_name ?? null,
+        });
+
         return NextResponse.json(resp);
       }
 
@@ -1586,6 +1817,21 @@ export async function POST(req: Request) {
         }),
       };
       resp.message = toHumanMessage(resp);
+
+      await writeDoorAudit(supabase, {
+        event_id: eventId,
+        device_id: deviceId,
+        mode,
+        scanned_code: qrRaw,
+        resolved_kind: "SRL",
+        result: "allowed",
+        reason: "srl_ok",
+        status: "checked_in",
+        legacy_person_id: (lp as any).id,
+        checkin_id: (ins as any)?.id || null,
+        display_name: (lp as any).full_name ?? null,
+      });
+
       return NextResponse.json(resp);
     }
 
@@ -1602,6 +1848,19 @@ export async function POST(req: Request) {
       }),
     };
     resp.message = toHumanMessage(resp);
+
+    await writeDoorAudit(supabase, {
+      event_id: eventId,
+      device_id: deviceId,
+      mode,
+      scanned_code: qrRaw,
+      resolved_kind: "UNKNOWN",
+      result: "denied",
+      reason: "not_found",
+      status: "denied",
+      display_name: null,
+    });
+
     return NextResponse.json(resp);
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
