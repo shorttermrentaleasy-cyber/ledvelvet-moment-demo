@@ -234,35 +234,36 @@ export async function GET(req: Request) {
 
     if (chkSrlErr) throw new Error(chkSrlErr.message);
 
+ 
+
+
     // --------------------------------------------------
-    // TICKETS SUMMARY - QUERIES SEPARATE REALI
+    // TICKETS SUMMARY - REGOLA UNICA COERENTE
+    // entered = checkin_id presente OR status = checked_in
+    // missing = non cancelled AND non entered
     // --------------------------------------------------
-    const { count: tickets_total, error: tAllErr } = await supabase
+    const { data: ticketSummaryRows, error: tSummaryErr } = await supabase
       .from("xceed_tickets")
-      .select("id", { count: "exact", head: true })
+      .select("id, status, checkin_id")
       .eq("event_id", event_id);
 
-    if (tAllErr) throw new Error(tAllErr.message);
+    if (tSummaryErr) throw new Error(tSummaryErr.message);
 
-    const { count: tickets_checked_in, error: tInErr } = await supabase
-      .from("xceed_tickets")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", event_id)
-      .not("checkin_id", "is", null);
+    const summaryRows = ticketSummaryRows || [];
 
-    if (tInErr) throw new Error(tInErr.message);
+    const isTicketEntered = (row: any) => {
+      const status = String(row?.status || "").trim().toLowerCase();
+      return !!row?.checkin_id || status === "checked_in";
+    };
 
-    const { count: tickets_missing, error: tMissingErr } = await supabase
-      .from("xceed_tickets")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", event_id)
-      .is("checkin_id", null);
+    const isTicketCancelled = (row: any) => {
+      const status = String(row?.status || "").trim().toLowerCase();
+      return status === "cancelled";
+    };
 
-    if (tMissingErr) throw new Error(tMissingErr.message);
-
-    const total = Number(tickets_total || 0);
-    const checked = Number(tickets_checked_in || 0);
-    const missingCount = Number(tickets_missing || 0);
+    const total = summaryRows.length;
+    const checked = summaryRows.filter((row: any) => isTicketEntered(row)).length;
+    const missingCount = summaryRows.filter((row: any) => !isTicketCancelled(row) && !isTicketEntered(row)).length;
 
     // --------------------------------------------------
     // TICKETS PAYLOAD - SOLO PAGINA CORRENTE
