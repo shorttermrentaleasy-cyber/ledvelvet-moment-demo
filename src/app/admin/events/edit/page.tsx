@@ -14,6 +14,23 @@ function unauthorized() {
   redirect("/admin/login");
 }
 
+async function fetchSupabaseEventByAirtableRecordId(airtableRecordId: string) {
+  const supabase = supabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("events")
+    .select("require_ticket, require_membership, require_active_membership")
+    .eq("airtable_record_id", airtableRecordId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Supabase fetch event flags failed:", error);
+    return null;
+  }
+
+  return data || null;
+}
+
 function supabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
@@ -308,12 +325,13 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
   const id = searchParams.id;
   if (!id) redirect("/admin/events");
 
-  const [record, meta, sponsors, existingFeatured] = await Promise.all([
-    fetchAirtableRecord(id),
-    fetchMetaChoices(),
-    fetchSponsors(),
-    fetchExistingFeatured(id),
-  ]);
+  const [record, meta, sponsors, existingFeatured, supabaseEvent] = await Promise.all([
+  fetchAirtableRecord(id),
+  fetchMetaChoices(),
+  fetchSponsors(),
+  fetchExistingFeatured(id),
+  fetchSupabaseEventByAirtableRecordId(id),
+]);
 
   const f = record.fields || {};
   const selectedSponsors: string[] = Array.isArray(f["Sponsors"]) ? f["Sponsors"] : [];
@@ -517,6 +535,7 @@ const updatePayload = {
               </label>
             </div>
 
+
 <div style={{ gridColumn: "1 / -1", display: "grid", gap: 10 }}>
   <label style={styles.checkRow}>
     <div>
@@ -526,7 +545,7 @@ const updatePayload = {
     <input
       type="checkbox"
       name="requireTicket"
-      defaultChecked={Boolean((f as any)["Require Ticket"] ?? true)}
+      defaultChecked={Boolean(supabaseEvent?.require_ticket ?? true)}
     />
   </label>
 
@@ -538,7 +557,7 @@ const updatePayload = {
     <input
       type="checkbox"
       name="requireMembership"
-      defaultChecked={Boolean((f as any)["Require Membership"] ?? true)}
+      defaultChecked={Boolean(supabaseEvent?.require_membership ?? true)}
     />
   </label>
 
@@ -550,10 +569,11 @@ const updatePayload = {
     <input
       type="checkbox"
       name="requireActiveMembership"
-      defaultChecked={Boolean((f as any)["Require Active Membership"] ?? false)}
+      defaultChecked={Boolean(supabaseEvent?.require_active_membership ?? false)}
     />
   </label>
 </div>
+
 
 
 
