@@ -1113,17 +1113,33 @@ useEffect(() => {
   }, [attData, attLoading]);
 
 
-   const summaryBox = useMemo(() => {
+    const summaryBox = useMemo(() => {
     if (!attData || !("ok" in attData) || !attData.ok) return null;
 
     const summary = attData.summary || {};
+    const ticketsPayload = attData.tickets_payload || null;
+    const hasSearch = !!attQDebounced.trim();
+
+    let displayedTicketsTotal = summary.tickets_total ?? 0;
+    let displayedMissingTotal = summary.tickets_missing ?? 0;
+
+    // Se la lista ticket corrente è affidabile e NON c'è ricerca,
+    // usala per i box invece del summary generico.
+    if (!hasSearch && ticketsPayload) {
+      if (attTab === "tickets" && ticketsPayload.view === "all") {
+        displayedTicketsTotal = ticketsPayload.tickets_filtered_count ?? displayedTicketsTotal;
+      }
+
+      if (attTab === "missing" && ticketsPayload.view === "missing") {
+        displayedMissingTotal = ticketsPayload.tickets_filtered_count ?? displayedMissingTotal;
+      }
+    }
 
     return {
-      displayedTicketsTotal: summary.tickets_total ?? 0,
-      displayedMissingTotal: summary.tickets_missing ?? 0,
+      displayedTicketsTotal,
+      displayedMissingTotal,
     };
-  }, [attData]);
-
+  }, [attData, attTab, attQDebounced]);
 
 
 
