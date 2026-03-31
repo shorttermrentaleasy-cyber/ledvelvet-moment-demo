@@ -348,6 +348,9 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     const venue = String(formData.get("venue") || "").trim();
     const status = String(formData.get("status") || "").trim();
     const notes = String(formData.get("notes") || "").trim();
+    const requireTicket = formData.get("requireTicket") === "on";
+    const requireMembership = formData.get("requireMembership") === "on";
+    const requireActiveMembership = formData.get("requireActiveMembership") === "on";
 
     const fields: Record<string, any> = {
       "Event Name": eventName,
@@ -405,15 +408,18 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
 
     const supabase = supabaseAdmin();
 
-    const updatePayload = {
-      name: finalName,
-      starts_at: finalStartsAt,
-      venue: finalVenue,
-      city: finalCity,
-      xceed_url: finalXceedUrl,
-      xceed_event_ref: xceedEventRef ? String(xceedEventRef) : null,
-      xceed_event_uuid: xceedEventUuid,
-    };
+const updatePayload = {
+  name: finalName,
+  starts_at: finalStartsAt,
+  venue: finalVenue,
+  city: finalCity,
+  xceed_url: finalXceedUrl,
+  xceed_event_ref: xceedEventRef ? String(xceedEventRef) : null,
+  xceed_event_uuid: xceedEventUuid,
+  require_ticket: requireTicket,
+  require_membership: requireMembership,
+  require_active_membership: requireActiveMembership,
+};
 
     const { error: supabaseError } = await supabase
       .from("events")
@@ -510,6 +516,46 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
                 <input type="checkbox" name="featured" defaultChecked={Boolean(f["Featured"])} />
               </label>
             </div>
+
+<div style={{ gridColumn: "1 / -1", display: "grid", gap: 10 }}>
+  <label style={styles.checkRow}>
+    <div>
+      <div style={styles.label}>Require ticket</div>
+      <div style={styles.smallMuted}>Richiede biglietto valido</div>
+    </div>
+    <input
+      type="checkbox"
+      name="requireTicket"
+      defaultChecked={Boolean((f as any)["Require Ticket"] ?? true)}
+    />
+  </label>
+
+  <label style={styles.checkRow}>
+    <div>
+      <div style={styles.label}>Require membership</div>
+      <div style={styles.smallMuted}>Richiede tessera/socio</div>
+    </div>
+    <input
+      type="checkbox"
+      name="requireMembership"
+      defaultChecked={Boolean((f as any)["Require Membership"] ?? true)}
+    />
+  </label>
+
+  <label style={styles.checkRow}>
+    <div>
+      <div style={styles.label}>Require active membership</div>
+      <div style={styles.smallMuted}>Controlla anche stato attivo tessera</div>
+    </div>
+    <input
+      type="checkbox"
+      name="requireActiveMembership"
+      defaultChecked={Boolean((f as any)["Require Active Membership"] ?? false)}
+    />
+  </label>
+</div>
+
+
 
             <div style={{ gridColumn: "1 / -1" }}>
               <SponsorsPicker sponsors={sponsors} defaultSelected={selectedSponsors} />
