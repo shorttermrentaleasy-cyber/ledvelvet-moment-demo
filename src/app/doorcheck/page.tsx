@@ -1120,10 +1120,11 @@ const summaryBox = useMemo(() => {
   return {
     tickets_total: summary.tickets_total ?? 0,
     tickets_missing: summary.tickets_missing ?? 0,
-    checkins_total: summary.checkins_allowed ?? 0, // o meglio: checkins_total lato API
+    checkins_total: summary.checkins_total ?? summary.checkins_allowed ?? 0,
     checkins_by_kind: summary.checkins_allowed_by_kind ?? {},
   };
 }, [attData]);
+
 
 
 

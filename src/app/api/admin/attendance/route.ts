@@ -190,82 +190,49 @@ export async function GET(req: Request) {
     if (!ev) return json(false, { error: "Event not found" }, 404);
 
     // --------------------------------------------------
-    // CHECKINS SUMMARY
+    // SUMMARY REALI DA RECORD VERI
     // --------------------------------------------------
-    const { count: checkins_total, error: chkTotErr } = await supabase
-      .from("checkins")
-      .select("id", { count: "exact", head: true })
+
+    const { data: summaryTicketsRows, error: summaryTicketsErr } = await supabase
+      .from("xceed_tickets")
+      .select("id,checkin_id")
       .eq("event_id", event_id);
 
-    if (chkTotErr) throw new Error(chkTotErr.message);
+    if (summaryTicketsErr) throw new Error(summaryTicketsErr.message);
 
-    const { count: checkins_allowed, error: chkAllowErr } = await supabase
+    const summaryTickets = summaryTicketsRows || [];
+    const tickets_total = summaryTickets.length;
+    const tickets_checked_in = summaryTickets.filter((t: any) => !!t.checkin_id).length;
+    const tickets_missing = Math.max(0, tickets_total - tickets_checked_in);
+
+    const { data: summaryCheckinsRows, error: summaryCheckinsErr } = await supabase
       .from("checkins")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", event_id)
-      .eq("result", "allowed");
-
-    if (chkAllowErr) throw new Error(chkAllowErr.message);
-
-    const { count: checkins_ets_allowed, error: chkEtsErr } = await supabase
-      .from("checkins")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", event_id)
-      .eq("result", "allowed")
-      .eq("kind", "ETS");
-
-    if (chkEtsErr) throw new Error(chkEtsErr.message);
-
-    const { count: checkins_xceed_allowed, error: chkXcErr } = await supabase
-      .from("checkins")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", event_id)
-      .eq("result", "allowed")
-      .eq("kind", "XCEED");
-
-    if (chkXcErr) throw new Error(chkXcErr.message);
-
-    const { count: checkins_srl_allowed, error: chkSrlErr } = await supabase
-      .from("checkins")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", event_id)
-      .eq("result", "allowed")
-      .eq("kind", "SRL");
-
-    if (chkSrlErr) throw new Error(chkSrlErr.message);
-
- 
-
-
-    // --------------------------------------------------
-    // TICKETS SUMMARY - QUERIES SEPARATE REALI
-    // --------------------------------------------------
-    const { count: tickets_total, error: tAllErr } = await supabase
-      .from("xceed_tickets")
-      .select("id", { count: "exact", head: true })
+      .select("id,result,kind")
       .eq("event_id", event_id);
 
-    if (tAllErr) throw new Error(tAllErr.message);
+    if (summaryCheckinsErr) throw new Error(summaryCheckinsErr.message);
 
-    const { count: tickets_checked_in, error: tInErr } = await supabase
-      .from("xceed_tickets")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", event_id)
-      .not("checkin_id", "is", null);
+    const summaryCheckins = summaryCheckinsRows || [];
+    const checkins_total = summaryCheckins.length;
+    const allowedCheckins = summaryCheckins.filter(
+      (c: any) => String(c.result || "").toLowerCase() === "allowed"
+    );
+    const checkins_allowed = allowedCheckins.length;
 
-    if (tInErr) throw new Error(tInErr.message);
+    const checkins_allowed_by_kind = {
+      ETS: 0,
+      XCEED: 0,
+      SRL: 0,
+      UNKNOWN: 0,
+    };
 
-    const { count: tickets_missing, error: tMissingErr } = await supabase
-      .from("xceed_tickets")
-      .select("id", { count: "exact", head: true })
-      .eq("event_id", event_id)
-      .is("checkin_id", null);
-
-    if (tMissingErr) throw new Error(tMissingErr.message);
-
-    const total = Number(tickets_total || 0);
-    const checked = Number(tickets_checked_in || 0);
-    const missingCount = Number(tickets_missing || 0);
+    for (const row of allowedCheckins) {
+      const k = String(row.kind || "UNKNOWN").toUpperCase();
+      if (k === "ETS") checkins_allowed_by_kind.ETS += 1;
+      else if (k === "XCEED") checkins_allowed_by_kind.XCEED += 1;
+      else if (k === "SRL") checkins_allowed_by_kind.SRL += 1;
+      else checkins_allowed_by_kind.UNKNOWN += 1;
+    }
 
     // --------------------------------------------------
     // TICKETS PAYLOAD - SOLO PAGINA CORRENTE
@@ -327,7 +294,6 @@ export async function GET(req: Request) {
         tickets: rows,
       };
     }
-
     // --------------------------------------------------
     // CHECKINS PAYLOAD
     // --------------------------------------------------
@@ -414,17 +380,13 @@ export async function GET(req: Request) {
         require_membership: !!(ev as any).require_membership,
       },
       summary: {
-        checkins_total: Number(checkins_total || 0),
-        checkins_allowed: Number(checkins_allowed || 0),
-        checkins_allowed_by_kind: {
-          ETS: Number(checkins_ets_allowed || 0),
-          XCEED: Number(checkins_xceed_allowed || 0),
-          SRL: Number(checkins_srl_allowed || 0),
-        },
+        checkins_total,
+        checkins_allowed,
+        checkins_allowed_by_kind,
 
-        tickets_total: total,
-        tickets_checked_in: checked,
-        tickets_missing: missingCount,
+        tickets_total,
+        tickets_checked_in,
+        tickets_missing,
       },
       ...(ticketsPayload ? { tickets_payload: ticketsPayload } : {}),
       ...(checkinsPayload ? { checkins_payload: checkinsPayload } : {}),
