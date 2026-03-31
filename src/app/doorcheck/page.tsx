@@ -1047,20 +1047,28 @@ export default function DoorCheckPage() {
     void loadAttendance(true, { silent: !!attData && "ok" in attData && attData.ok });
   }, [attOpen, attTab, attKind, attQDebounced, eventId]);
 
-  useEffect(() => {
-    if (!attOpen) return;
-    if (!eventId.trim()) return;
 
-    const intervalId = window.setInterval(() => {
-      if (document.hidden) return;
-      if (attLoadingRef.current) return;
-      void loadAttendance(true, { silent: true });
-    }, ATT_POLL_MS);
+useEffect(() => {
+  if (!attOpen) return;
+  if (!eventId.trim()) return;
 
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [attOpen, eventId, attTab, attKind, attQDebounced]);
+  const intervalId = window.setInterval(() => {
+    if (document.hidden) return;
+    if (attLoadingRef.current) return;
+
+    void (async () => {
+      if (attTab !== "entered") {
+        await refreshTicketsSync();
+      }
+
+      await loadAttendance(true, { silent: true });
+    })();
+  }, ATT_POLL_MS);
+
+  return () => {
+    window.clearInterval(intervalId);
+  };
+}, [attOpen, eventId, attTab, attKind, attQDebounced]);
 
 
   const drawerTitle = useMemo(() => {
