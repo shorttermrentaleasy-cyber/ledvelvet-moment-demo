@@ -8,6 +8,7 @@ const DOOR_PIN = "1979";
 const LS_KEY = "doorcheck_pin_ok";
 const LS_KEY_API = "doorcheck_api_key";
 const LS_KEY_DEVICE = "doorcheck_device_id";
+const ATT_POLL_MS = 8000;
 
 type DoorUi = {
   type?: "ETS" | "SRL" | "XCEED" | "UNKNOWN";
@@ -380,7 +381,7 @@ export default function DoorCheckPage() {
   const [checkinsOffset, setCheckinsOffset] = useState(0);
   const [attLimit] = useState(200);
   const [attDebug, setAttDebug] = useState(false);
-
+  const attLoadingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
@@ -432,6 +433,10 @@ export default function DoorCheckPage() {
       document.body.style.overscrollBehavior = prevOverscroll;
     };
   }, [scanOpen]);
+  
+  useEffect(() => {
+    attLoadingRef.current = attLoading;
+  }, [attLoading]);
 
   useEffect(() => {
     try {
@@ -685,9 +690,22 @@ export default function DoorCheckPage() {
         setLastDeniedCode(code);
       }
 
+ 
       if (data && "ok" in data && data.ok && data.allowed) {
         setQr("");
+
+        if (attOpen) {
+          setAttData(null);
+          setTicketsOffset(0);
+          setCheckinsOffset(0);
+          setAttErr(null);
+          await loadAttendance(true);
+        }
       }
+
+
+
+
     } catch (e: any) {
       setRes({ ok: false, error: e?.message || "Errore rete" });
     } finally {
@@ -750,6 +768,18 @@ export default function DoorCheckPage() {
       setManualPhone("");
       setManualEmail("");
       setLastDeniedCode(null);
+
+      if (data && "ok" in data && data.ok && data.allowed && attOpen) {
+        setAttData(null);
+        setTicketsOffset(0);
+        setCheckinsOffset(0);
+        setAttErr(null);
+        await loadAttendance(true);
+      }
+
+
+
+
     } catch (e: any) {
       setRes({ ok: false, error: e?.message || "Errore rete" });
     } finally {
@@ -997,6 +1027,22 @@ export default function DoorCheckPage() {
     if (!attOpen) return;
     void loadAttendance(true);
   }, [attOpen, attTab, attKind, attQDebounced, eventId]);
+
+  useEffect(() => {
+    if (!attOpen) return;
+    if (!eventId.trim()) return;
+
+    const intervalId = window.setInterval(() => {
+      if (document.hidden) return;
+      if (attLoadingRef.current) return;
+      void loadAttendance(true);
+    }, ATT_POLL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [attOpen, eventId, attTab, attKind, attQDebounced]);
+
 
   const drawerTitle = useMemo(() => {
     if (attTab === "missing") return "Da entrare (ticket)";
