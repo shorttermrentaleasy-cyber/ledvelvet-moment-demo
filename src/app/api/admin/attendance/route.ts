@@ -238,32 +238,34 @@ export async function GET(req: Request) {
 
 
     // --------------------------------------------------
-    // TICKETS SUMMARY - REGOLA UNICA COERENTE
-    // entered = checkin_id presente OR status = checked_in
-    // missing = non cancelled AND non entered
+    // TICKETS SUMMARY - QUERIES SEPARATE REALI
     // --------------------------------------------------
-    const { data: ticketSummaryRows, error: tSummaryErr } = await supabase
+    const { count: tickets_total, error: tAllErr } = await supabase
       .from("xceed_tickets")
-      .select("id, status, checkin_id")
+      .select("id", { count: "exact", head: true })
       .eq("event_id", event_id);
 
-    if (tSummaryErr) throw new Error(tSummaryErr.message);
+    if (tAllErr) throw new Error(tAllErr.message);
 
-    const summaryRows = ticketSummaryRows || [];
+    const { count: tickets_checked_in, error: tInErr } = await supabase
+      .from("xceed_tickets")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event_id)
+      .not("checkin_id", "is", null);
 
-    const isTicketEntered = (row: any) => {
-      const status = String(row?.status || "").trim().toLowerCase();
-      return !!row?.checkin_id || status === "checked_in";
-    };
+    if (tInErr) throw new Error(tInErr.message);
 
-    const isTicketCancelled = (row: any) => {
-      const status = String(row?.status || "").trim().toLowerCase();
-      return status === "cancelled";
-    };
+    const { count: tickets_missing, error: tMissingErr } = await supabase
+      .from("xceed_tickets")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", event_id)
+      .is("checkin_id", null);
 
-    const total = summaryRows.length;
-    const checked = summaryRows.filter((row: any) => isTicketEntered(row)).length;
-    const missingCount = summaryRows.filter((row: any) => !isTicketCancelled(row) && !isTicketEntered(row)).length;
+    if (tMissingErr) throw new Error(tMissingErr.message);
+
+    const total = Number(tickets_total || 0);
+    const checked = Number(tickets_checked_in || 0);
+    const missingCount = Number(tickets_missing || 0);
 
     // --------------------------------------------------
     // TICKETS PAYLOAD - SOLO PAGINA CORRENTE
