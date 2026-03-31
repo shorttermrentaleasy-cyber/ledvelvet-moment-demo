@@ -23,8 +23,11 @@ export async function GET(req: Request) {
     const supabase = supabaseAdmin();
     const { searchParams } = new URL(req.url);
 
-    // ✅ default operativo: solo eventi "utili" (upcoming) + con data
-    // - puoi forzare a 0 passando ?only_future=0&only_dated=0
+    // default operativo:
+    // - solo eventi con data
+    // - solo eventi "utili" per DoorCheck
+    //   con tolleranza di 1 giorno indietro, così l'evento
+    //   non sparisce proprio il giorno del controllo
     const onlyDated =
       searchParams.has("only_dated") ? searchParams.get("only_dated") === "1" : true;
 
@@ -32,7 +35,6 @@ export async function GET(req: Request) {
       searchParams.has("only_future") ? searchParams.get("only_future") === "1" : true;
 
     const q = (searchParams.get("q") || "").trim();
-
     const limit = clampInt(searchParams.get("limit"), 200, 1, 2000);
 
     let query = supabase
@@ -40,11 +42,13 @@ export async function GET(req: Request) {
       .select("id, name, starts_at, city, venue, xceed_event_ref, xceed_url, created_at")
       .limit(limit);
 
-    if (onlyDated) query = query.not("starts_at", "is", null);
+    if (onlyDated) {
+      query = query.not("starts_at", "is", null);
+    }
 
     if (onlyFuture) {
-      const nowIso = new Date().toISOString();
-      query = query.gte("starts_at", nowIso);
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      query = query.gte("starts_at", cutoff);
     }
 
     if (q) {
@@ -52,7 +56,6 @@ export async function GET(req: Request) {
       query = query.or(`name.ilike.%${esc}%,city.ilike.%${esc}%,venue.ilike.%${esc}%`);
     }
 
-    // ✅ ordine operativo: per data (poi nome come tie-break)
     query = query.order("starts_at", { ascending: true }).order("name", { ascending: true });
 
     const { data, error } = await query;
@@ -68,7 +71,6 @@ export async function GET(req: Request) {
       xceed_url: e.xceed_url || null,
     }));
 
-    // ✅ debug leggero per capire mismatch DB / filtri (NON mostra segreti)
     const supabaseUrlHost = (() => {
       try {
         const u = process.env.SUPABASE_URL || "";
@@ -88,6 +90,7 @@ export async function GET(req: Request) {
           onlyFuture,
           limit,
           q,
+          future_cutoff_mode: onlyFuture ? "now_minus_1_day" : "disabled",
           supabase_url_host: supabaseUrlHost,
         },
       },
