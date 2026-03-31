@@ -994,6 +994,27 @@ export default function DoorCheckPage() {
     }
   }
 
+
+  async function syncTicketsSilent() {
+    const eid = eventId.trim();
+    if (!eid) return false;
+
+    try {
+      const r = await fetch(
+        `/api/xceed/sync-tickets?localEventId=${encodeURIComponent(eid)}&includeCancelledTickets=true`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      const j = (await r.json()) as SyncTicketsResp;
+      return !!(r.ok && "ok" in j && j.ok);
+    } catch {
+      return false;
+    }
+  }
+
   async function refreshTicketsSync() {
     const eid = eventId.trim();
     if (!eid) {
@@ -1048,6 +1069,7 @@ export default function DoorCheckPage() {
   }, [attOpen, attTab, attKind, attQDebounced, eventId]);
 
 
+
 useEffect(() => {
   if (!attOpen) return;
   if (!eventId.trim()) return;
@@ -1058,7 +1080,7 @@ useEffect(() => {
 
     void (async () => {
       if (attTab !== "entered") {
-        await refreshTicketsSync();
+        await syncTicketsSilent();
       }
 
       await loadAttendance(true, { silent: true });
@@ -1069,6 +1091,9 @@ useEffect(() => {
     window.clearInterval(intervalId);
   };
 }, [attOpen, eventId, attTab, attKind, attQDebounced]);
+
+
+
 
 
   const drawerTitle = useMemo(() => {
