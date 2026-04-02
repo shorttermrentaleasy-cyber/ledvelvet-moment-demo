@@ -299,33 +299,56 @@ export default function DoorPage() {
     stopScanner();
   }
 
-  async function refreshDoorData() {
-    try {
-      setSyncing(true);
-      setUiError(null);
+ async function refreshDoorData() {
+  try {
+    setSyncing(true);
+    setUiError(null);
 
-      const syncRes = await fetch("/api/xceed/sync-tickets", {
-        method: "POST",
-      });
+    const localEventId = response?.event?.id || response?.ticket?.event_id || null;
+    const xceedEventRef = response?.event?.xceed_event_ref || null;
+    const xceedEventUuid = response?.event?.xceed_event_uuid || null;
 
-      if (!syncRes.ok) {
-        const text = await syncRes.text();
-        throw new Error(
-          `Sync tickets fallita (${syncRes.status}) ${text || ""}`.trim()
-        );
-      }
-
-      if (lastQr) {
-        await evaluateQr(lastQr, { silent: true });
-      }
-    } catch (error) {
-      const msg =
-        error instanceof Error ? error.message : "Errore refresh dati";
-      setUiError(msg);
-    } finally {
-      setSyncing(false);
+    if (!localEventId && !xceedEventRef && !xceedEventUuid) {
+      throw new Error("Nessun evento disponibile per eseguire il sync");
     }
+
+    const syncUrl = new URL("/api/xceed/sync-tickets", window.location.origin);
+
+    if (localEventId) {
+      syncUrl.searchParams.set("localEventId", localEventId);
+    } else if (xceedEventRef) {
+      syncUrl.searchParams.set("eventId", xceedEventRef);
+    } else if (xceedEventUuid) {
+      syncUrl.searchParams.set("eventId", xceedEventUuid);
+    }
+
+    const syncRes = await fetch(syncUrl.toString(), {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    const syncJson = await syncRes.json().catch(() => null);
+
+    if (!syncRes.ok || !syncJson?.ok) {
+      throw new Error(
+        `Sync tickets fallita (${syncRes.status}) ${
+          syncJson?.error || syncJson?.details || ""
+        }`.trim()
+      );
+    }
+
+    if (lastQr) {
+      await evaluateQr(lastQr, { silent: true });
+    }
+  } catch (error) {
+    const msg =
+      error instanceof Error ? error.message : "Errore refresh dati";
+    setUiError(msg);
+  } finally {
+    setSyncing(false);
   }
+}
+
 
   const bigTitle = response?.title || "DOOR CHECK";
   const bigMessage =
