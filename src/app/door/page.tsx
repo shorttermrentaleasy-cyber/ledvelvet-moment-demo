@@ -178,6 +178,7 @@ export default function DoorPage() {
   const [manualQr, setManualQr] = useState("");
   const [lastQr, setLastQr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [scanActive, setScanActive] = useState(false);
   const [response, setResponse] = useState<DoorApiResponse | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
@@ -194,11 +195,13 @@ export default function DoorPage() {
     };
   }, []);
 
-  async function evaluateQr(qr: string) {
+  async function evaluateQr(qr: string, opts?: { silent?: boolean }) {
     const value = qr.trim();
     if (!value) return;
 
-    setLoading(true);
+    if (!opts?.silent) {
+      setLoading(true);
+    }
     setUiError(null);
 
     try {
@@ -225,7 +228,9 @@ export default function DoorPage() {
         error: msg,
       });
     } finally {
-      setLoading(false);
+      if (!opts?.silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -243,7 +248,9 @@ export default function DoorPage() {
       const preferredDeviceId = devices[0]?.deviceId;
 
       if (!preferredDeviceId) {
-        setUiError("Nessuna camera disponibile");
+        setUiError(
+          "Nessuna camera disponibile. Per il flusso reale si usa Xceed app; qui resta solo test."
+        );
         return;
       }
 
@@ -264,7 +271,7 @@ export default function DoorPage() {
           }
 
           if (error) {
-            // non mostriamo errori continui dello scanner
+            // ignore continuous scanner errors
           }
         }
       );
@@ -292,14 +299,37 @@ export default function DoorPage() {
     stopScanner();
   }
 
-  async function refreshLastQr() {
-    if (!lastQr) return;
-    await evaluateQr(lastQr);
+  async function refreshDoorData() {
+    try {
+      setSyncing(true);
+      setUiError(null);
+
+      const syncRes = await fetch("/api/xceed/sync-tickets", {
+        method: "POST",
+      });
+
+      if (!syncRes.ok) {
+        const text = await syncRes.text();
+        throw new Error(
+          `Sync tickets fallita (${syncRes.status}) ${text || ""}`.trim()
+        );
+      }
+
+      if (lastQr) {
+        await evaluateQr(lastQr, { silent: true });
+      }
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : "Errore refresh dati";
+      setUiError(msg);
+    } finally {
+      setSyncing(false);
+    }
   }
 
   const bigTitle = response?.title || "DOOR CHECK";
   const bigMessage =
-    response?.message || "Scansiona un QR o incollalo manualmente";
+    response?.message || "Monitor porta: Xceed scansiona, qui controlli l’esito";
 
   return (
     <div className={`min-h-screen text-white ${theme.shell}`}>
@@ -310,10 +340,10 @@ export default function DoorPage() {
               LedVelvet Door
             </div>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-5xl">
-              Controllo Porta
+              Monitor Porta
             </h1>
             <div className="mt-2 text-sm text-slate-300 md:text-base">
-              QR Xceed → ticket locale → socio → esito ingresso
+              Xceed app scansiona → sync ticket → verifica socio → esito ingresso
             </div>
           </div>
 
@@ -322,7 +352,7 @@ export default function DoorPage() {
               onClick={() => void startScanner()}
               className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium backdrop-blur transition hover:bg-white/15"
             >
-              {scanActive ? "Scanner attivo" : "Apri scanner"}
+              {scanActive ? "Scanner attivo" : "Apri scanner test"}
             </button>
 
             <button
@@ -333,11 +363,11 @@ export default function DoorPage() {
             </button>
 
             <button
-              onClick={() => void refreshLastQr()}
-              disabled={!lastQr || loading}
+              onClick={() => void refreshDoorData()}
+              disabled={syncing || loading}
               className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Aggiorna dati
+              {syncing ? "Aggiornamento..." : "Aggiorna dati"}
             </button>
 
             <button
@@ -351,9 +381,11 @@ export default function DoorPage() {
 
         <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
           <div className="space-y-6">
-            <div className={`rounded-3xl border ${theme.border} bg-black/25 p-4 backdrop-blur-xl`}>
+            <div
+              className={`rounded-3xl border ${theme.border} bg-black/25 p-4 backdrop-blur-xl`}
+            >
               <div className="mb-3 text-sm font-medium text-slate-300">
-                Camera scanner
+                Camera scanner (solo test)
               </div>
 
               <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
@@ -366,11 +398,13 @@ export default function DoorPage() {
               </div>
 
               <div className="mt-3 text-xs text-slate-400">
-                Usa la camera del device. Appena legge il QR, ferma la scansione e valuta.
+                Nel flusso finale la scansione ufficiale resta su Xceed app. Qui la camera serve solo come supporto test.
               </div>
             </div>
 
-            <div className={`rounded-3xl border ${theme.border} bg-black/25 p-4 backdrop-blur-xl`}>
+            <div
+              className={`rounded-3xl border ${theme.border} bg-black/25 p-4 backdrop-blur-xl`}
+            >
               <div className="mb-3 text-sm font-medium text-slate-300">
                 Input manuale QR
               </div>
@@ -409,7 +443,9 @@ export default function DoorPage() {
               className={`rounded-[32px] border ${theme.border} ${theme.card} ${theme.glow} p-6 md:p-8`}
             >
               <div className="mb-5 flex flex-wrap items-center gap-3">
-                <span className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] ${theme.badge}`}>
+                <span
+                  className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] ${theme.badge}`}
+                >
                   {response?.badge || "Door"}
                 </span>
 
@@ -430,9 +466,17 @@ export default function DoorPage() {
                     match: {response.debug.matched_by}
                   </span>
                 ) : null}
+
+                {syncing ? (
+                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                    syncing...
+                  </span>
+                ) : null}
               </div>
 
-              <div className={`text-4xl font-semibold tracking-tight md:text-7xl ${theme.title}`}>
+              <div
+                className={`text-4xl font-semibold tracking-tight md:text-7xl ${theme.title}`}
+              >
                 {bigTitle}
               </div>
 
@@ -484,7 +528,10 @@ export default function DoorPage() {
                 {row("QR", response?.ticket?.qr_code)}
                 {row("Ticket source", response?.ticket?.source)}
                 {row("Stato ticket", response?.ticket?.status)}
-                {row("Checked in", String(response?.ticket?.checked_in ?? false))}
+                {row(
+                  "Checked in",
+                  String(response?.ticket?.checked_in ?? false)
+                )}
                 {row("Offer type", response?.ticket?.offer_type)}
                 {row("Offer name", response?.ticket?.offer_name)}
                 {row("Booking ID", response?.ticket?.booking_id)}
@@ -521,7 +568,9 @@ export default function DoorPage() {
                       Require active
                     </div>
                     <div className="mt-2 text-xl font-semibold">
-                      {String(response?.event?.require_active_membership ?? false)}
+                      {String(
+                        response?.event?.require_active_membership ?? false
+                      )}
                     </div>
                   </div>
                 </div>
