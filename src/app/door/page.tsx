@@ -174,6 +174,9 @@ export default function DoorPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const [events, setEvents] = useState<any[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
+  const [loadingEvents, setLoadingEvents] = useState(false);
 
   const [manualQr, setManualQr] = useState("");
   const [lastQr, setLastQr] = useState("");
@@ -194,6 +197,42 @@ export default function DoorPage() {
       readerRef.current = null;
     };
   }, []);
+
+// 👇 QUI SOTTO aggiungi questo
+useEffect(() => {
+  void loadDoorEvents();
+}, []);
+
+async function loadDoorEvents() {
+  try {
+    setLoadingEvents(true);
+    setUiError(null);
+
+    const res = await fetch("/api/public/door-events", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      throw new Error(`Load eventi fallita (${res.status})`);
+    }
+
+    const json = await res.json();
+    const items = Array.isArray(json) ? json : json?.events || json?.data || [];
+
+    setEvents(items);
+
+    if (!selectedEventId && items.length > 0) {
+      setSelectedEventId(items[0].id);
+    }
+  } catch (error) {
+    const msg =
+      error instanceof Error ? error.message : "Errore caricamento eventi";
+    setUiError(msg);
+  } finally {
+    setLoadingEvents(false);
+  }
+}
 
   async function evaluateQr(qr: string, opts?: { silent?: boolean }) {
     const value = qr.trim();
@@ -304,23 +343,14 @@ export default function DoorPage() {
     setSyncing(true);
     setUiError(null);
 
-    const localEventId = response?.event?.id || response?.ticket?.event_id || null;
-    const xceedEventRef = response?.event?.xceed_event_ref || null;
-    const xceedEventUuid = response?.event?.xceed_event_uuid || null;
+    const localEventId = selectedEventId || response?.event?.id || null;
 
-    if (!localEventId && !xceedEventRef && !xceedEventUuid) {
-      throw new Error("Nessun evento disponibile per eseguire il sync");
+    if (!localEventId) {
+      throw new Error("Seleziona un evento prima di eseguire il sync");
     }
 
     const syncUrl = new URL("/api/xceed/sync-tickets", window.location.origin);
-
-    if (localEventId) {
-      syncUrl.searchParams.set("localEventId", localEventId);
-    } else if (xceedEventRef) {
-      syncUrl.searchParams.set("eventId", xceedEventRef);
-    } else if (xceedEventUuid) {
-      syncUrl.searchParams.set("eventId", xceedEventUuid);
-    }
+    syncUrl.searchParams.set("localEventId", localEventId);
 
     const syncRes = await fetch(syncUrl.toString(), {
       method: "GET",
@@ -349,7 +379,6 @@ export default function DoorPage() {
   }
 }
 
-
   const bigTitle = response?.title || "DOOR CHECK";
   const bigMessage =
     response?.message || "Monitor porta: Xceed scansiona, qui controlli l’esito";
@@ -369,6 +398,26 @@ export default function DoorPage() {
               Xceed app scansiona → sync ticket → verifica socio → esito ingresso
             </div>
           </div>
+<div className="min-w-[280px]">
+  <select
+    value={selectedEventId}
+    onChange={(e) => setSelectedEventId(e.target.value)}
+    className="w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white backdrop-blur outline-none"
+  >
+    <option value="" className="text-black">
+      {loadingEvents ? "Caricamento eventi..." : "Seleziona evento"}
+    </option>
+    {events.map((event) => (
+      <option key={event.id} value={event.id} className="text-black">
+        {event.name}
+        {event.city ? ` - ${event.city}` : ""}
+        {event.venue ? ` - ${event.venue}` : ""}
+      </option>
+    ))}
+  </select>
+</div>
+
+
 
           <div className="flex flex-wrap gap-2">
             <button
