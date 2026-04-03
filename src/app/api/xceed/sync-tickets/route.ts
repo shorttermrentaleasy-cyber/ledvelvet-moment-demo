@@ -471,6 +471,14 @@ function buildRowsFromBookingsOnly(params: {
   return rows;
 }
 
+function statusRank(status?: string | null) {
+  const s = String(status || "").trim().toLowerCase();
+  if (s === "checked_in") return 3;
+  if (s === "active") return 2;
+  if (s === "cancelled") return 1;
+  return 0;
+}
+
 function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
   const map = new Map<string, XceedTicketRow>();
 
@@ -481,6 +489,17 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
 
     const key = `${eventId}__${qr}`;
     const existing = map.get(key);
+    const existingStatusRank = statusRank(existing?.status);
+    const incomingStatusRank = statusRank(row?.status);
+
+    if (incomingStatusRank > existingStatusRank) {
+      map.set(key, row);
+      continue;
+    }
+
+    if (existingStatusRank > incomingStatusRank) {
+      continue;
+    }
 
     if (!existing) {
       map.set(key, row);
