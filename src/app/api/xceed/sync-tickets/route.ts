@@ -571,6 +571,7 @@ export async function GET(req: NextRequest) {
   const xceedEventRef = String(searchParams.get("eventId") || "").trim();
   const localEventIdFromQuery = String(searchParams.get("localEventId") || "").trim();
   const includeCancelledTickets = searchParams.get("includeCancelledTickets") || "true";
+  const debugQr = String(searchParams.get("qr") || "").trim();
 
   if (!xceedEventRef && !localEventIdFromQuery) {
     return NextResponse.json(
@@ -689,6 +690,8 @@ export async function GET(req: NextRequest) {
 
     const bookingIndex = buildBookingPassIndex(bookingsFetch.items);
 
+
+
     const ticketRows: XceedTicketRow[] = ticketsFetch.items
       .map((ticket) =>
         buildRowFromTicket({
@@ -701,6 +704,18 @@ export async function GET(req: NextRequest) {
         })
       )
       .filter((row): row is XceedTicketRow => !!row);
+
+const debugTicketApiMatch = debugQr
+  ? ticketsFetch.items.find((t) => String(t.qrCode || "").trim() === debugQr) || null
+  : null;
+
+const debugBookingMatch = debugQr
+  ? bookingIndex.get(debugQr) || null
+  : null;
+
+const debugBuiltRow = debugQr
+  ? ticketRows.find((r) => String(r.qr_code || "").trim() === debugQr) || null
+  : null;
 
     const existingQrs = new Set(ticketRows.map((r) => r.qr_code));
 
@@ -715,6 +730,9 @@ export async function GET(req: NextRequest) {
 
     const mergedRows = [...ticketRows, ...bookingOnlyRows];
     const rows = dedupeRowsByEventAndQr(mergedRows);
+    const debugDedupedRow = debugQr
+  ? rows.find((r) => String(r.qr_code || "").trim() === debugQr) || null
+  : null;
 
     if (rows.length === 0) {
       const { count: totalRowsAfterSync, error: countErr } = await supabase
@@ -763,7 +781,9 @@ export async function GET(req: NextRequest) {
       })
       .select("id, event_id, qr_code, status, full_name, email, booking_date, transaction_id, raw");
 
-
+const debugUpsertedRow = debugQr
+  ? (upsertedRows || []).find((r: any) => String(r.qr_code || "").trim() === debugQr) || null
+  : null;
 
     if (upsertError) {
       return NextResponse.json(
@@ -830,6 +850,59 @@ export async function GET(req: NextRequest) {
       total_rows_after_sync: Number(totalRowsAfterSync || 0),
       source: "tickets+bookings_merge",
       preview,
+debug_qr: debugQr || null,
+debug_trace: debugQr
+  ? {
+      api_ticket_match: debugTicketApiMatch
+        ? {
+            qrCode: debugTicketApiMatch.qrCode ?? null,
+            hasCheckedIn: debugTicketApiMatch.hasCheckedIn ?? null,
+            checkedInTime: debugTicketApiMatch.checkedInTime ?? null,
+            isActive: debugTicketApiMatch.isActive ?? null,
+            firstName: debugTicketApiMatch.firstName ?? null,
+            lastName: debugTicketApiMatch.lastName ?? null,
+            email: debugTicketApiMatch.email ?? null,
+          }
+        : null,
+      booking_pass_match: debugBookingMatch
+        ? {
+            passQr: debugBookingMatch.pass?.qrCode ?? null,
+            passCheckedIn: debugBookingMatch.pass?.hasCheckedIn ?? null,
+            passCheckedInTime: debugBookingMatch.pass?.checkedInTime ?? null,
+            buyerEmail: debugBookingMatch.booking?.buyer?.email ?? null,
+            bookingId: debugBookingMatch.booking?.id ?? null,
+          }
+        : null,
+      built_row: debugBuiltRow
+        ? {
+            qr_code: debugBuiltRow.qr_code,
+            status: debugBuiltRow.status,
+            full_name: debugBuiltRow.full_name,
+            email: debugBuiltRow.email,
+            source: debugBuiltRow.raw?.source ?? null,
+          }
+        : null,
+      deduped_row: debugDedupedRow
+        ? {
+            qr_code: debugDedupedRow.qr_code,
+            status: debugDedupedRow.status,
+            full_name: debugDedupedRow.full_name,
+            email: debugDedupedRow.email,
+            source: debugDedupedRow.raw?.source ?? null,
+          }
+        : null,
+      upserted_row: debugUpsertedRow
+        ? {
+            id: debugUpsertedRow.id,
+            qr_code: debugUpsertedRow.qr_code,
+            status: debugUpsertedRow.status,
+            full_name: debugUpsertedRow.full_name,
+            email: debugUpsertedRow.email,
+            source: debugUpsertedRow.raw?.source ?? null,
+          }
+        : null,
+    }
+  : null,
     });
   } catch (error) {
     return NextResponse.json(
