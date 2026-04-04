@@ -182,6 +182,7 @@ export default function DoorPage() {
   const [lastQr, setLastQr] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [scanActive, setScanActive] = useState(false);
   const [response, setResponse] = useState<DoorApiResponse | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
@@ -202,6 +203,26 @@ export default function DoorPage() {
 useEffect(() => {
   void loadDoorEvents();
 }, []);
+
+useEffect(() => {
+  if (!selectedEventId) return;
+
+  let interval: NodeJS.Timeout;
+
+  interval = setInterval(() => {
+    // pausa se tab non attiva
+    if (document.hidden) return;
+
+    // evita doppie chiamate
+    if (syncing) return;
+
+    void refreshDoorData();
+  }, 12000); // 12 sec
+
+  return () => {
+    if (interval) clearInterval(interval);
+  };
+}, [selectedEventId, syncing]);
 
 async function loadDoorEvents() {
   try {
@@ -367,6 +388,10 @@ async function loadDoorEvents() {
       );
     }
 
+    if (syncJson?.ok) {
+      setLastSyncAt(Date.now());
+    }
+
     if (lastQr) {
       await evaluateQr(lastQr, { silent: true });
     }
@@ -378,6 +403,11 @@ async function loadDoorEvents() {
     setSyncing(false);
   }
 }
+
+
+
+
+
 
   const bigTitle = response?.title || "DOOR CHECK";
   const bigMessage =

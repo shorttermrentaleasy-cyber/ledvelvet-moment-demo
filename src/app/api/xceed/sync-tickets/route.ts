@@ -548,6 +548,9 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
 }
 
 export async function GET(req: NextRequest) {
+console.log("=== DEBUG SUPABASE ===");
+console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
+console.log("SERVICE_ROLE:", process.env.SUPABASE_SERVICE_ROLE ? "OK" : "MISSING");
   const apiKey = process.env.XCEED_API_KEY;
   const baseUrl = process.env.XCEED_BASE_URL;
   const supabaseUrl = process.env.SUPABASE_URL;
