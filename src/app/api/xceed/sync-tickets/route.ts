@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { evaluateDoorXceedLive } from "@/lib/door/xceed-live-evaluate-core";
 
 type XceedTicket = {
   qrCode: string;
@@ -129,75 +130,8 @@ function buildDoorLiveKey(eventId: string, qrCode: string) {
   return `${eventId}__${qrCode}__checked_in`;
 }
 
-async function buildDoorLivePayload(params: {
-  req: NextRequest;
-  qrCode: string;
-}) {
-  const { req, qrCode } = params;
 
-  const explicitSiteUrl = String(process.env.NEXT_PUBLIC_SITE_URL || "").trim();
-  const vercelUrl = String(process.env.VERCEL_URL || "").trim();
-  const requestOrigin = String(req.nextUrl.origin || "").trim();
 
-  const baseUrl =
-    explicitSiteUrl ||
-    (vercelUrl ? `https://${vercelUrl}` : "") ||
-    requestOrigin;
-
-  if (!baseUrl) {
-    return {
-      ok: false,
-      _debug: "missing_base_url",
-    };
-  }
-
-  const url = `${baseUrl}/api/door/xceed-live-evaluate`;
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        qrCode,
-      }),
-      cache: "no-store",
-    });
-
-    const rawText = await res.text();
-
-    let json: any = null;
-    try {
-      json = JSON.parse(rawText);
-    } catch {
-      json = null;
-    }
-
-    if (!res.ok || !json) {
-      return {
-        ok: false,
-        _debug: {
-          step: "door_fetch_failed",
-          url,
-          status: res.status,
-          rawText: rawText.slice(0, 400),
-        },
-      };
-    }
-
-    return json;
-  } catch (error) {
-    return {
-      ok: false,
-      _debug: {
-        step: "door_fetch_exception",
-        url,
-        message: error instanceof Error ? error.message : "Unknown fetch error",
-      },
-    };
-  }
-}
 
 async function insertDoorLiveEvents(params: {
   supabase: any;
@@ -265,8 +199,8 @@ async function insertDoorLiveEvents(params: {
       continue;
     }
 
-    const payload = await buildDoorLivePayload({
-      req,
+    
+    const payload = await evaluateDoorXceedLive({
       qrCode,
     });
 
