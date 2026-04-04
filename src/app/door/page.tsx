@@ -5,6 +5,7 @@ import {
   BrowserMultiFormatReader,
   IScannerControls,
 } from "@zxing/browser";
+import QRCode from "react-qr-code";
 
 type DoorResult =
   | "ERROR"
@@ -206,8 +207,47 @@ export default function DoorPage() {
   const [scanActive, setScanActive] = useState(false);
   const [response, setResponse] = useState<DoorApiResponse | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   const theme = useMemo(() => getTheme(response?.result), [response?.result]);
+
+  const wallyActionUrl = useMemo(() => {
+    const value = response?.action === "OPEN_WALLY" ? response?.action_url?.trim() : "";
+    return value || "";
+  }, [response?.action, response?.action_url]);
+
+  const bookingSummary = useMemo(() => {
+    const booking = response?.booking;
+    if (!booking) return null;
+
+    const ticketCount = Number(booking.ticket_count || 0);
+    const checkedInCount = Number(booking.checked_in_count || 0);
+    const progressLabel = booking.progress_label || `${checkedInCount} / ${ticketCount}`;
+
+    return {
+      ticketCount,
+      checkedInCount,
+      progressLabel,
+      hasMultipleTickets: ticketCount > 1,
+    };
+  }, [response?.booking]);
+
+  const copyToClipboard = useCallback(async (value: string) => {
+    if (!value) return;
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyMessage("Link copiato");
+      window.setTimeout(() => {
+        setCopyMessage(null);
+      }, 2200);
+    } catch {
+      setCopyMessage("Copia non riuscita");
+      window.setTimeout(() => {
+        setCopyMessage(null);
+      }, 2200);
+    }
+  }, []);
 
   const loadDoorEvents = useCallback(async () => {
     try {
@@ -250,6 +290,7 @@ export default function DoorPage() {
         setLoading(true);
       }
       setUiError(null);
+      setCopyMessage(null);
 
       try {
         const res = await fetch("/api/door/xceed-live-evaluate", {
@@ -283,49 +324,47 @@ export default function DoorPage() {
     []
   );
 
+  const loadLatestCheckedInResult = useCallback(
+    async (eventId: string) => {
+      try {
+        const res = await fetch(
+          `/api/door/live-latest?eventId=${encodeURIComponent(eventId)}&gateId=default`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        );
 
-const loadLatestCheckedInResult = useCallback(
-  async (eventId: string) => {
-    try {
-      const res = await fetch(
-        `/api/door/live-latest?eventId=${encodeURIComponent(eventId)}&gateId=default`,
-        {
-          method: "GET",
-          cache: "no-store",
+        const json = (await res.json()) as {
+          ok: boolean;
+          item?: DoorLiveEventRow | null;
+        };
+
+        if (!res.ok || !json?.ok || !json?.item) return;
+
+        const item = json.item;
+        const nextKey = item.live_key || "";
+
+        if (!nextKey) return;
+        if (nextKey === lastLiveTicketKey) return;
+
+        const payload = item.payload_json;
+        if (!payload) return;
+
+        setResponse(payload);
+        setLastLiveTicketKey(nextKey);
+        setCopyMessage(null);
+
+        if (item.ticket_qr_code) {
+          setLastQr(item.ticket_qr_code);
+          setManualQr(item.ticket_qr_code);
         }
-      );
-
-      const json = (await res.json()) as {
-        ok: boolean;
-        item?: DoorLiveEventRow | null;
-      };
-
-      if (!res.ok || !json?.ok || !json?.item) return;
-
-      const item = json.item;
-      const nextKey = item.live_key || "";
-
-      if (!nextKey) return;
-      if (nextKey === lastLiveTicketKey) return;
-
-      const payload = item.payload_json;
-      if (!payload) return;
-
-      setResponse(payload);
-      setLastLiveTicketKey(nextKey);
-
-      if (item.ticket_qr_code) {
-        setLastQr(item.ticket_qr_code);
-        setManualQr(item.ticket_qr_code);
+      } catch (error) {
+        console.error("Errore loadLatestCheckedInResult", error);
       }
-    } catch (error) {
-      console.error("Errore loadLatestCheckedInResult", error);
-    }
-  },
-  [lastLiveTicketKey]
-);
-
-
+    },
+    [lastLiveTicketKey]
+  );
 
   const refreshDoorData = useCallback(async () => {
     try {
@@ -421,6 +460,7 @@ const loadLatestCheckedInResult = useCallback(
       setScanActive(false);
     }
   }
+
   function stopScanner() {
     controlsRef.current?.stop();
     setScanActive(false);
@@ -432,6 +472,7 @@ const loadLatestCheckedInResult = useCallback(
     setLastLiveTicketKey("");
     setResponse(null);
     setUiError(null);
+    setCopyMessage(null);
     stopScanner();
   }
 
@@ -631,6 +672,35 @@ const loadLatestCheckedInResult = useCallback(
                 ) : null}
               </div>
 
+              {bookingSummary ? (
+                <div className="mb-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                    <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+                      Booking
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold text-white md:text-3xl">
+                      {bookingSummary.ticketCount}{" "}
+                      {bookingSummary.ticketCount === 1 ? "biglietto" : "biglietti"}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-300">
+                      Acquisto collegato al ticket letto
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                    <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+                      Progress ingresso
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold text-white md:text-3xl">
+                      {bookingSummary.progressLabel}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-300">
+                      Entrati: {bookingSummary.checkedInCount} su {bookingSummary.ticketCount}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {response?.result === "OK_PRIORITY" ||
               response?.member?.door_role === "loyalty" ? (
                 <div className="mb-4 rounded-2xl border border-yellow-300/40 bg-yellow-300/15 px-4 py-3 text-center">
@@ -668,13 +738,63 @@ const loadLatestCheckedInResult = useCallback(
                 </div>
               ) : null}
 
-              {response?.action === "OPEN_WALLY" ? (
-                <a
-                  href={response.action_url || "/wally"}
-                  className="mt-6 inline-flex rounded-2xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-semibold transition hover:bg-white/15"
-                >
-                  Apri Wally
-                </a>
+              {wallyActionUrl ? (
+                <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
+                  <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+                    Accesso Wally
+                  </div>
+
+                  <div className="mt-3 grid gap-5 lg:grid-cols-[220px_1fr]">
+                    <div className="flex items-center justify-center rounded-3xl border border-white/10 bg-white p-4">
+                      <QRCode
+                        value={wallyActionUrl}
+                        size={180}
+                        bgColor="#FFFFFF"
+                        fgColor="#000000"
+                      />
+                    </div>
+
+                    <div className="flex flex-col justify-between">
+                      <div>
+                        <div className="text-lg font-semibold text-white">
+                          Apri tessera dal telefono
+                        </div>
+                        <div className="mt-2 text-sm text-slate-300">
+                          Scansiona il QR oppure apri il link diretto. Utile anche per invio rapido via WhatsApp.
+                        </div>
+
+                        <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-slate-300 break-all">
+                          {wallyActionUrl}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <a
+                          href={wallyActionUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex rounded-2xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-semibold transition hover:bg-white/15"
+                        >
+                          Apri Wally
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => void copyToClipboard(wallyActionUrl)}
+                          className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold transition hover:bg-white/10"
+                        >
+                          Copia link
+                        </button>
+                      </div>
+
+                      {copyMessage ? (
+                        <div className="mt-3 text-sm text-slate-300">
+                          {copyMessage}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
               ) : null}
             </div>
 
