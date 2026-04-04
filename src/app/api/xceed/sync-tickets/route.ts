@@ -116,6 +116,213 @@ type BookingPassIndexItem = {
   pass: XceedBookingPass;
 };
 
+type DoorLiveInsertRow = {
+  event_id: string;
+  gate_id: string;
+  live_key: string;
+  ticket_id: string | null;
+  ticket_qr_code: string | null;
+  payload_json: any;
+};
+
+function buildDoorLiveKey(eventId: string, qrCode: string) {
+  return `${eventId}__${qrCode}__checked_in`;
+}
+
+async function buildDoorLivePayload(params: {
+  req: NextRequest;
+  qrCode: string;
+}) {
+  const { req, qrCode } = params;
+
+  const explicitSiteUrl = String(process.env.NEXT_PUBLIC_SITE_URL || "").trim();
+  const vercelUrl = String(process.env.VERCEL_URL || "").trim();
+  const requestOrigin = String(req.nextUrl.origin || "").trim();
+
+  const baseUrl =
+    explicitSiteUrl ||
+    (vercelUrl ? `https://${vercelUrl}` : "") ||
+    requestOrigin;
+
+  if (!baseUrl) {
+    return {
+      ok: false,
+      _debug: "missing_base_url",
+    };
+  }
+
+  const url = `${baseUrl}/api/door/xceed-live-evaluate`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        qrCode,
+      }),
+      cache: "no-store",
+    });
+
+    const rawText = await res.text();
+
+    let json: any = null;
+    try {
+      json = JSON.parse(rawText);
+    } catch {
+      json = null;
+    }
+
+    if (!res.ok || !json) {
+      return {
+        ok: false,
+        _debug: {
+          step: "door_fetch_failed",
+          url,
+          status: res.status,
+          rawText: rawText.slice(0, 400),
+        },
+      };
+    }
+
+    return json;
+  } catch (error) {
+    return {
+      ok: false,
+      _debug: {
+        step: "door_fetch_exception",
+        url,
+        message: error instanceof Error ? error.message : "Unknown fetch error",
+      },
+    };
+  }
+}
+
+async function insertDoorLiveEvents(params: {
+  supabase: any;
+  req: NextRequest;
+  rows: any[];
+}) {
+  const { supabase, req, rows } = params;
+
+  let liveEventsWritten = 0;
+  let liveEventsCandidates = 0;
+
+  const liveEventsDebug: Array<{
+    qr_code: string | null;
+    event_id: string | null;
+    live_key: string | null;
+    step: "already_exists" | "payload_failed" | "insert_failed" | "insert_ok";
+    details?: string | null;
+  }> = [];
+
+  for (const row of rows) {
+    const eventId = String(row?.event_id || "").trim();
+    const qrCode = String(row?.qr_code || "").trim();
+    const status = String(row?.status || "").trim().toLowerCase();
+
+    if (!eventId || !qrCode) continue;
+    if (status !== "checked_in") continue;
+
+    liveEventsCandidates += 1;
+
+    const liveKey = buildDoorLiveKey(eventId, qrCode);
+
+    const { data: existingLive, error: existingLiveError } = await supabase
+      .from("door_live_events")
+      .select("id")
+      .eq("event_id", eventId)
+      .eq("gate_id", "default")
+      .eq("live_key", liveKey)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingLiveError) {
+      liveEventsDebug.push({
+        qr_code: qrCode,
+        event_id: eventId,
+        live_key: liveKey,
+        step: "insert_failed",
+        details: `existing lookup failed: ${existingLiveError.message}`,
+      });
+      continue;
+    }
+
+    const existingLiveId =
+      existingLive && typeof existingLive === "object" && "id" in existingLive
+        ? String((existingLive as { id: string }).id)
+        : null;
+
+    if (existingLiveId) {
+      liveEventsDebug.push({
+        qr_code: qrCode,
+        event_id: eventId,
+        live_key: liveKey,
+        step: "already_exists",
+        details: existingLiveId,
+      });
+      continue;
+    }
+
+    const payload = await buildDoorLivePayload({
+      req,
+      qrCode,
+    });
+
+    if (!payload?.ok) {
+      liveEventsDebug.push({
+        qr_code: qrCode,
+        event_id: eventId,
+        live_key: liveKey,
+        step: "payload_failed",
+        details: payload ? JSON.stringify(payload).slice(0, 400) : "null payload",
+      });
+      continue;
+    }
+
+    const insertRow: DoorLiveInsertRow = {
+      event_id: eventId,
+      gate_id: "default",
+      live_key: liveKey,
+      ticket_id: row?.id ? String(row.id) : null,
+      ticket_qr_code: qrCode,
+      payload_json: payload,
+    };
+
+    const { error: liveInsertError } = await (supabase as any)
+      .from("door_live_events")
+      .insert([insertRow]);
+
+    if (liveInsertError) {
+      liveEventsDebug.push({
+        qr_code: qrCode,
+        event_id: eventId,
+        live_key: liveKey,
+        step: "insert_failed",
+        details: liveInsertError.message,
+      });
+      continue;
+    }
+
+    liveEventsWritten += 1;
+
+    liveEventsDebug.push({
+      qr_code: qrCode,
+      event_id: eventId,
+      live_key: liveKey,
+      step: "insert_ok",
+      details: null,
+    });
+  }
+
+  return {
+    liveEventsWritten,
+    liveEventsCandidates,
+    liveEventsDebug: liveEventsDebug.slice(0, 20),
+  };
+}
+
 function normalizeEmail(email: string | null | undefined) {
   const e = String(email ?? "").trim().toLowerCase();
   if (!e || !e.includes("@") || !e.includes(".")) return null;
@@ -314,7 +521,6 @@ function buildBookingPassIndex(bookings: XceedBooking[]) {
 
   return byQr;
 }
-
 function buildRowFromTicket(params: {
   localEventId: string;
   xceedEventRef: string;
@@ -331,16 +537,24 @@ function buildRowFromTicket(params: {
   const matchedBooking = bookingPassMatch?.booking ?? null;
   const matchedPass = bookingPassMatch?.pass ?? null;
 
-  const email = normalizeEmail(ticket.email ?? matchedPass?.email ?? matchedBooking?.buyer?.email ?? null);
-  const phone = normalizePhone(ticket.phone ?? matchedPass?.phone ?? matchedBooking?.buyer?.phone ?? null);
+  const email = normalizeEmail(
+    ticket.email ?? matchedPass?.email ?? matchedBooking?.buyer?.email ?? null
+  );
+  const phone = normalizePhone(
+    ticket.phone ?? matchedPass?.phone ?? matchedBooking?.buyer?.phone ?? null
+  );
 
   const fullName =
     buildFullName(ticket.firstName, ticket.lastName) ||
     buildFullName(matchedPass?.firstName, matchedPass?.lastName) ||
     buildFullName(matchedBooking?.buyer?.firstName, matchedBooking?.buyer?.lastName);
 
-  const buyerEmail = normalizeEmail(matchedBooking?.buyer?.email ?? ticket.email ?? matchedPass?.email ?? null);
-  const buyerPhone = normalizePhone(matchedBooking?.buyer?.phone ?? ticket.phone ?? matchedPass?.phone ?? null);
+  const buyerEmail = normalizeEmail(
+    matchedBooking?.buyer?.email ?? ticket.email ?? matchedPass?.email ?? null
+  );
+  const buyerPhone = normalizePhone(
+    matchedBooking?.buyer?.phone ?? ticket.phone ?? matchedPass?.phone ?? null
+  );
 
   const resolvedOfferType = normalizeOfferType(
     pickFirstNonEmpty(matchedBooking?.offer?.type ?? null, ticket.offer?.type ?? null)
@@ -523,7 +737,10 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
       continue;
     }
 
-    if (incomingSource === "tickets+bookings_merge" && existingSource !== "tickets+bookings_merge") {
+    if (
+      incomingSource === "tickets+bookings_merge" &&
+      existingSource !== "tickets+bookings_merge"
+    ) {
       map.set(key, row);
       continue;
     }
@@ -546,11 +763,14 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
 
   return Array.from(map.values());
 }
-
 export async function GET(req: NextRequest) {
-console.log("=== DEBUG SUPABASE ===");
-console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
-console.log("SERVICE_ROLE:", process.env.SUPABASE_SERVICE_ROLE ? "OK" : "MISSING");
+  console.log("=== DEBUG SUPABASE ===");
+  console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
+  console.log(
+    "SERVICE_ROLE:",
+    process.env.SUPABASE_SERVICE_ROLE ? "OK" : "MISSING"
+  );
+
   const apiKey = process.env.XCEED_API_KEY;
   const baseUrl = process.env.XCEED_BASE_URL;
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -572,8 +792,11 @@ console.log("SERVICE_ROLE:", process.env.SUPABASE_SERVICE_ROLE ? "OK" : "MISSING
 
   const { searchParams } = new URL(req.url);
   const xceedEventRef = String(searchParams.get("eventId") || "").trim();
-  const localEventIdFromQuery = String(searchParams.get("localEventId") || "").trim();
-  const includeCancelledTickets = searchParams.get("includeCancelledTickets") || "true";
+  const localEventIdFromQuery = String(
+    searchParams.get("localEventId") || ""
+  ).trim();
+  const includeCancelledTickets =
+    searchParams.get("includeCancelledTickets") || "true";
   const debugQr = String(searchParams.get("qr") || "").trim();
 
   if (!xceedEventRef && !localEventIdFromQuery) {
@@ -648,19 +871,32 @@ console.log("SERVICE_ROLE:", process.env.SUPABASE_SERVICE_ROLE ? "OK" : "MISSING
     }
 
     const localEventId = String(eventRow.id);
-    const xceedEventUuid = String((eventRow as any).xceed_event_uuid || "").trim() || null;
+    const xceedEventUuid =
+      String((eventRow as any).xceed_event_uuid || "").trim() || null;
     const resolvedXceedEventRef =
-      String((eventRow as any).xceed_event_ref || "").trim() || xceedEventRef || "";
+      String((eventRow as any).xceed_event_ref || "").trim() ||
+      xceedEventRef ||
+      "";
     const xceedTicketsEventId =
-      xceedEventUuid ||
-      resolvedXceedEventRef ||
-      xceedEventRef;
+      xceedEventUuid || resolvedXceedEventRef || xceedEventRef;
 
     const nowIso = new Date().toISOString();
 
     const [ticketsFetch, bookingsFetch] = await Promise.all([
-      fetchAllTicketPages(baseUrl, apiKey, xceedTicketsEventId, includeCancelledTickets, 100),
-      fetchAllBookingPages(baseUrl, apiKey, xceedTicketsEventId, includeCancelledTickets, 100),
+      fetchAllTicketPages(
+        baseUrl,
+        apiKey,
+        xceedTicketsEventId,
+        includeCancelledTickets,
+        100
+      ),
+      fetchAllBookingPages(
+        baseUrl,
+        apiKey,
+        xceedTicketsEventId,
+        includeCancelledTickets,
+        100
+      ),
     ]);
 
     if (!ticketsFetch.ok) {
@@ -693,8 +929,6 @@ console.log("SERVICE_ROLE:", process.env.SUPABASE_SERVICE_ROLE ? "OK" : "MISSING
 
     const bookingIndex = buildBookingPassIndex(bookingsFetch.items);
 
-
-
     const ticketRows: XceedTicketRow[] = ticketsFetch.items
       .map((ticket) =>
         buildRowFromTicket({
@@ -703,22 +937,25 @@ console.log("SERVICE_ROLE:", process.env.SUPABASE_SERVICE_ROLE ? "OK" : "MISSING
           xceedEventUuid,
           nowIso,
           ticket,
-          bookingPassMatch: bookingIndex.get(String(ticket.qrCode ?? "").trim()) || null,
+          bookingPassMatch:
+            bookingIndex.get(String(ticket.qrCode ?? "").trim()) || null,
         })
       )
       .filter((row): row is XceedTicketRow => !!row);
 
-const debugTicketApiMatch = debugQr
-  ? ticketsFetch.items.find((t) => String(t.qrCode || "").trim() === debugQr) || null
-  : null;
+    const debugTicketApiMatch = debugQr
+      ? ticketsFetch.items.find(
+          (t) => String(t.qrCode || "").trim() === debugQr
+        ) || null
+      : null;
 
-const debugBookingMatch = debugQr
-  ? bookingIndex.get(debugQr) || null
-  : null;
+    const debugBookingMatch = debugQr
+      ? bookingIndex.get(debugQr) || null
+      : null;
 
-const debugBuiltRow = debugQr
-  ? ticketRows.find((r) => String(r.qr_code || "").trim() === debugQr) || null
-  : null;
+    const debugBuiltRow = debugQr
+      ? ticketRows.find((r) => String(r.qr_code || "").trim() === debugQr) || null
+      : null;
 
     const existingQrs = new Set(ticketRows.map((r) => r.qr_code));
 
@@ -733,9 +970,10 @@ const debugBuiltRow = debugQr
 
     const mergedRows = [...ticketRows, ...bookingOnlyRows];
     const rows = dedupeRowsByEventAndQr(mergedRows);
+
     const debugDedupedRow = debugQr
-  ? rows.find((r) => String(r.qr_code || "").trim() === debugQr) || null
-  : null;
+      ? rows.find((r) => String(r.qr_code || "").trim() === debugQr) || null
+      : null;
 
     if (rows.length === 0) {
       const { count: totalRowsAfterSync, error: countErr } = await supabase
@@ -770,6 +1008,9 @@ const debugBuiltRow = debugQr
         deduped_rows: 0,
         duplicates_removed: mergedRows.length,
         upserted: 0,
+        live_events_candidates: 0,
+        live_events_written: 0,
+        live_events_debug: [],
         total_rows_after_sync: Number(totalRowsAfterSync || 0),
         source: "tickets+bookings_merge",
         message: "No tickets returned by Xceed",
@@ -784,9 +1025,11 @@ const debugBuiltRow = debugQr
       })
       .select("id, event_id, qr_code, status, full_name, email, booking_date, transaction_id, raw");
 
-const debugUpsertedRow = debugQr
-  ? (upsertedRows || []).find((r: any) => String(r.qr_code || "").trim() === debugQr) || null
-  : null;
+    const debugUpsertedRow = debugQr
+      ? (upsertedRows || []).find(
+          (r: any) => String(r.qr_code || "").trim() === debugQr
+        ) || null
+      : null;
 
     if (upsertError) {
       return NextResponse.json(
@@ -802,6 +1045,16 @@ const debugUpsertedRow = debugQr
         { status: 500 }
       );
     }
+
+    const {
+      liveEventsWritten,
+      liveEventsCandidates,
+      liveEventsDebug,
+    } = await insertDoorLiveEvents({
+      supabase,
+      req,
+      rows: upsertedRows || [],
+    });
 
     const { count: totalRowsAfterSync, error: countErr } = await supabase
       .from("xceed_tickets")
@@ -850,62 +1103,65 @@ const debugUpsertedRow = debugQr
       deduped_rows: rows.length,
       duplicates_removed: mergedRows.length - rows.length,
       upserted: upsertedRows?.length ?? 0,
+      live_events_candidates: liveEventsCandidates,
+      live_events_written: liveEventsWritten,
+      live_events_debug: liveEventsDebug,
       total_rows_after_sync: Number(totalRowsAfterSync || 0),
       source: "tickets+bookings_merge",
       preview,
-debug_qr: debugQr || null,
-debug_trace: debugQr
-  ? {
-      api_ticket_match: debugTicketApiMatch
+      debug_qr: debugQr || null,
+      debug_trace: debugQr
         ? {
-            qrCode: debugTicketApiMatch.qrCode ?? null,
-            hasCheckedIn: debugTicketApiMatch.hasCheckedIn ?? null,
-            checkedInTime: debugTicketApiMatch.checkedInTime ?? null,
-            isActive: debugTicketApiMatch.isActive ?? null,
-            firstName: debugTicketApiMatch.firstName ?? null,
-            lastName: debugTicketApiMatch.lastName ?? null,
-            email: debugTicketApiMatch.email ?? null,
+            api_ticket_match: debugTicketApiMatch
+              ? {
+                  qrCode: debugTicketApiMatch.qrCode ?? null,
+                  hasCheckedIn: debugTicketApiMatch.hasCheckedIn ?? null,
+                  checkedInTime: debugTicketApiMatch.checkedInTime ?? null,
+                  isActive: debugTicketApiMatch.isActive ?? null,
+                  firstName: debugTicketApiMatch.firstName ?? null,
+                  lastName: debugTicketApiMatch.lastName ?? null,
+                  email: debugTicketApiMatch.email ?? null,
+                }
+              : null,
+            booking_pass_match: debugBookingMatch
+              ? {
+                  passQr: debugBookingMatch.pass?.qrCode ?? null,
+                  passCheckedIn: debugBookingMatch.pass?.hasCheckedIn ?? null,
+                  passCheckedInTime: debugBookingMatch.pass?.checkedInTime ?? null,
+                  buyerEmail: debugBookingMatch.booking?.buyer?.email ?? null,
+                  bookingId: debugBookingMatch.booking?.id ?? null,
+                }
+              : null,
+            built_row: debugBuiltRow
+              ? {
+                  qr_code: debugBuiltRow.qr_code,
+                  status: debugBuiltRow.status,
+                  full_name: debugBuiltRow.full_name,
+                  email: debugBuiltRow.email,
+                  source: debugBuiltRow.raw?.source ?? null,
+                }
+              : null,
+            deduped_row: debugDedupedRow
+              ? {
+                  qr_code: debugDedupedRow.qr_code,
+                  status: debugDedupedRow.status,
+                  full_name: debugDedupedRow.full_name,
+                  email: debugDedupedRow.email,
+                  source: debugDedupedRow.raw?.source ?? null,
+                }
+              : null,
+            upserted_row: debugUpsertedRow
+              ? {
+                  id: debugUpsertedRow.id,
+                  qr_code: debugUpsertedRow.qr_code,
+                  status: debugUpsertedRow.status,
+                  full_name: debugUpsertedRow.full_name,
+                  email: debugUpsertedRow.email,
+                  source: debugUpsertedRow.raw?.source ?? null,
+                }
+              : null,
           }
         : null,
-      booking_pass_match: debugBookingMatch
-        ? {
-            passQr: debugBookingMatch.pass?.qrCode ?? null,
-            passCheckedIn: debugBookingMatch.pass?.hasCheckedIn ?? null,
-            passCheckedInTime: debugBookingMatch.pass?.checkedInTime ?? null,
-            buyerEmail: debugBookingMatch.booking?.buyer?.email ?? null,
-            bookingId: debugBookingMatch.booking?.id ?? null,
-          }
-        : null,
-      built_row: debugBuiltRow
-        ? {
-            qr_code: debugBuiltRow.qr_code,
-            status: debugBuiltRow.status,
-            full_name: debugBuiltRow.full_name,
-            email: debugBuiltRow.email,
-            source: debugBuiltRow.raw?.source ?? null,
-          }
-        : null,
-      deduped_row: debugDedupedRow
-        ? {
-            qr_code: debugDedupedRow.qr_code,
-            status: debugDedupedRow.status,
-            full_name: debugDedupedRow.full_name,
-            email: debugDedupedRow.email,
-            source: debugDedupedRow.raw?.source ?? null,
-          }
-        : null,
-      upserted_row: debugUpsertedRow
-        ? {
-            id: debugUpsertedRow.id,
-            qr_code: debugUpsertedRow.qr_code,
-            status: debugUpsertedRow.status,
-            full_name: debugUpsertedRow.full_name,
-            email: debugUpsertedRow.email,
-            source: debugUpsertedRow.raw?.source ?? null,
-          }
-        : null,
-    }
-  : null,
     });
   } catch (error) {
     return NextResponse.json(

@@ -15,6 +15,17 @@ type DoorResult =
   | "OK_PRIORITY"
   | "OK_PRIVILEGED";
 
+type DoorLiveEventRow = {
+  id: string;
+  event_id: string;
+  gate_id: string;
+  live_key: string;
+  ticket_id: string | null;
+  ticket_qr_code: string | null;
+  payload_json: DoorApiResponse | null;
+  created_at: string;
+};
+
 type DoorApiResponse = {
   ok: boolean;
   result: DoorResult;
@@ -272,49 +283,49 @@ export default function DoorPage() {
     []
   );
 
-  const loadLatestCheckedInResult = useCallback(
-    async (eventId: string) => {
-      try {
-        const res = await fetch("/api/door/xceed-live-evaluate", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            eventId,
-            latestCheckedIn: true,
-          }),
-        });
 
-        const json = (await res.json()) as DoorApiResponse & {
-          live_key?: string | null;
-        };
-
-        if (!res.ok || !json?.ok) return;
-
-        const nextKey =
-          json.live_key ||
-          json.ticket?.id ||
-          json.ticket?.transaction_id ||
-          json.ticket?.qr_code ||
-          "";
-
-        if (!nextKey) return;
-        if (nextKey === lastLiveTicketKey) return;
-
-        setResponse(json);
-        setLastLiveTicketKey(nextKey);
-
-        if (json.ticket?.qr_code) {
-          setLastQr(json.ticket.qr_code);
-          setManualQr(json.ticket.qr_code);
+const loadLatestCheckedInResult = useCallback(
+  async (eventId: string) => {
+    try {
+      const res = await fetch(
+        `/api/door/live-latest?eventId=${encodeURIComponent(eventId)}&gateId=default`,
+        {
+          method: "GET",
+          cache: "no-store",
         }
-      } catch (error) {
-        console.error("Errore loadLatestCheckedInResult", error);
+      );
+
+      const json = (await res.json()) as {
+        ok: boolean;
+        item?: DoorLiveEventRow | null;
+      };
+
+      if (!res.ok || !json?.ok || !json?.item) return;
+
+      const item = json.item;
+      const nextKey = item.live_key || "";
+
+      if (!nextKey) return;
+      if (nextKey === lastLiveTicketKey) return;
+
+      const payload = item.payload_json;
+      if (!payload) return;
+
+      setResponse(payload);
+      setLastLiveTicketKey(nextKey);
+
+      if (item.ticket_qr_code) {
+        setLastQr(item.ticket_qr_code);
+        setManualQr(item.ticket_qr_code);
       }
-    },
-    [lastLiveTicketKey]
-  );
+    } catch (error) {
+      console.error("Errore loadLatestCheckedInResult", error);
+    }
+  },
+  [lastLiveTicketKey]
+);
+
+
 
   const refreshDoorData = useCallback(async () => {
     try {

@@ -426,20 +426,48 @@ async function findMemberByName(
   );
 }
 
-async function getBookingStats(ticket: LocalXceedTicket): Promise<BookingStats | null> {
+async function getBookingStats(ticket: LocalXceedTicket): Promise<{
+  booking_id: string | null;
+  ticket_count: number;
+  checked_in_count: number;
+  progress_label: string;
+} | null> {
   const bookingId = getBookingIdFromRaw(ticket.raw);
-  if (!bookingId) return null;
+  const transactionId = ticket.transaction_id ? String(ticket.transaction_id) : null;
+  const eventId = ticket.event_id ? String(ticket.event_id) : null;
+
+  if (!bookingId && !transactionId) return null;
+  if (!eventId) return null;
 
   const { data, error } = await supabase
     .from("xceed_tickets")
-    .select("status, raw")
-    .or(
-      `raw->ticket->booking->bookingUuid.eq.${bookingId},raw->booking->bookingUuid.eq.${bookingId},raw->booking->id.eq.${bookingId}`
-    );
+    .select("status, raw, transaction_id, event_id")
+    .eq("event_id", eventId)
+    .limit(500);
 
   if (error) throw error;
 
-  const rows = data || [];
+  const rows = (data || []).filter((row: any) => {
+    const rowBookingId =
+      row?.raw?.ticket?.booking?.bookingUuid ??
+      row?.raw?.booking?.id ??
+      row?.raw?.booking?.bookingUuid ??
+      null;
+
+    const rowTransactionId =
+      row?.transaction_id != null ? String(row.transaction_id) : null;
+
+    if (bookingId && rowBookingId && String(rowBookingId) === String(bookingId)) {
+      return true;
+    }
+
+    if (transactionId && rowTransactionId && rowTransactionId === transactionId) {
+      return true;
+    }
+
+    return false;
+  });
+
   const ticketCount = rows.length;
 
   const checkedInCount = rows.filter((row: any) => {
@@ -448,18 +476,19 @@ async function getBookingStats(ticket: LocalXceedTicket): Promise<BookingStats |
 
     return Boolean(
       row?.raw?.pass?.hasCheckedIn ||
-        row?.raw?.ticket?.hasCheckedIn ||
-        row?.raw?.hasCheckedIn
+      row?.raw?.ticket?.hasCheckedIn ||
+      row?.raw?.hasCheckedIn
     );
   }).length;
 
   return {
-    booking_id: bookingId,
+    booking_id: bookingId || transactionId || null,
     ticket_count: ticketCount,
     checked_in_count: checkedInCount,
     progress_label: `${checkedInCount} / ${ticketCount}`,
   };
 }
+
 
 async function matchMemberFromLocalTicket(ticket: LocalXceedTicket): Promise<{
   member: MemberRow | null;
@@ -865,13 +894,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(attachBooking(payload, bookingStats), {
       status: 200,
     });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Errore interno sconosciuto";
+  
+} catch (error: any) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+      ? error
+      : JSON.stringify(error, null, 2);
 
-    return NextResponse.json(
-      buildErrorResponse("Errore interno", message),
-      { status: 500 }
-    );
-  }
+  console.error("DOOR XCEED LIVE EVALUATE ERROR", {
+    error,
+    message,
+  });
+
+  return NextResponse.json(
+    buildErrorResponse("Errore interno", message),
+    { status: 500 }
+  );
+}
+
+
 }
