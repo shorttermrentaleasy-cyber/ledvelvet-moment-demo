@@ -177,7 +177,7 @@ export default function DoorPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [loadingEvents, setLoadingEvents] = useState(false);
-
+  const [lastLiveTicketKey, setLastLiveTicketKey] = useState<string>("");
   const [manualQr, setManualQr] = useState("");
   const [lastQr, setLastQr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -294,6 +294,48 @@ async function loadDoorEvents() {
     }
   }
 
+async function loadLatestCheckedInResult(eventId: string) {
+  try {
+    const res = await fetch("/api/door/xceed-live-evaluate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        eventId,
+        latestCheckedIn: true,
+      }),
+    });
+
+    const json = (await res.json()) as DoorApiResponse & {
+      live_key?: string | null;
+      no_change?: boolean;
+    };
+
+    if (!res.ok || !json?.ok) return;
+
+    const nextKey =
+      json.live_key ||
+      json.ticket?.id ||
+      json.ticket?.transaction_id ||
+      json.ticket?.qr_code ||
+      "";
+
+    if (!nextKey) return;
+    if (nextKey === lastLiveTicketKey) return;
+
+    setResponse(json);
+    setLastLiveTicketKey(nextKey);
+
+    if (json.ticket?.qr_code) {
+      setLastQr(json.ticket.qr_code);
+      setManualQr(json.ticket.qr_code);
+    }
+  } catch (error) {
+    console.error("Errore loadLatestCheckedInResult", error);
+  }
+}
+
   async function startScanner() {
     if (!videoRef.current) return;
 
@@ -354,13 +396,16 @@ async function loadDoorEvents() {
   function resetAll() {
     setManualQr("");
     setLastQr("");
+    setLastLiveTicketKey("");
     setResponse(null);
     setUiError(null);
     stopScanner();
   }
 
- async function refreshDoorData() {
+async function refreshDoorData() {
   try {
+    if (syncing) return;
+
     setSyncing(true);
     setUiError(null);
 
@@ -392,9 +437,13 @@ async function loadDoorEvents() {
       setLastSyncAt(Date.now());
     }
 
+    // 1) se hai appena verificato un QR manuale / scanner test, rivaluta quello
     if (lastQr) {
       await evaluateQr(lastQr, { silent: true });
     }
+
+    // 2) in ogni caso prova a caricare l’ultimo checked_in arrivato da Xceed
+    await loadLatestCheckedInResult(localEventId);
   } catch (error) {
     const msg =
       error instanceof Error ? error.message : "Errore refresh dati";
@@ -403,7 +452,6 @@ async function loadDoorEvents() {
     setSyncing(false);
   }
 }
-
 
 
 

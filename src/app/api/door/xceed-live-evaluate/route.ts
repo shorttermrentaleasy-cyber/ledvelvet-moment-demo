@@ -107,6 +107,7 @@ type ApiResponse = {
     source?: "xceed_tickets" | "xceed_raw";
   };
   error?: string;
+  live_key?: string | null;
 };
 
 function normalizeText(value?: string | null) {
@@ -145,7 +146,6 @@ function splitFullName(value?: string | null) {
     return { firstName: parts[0], lastName: parts[1] };
   }
 
-  // 🔥 caso tipo "test 2 test 2"
   const half = Math.floor(parts.length / 2);
 
   return {
@@ -153,7 +153,6 @@ function splitFullName(value?: string | null) {
     lastName: parts.slice(half).join(" "),
   };
 }
-
 
 function getDoorRole(member: MemberRow): DoorRole {
   const group = normalizeText(member.membership_group);
@@ -218,10 +217,6 @@ function isAlreadyCheckedInFromLocalTicket(ticket: LocalXceedTicket): boolean {
   return isAlreadyCheckedInFromRaw(ticket.raw);
 }
 
-/* ============================================================
- * 1) LOOKUP TICKET LOCALE - SORGENTE PRIMARIA PORTA
- * ============================================================
- */
 async function fetchLocalXceedTicketByQr(
   qrCode: string
 ): Promise<LocalXceedTicket | null> {
@@ -238,10 +233,24 @@ async function fetchLocalXceedTicketByQr(
   return data || null;
 }
 
-/* ============================================================
- * 2) FALLBACK TEST DA RAW XCEED
- * ============================================================
- */
+async function fetchLatestCheckedInTicketByEventId(
+  eventId: string
+): Promise<LocalXceedTicket | null> {
+  const { data, error } = await supabase
+    .from("xceed_tickets")
+    .select(
+      "id, event_id, qr_code, status, full_name, email, phone, buyer_email, transaction_id, raw"
+    )
+    .eq("event_id", eventId)
+    .eq("status", "checked_in")
+    .order("imported_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
 async function buildLocalTicketFromRaw(raw: any): Promise<LocalXceedTicket | null> {
   if (!raw || typeof raw !== "object") return null;
 
@@ -295,12 +304,6 @@ async function buildLocalTicketFromRaw(raw: any): Promise<LocalXceedTicket | nul
   };
 }
 
-/* ============================================================
- * 3) LOOKUP EVENTO
- * - prima da id locale
- * - fallback da xceed_event_uuid / ref se arrivi da raw
- * ============================================================
- */
 async function fetchEventPolicyByLocalEventId(
   eventId?: string | null
 ): Promise<EventPolicy | null> {
@@ -408,15 +411,6 @@ async function findMemberByName(
   );
 }
 
-/* ============================================================
- * 4) MATCH SOCIO
- * ordine:
- * 1. email ticket
- * 2. phone ticket
- * 3. nome+cognome da full_name
- * buyer_email non si usa per il match socio
- * ============================================================
- */
 async function matchMemberFromLocalTicket(ticket: LocalXceedTicket): Promise<{
   member: MemberRow | null;
   matchedBy: "email" | "phone" | "name" | null;
@@ -492,6 +486,7 @@ function buildErrorResponse(
     member: null,
     ticket: null,
     event: mapEventForResponse(event || null),
+    live_key: null,
   };
 }
 
@@ -525,6 +520,7 @@ function buildDenyWallyResponse(
       matched_by: matchedBy,
       source,
     },
+    live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
   };
 }
 
@@ -557,6 +553,7 @@ function buildDenyRenewalResponse(
       matched_by: matchedBy,
       source,
     },
+    live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
   };
 }
 
@@ -593,6 +590,7 @@ function buildAlreadyCheckedInResponse(
       matched_by: matchedBy,
       source,
     },
+    live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
   };
 }
 
@@ -640,6 +638,7 @@ function buildOkResponse(
       matched_by: matchedBy,
       source,
     },
+    live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
   };
 }
 
@@ -680,11 +679,23 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const qrCode = String(body?.qrCode || body?.qr_code || body?.qr || "").trim();
     const xceedRaw = body?.xceedRaw || null;
+    const latestCheckedIn = body?.latestCheckedIn === true;
+    const eventId = String(body?.eventId || "").trim();
 
     let ticket: LocalXceedTicket | null = null;
     let source: "xceed_tickets" | "xceed_raw" = "xceed_tickets";
 
-    if (qrCode) {
+    if (latestCheckedIn) {
+      if (!eventId) {
+        return NextResponse.json(
+          buildErrorResponse("eventId mancante"),
+          { status: 400 }
+        );
+      }
+
+      ticket = await fetchLatestCheckedInTicketByEventId(eventId);
+      source = "xceed_tickets";
+    } else if (qrCode) {
       ticket = await fetchLocalXceedTicketByQr(qrCode);
       source = "xceed_tickets";
     }
@@ -696,20 +707,26 @@ export async function POST(req: NextRequest) {
 
     console.log("DOOR DEBUG LOCAL TICKET", {
       source,
+      latestCheckedIn,
+      eventId: eventId || null,
       inputQr: qrCode || null,
       ticketQr: ticket?.qr_code ?? null,
       fullName: ticket?.full_name ?? null,
       email: ticket?.email ?? null,
       buyerEmail: ticket?.buyer_email ?? null,
       phone: ticket?.phone ?? null,
-      eventId: ticket?.event_id ?? null,
+      localEventId: ticket?.event_id ?? null,
       status: ticket?.status ?? null,
       checkedIn: ticket ? isAlreadyCheckedInFromLocalTicket(ticket) : null,
     });
 
     if (!ticket) {
       return NextResponse.json(
-        buildErrorResponse("QR non presente in xceed_tickets"),
+        buildErrorResponse(
+          latestCheckedIn
+            ? "Nessun ticket checked_in trovato per questo evento"
+            : "QR non presente in xceed_tickets"
+        ),
         { status: 404 }
       );
     }
