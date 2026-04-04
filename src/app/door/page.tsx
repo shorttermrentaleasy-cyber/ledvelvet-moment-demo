@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BrowserMultiFormatReader,
   IScannerControls,
@@ -14,7 +14,6 @@ type DoorResult =
   | "OK_MEMBER"
   | "OK_PRIORITY"
   | "OK_PRIVILEGED";
-
 
 type DoorApiResponse = {
   ok: boolean;
@@ -75,8 +74,6 @@ type DoorApiResponse = {
   error?: string;
   live_key?: string | null;
 };
-
-
 
 type UiTheme = {
   shell: string;
@@ -184,10 +181,12 @@ export default function DoorPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [loadingEvents, setLoadingEvents] = useState(false);
-  const [lastLiveTicketKey, setLastLiveTicketKey] = useState<string>("");
+
+  const [lastLiveTicketKey, setLastLiveTicketKey] = useState("");
   const [manualQr, setManualQr] = useState("");
   const [lastQr, setLastQr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -197,157 +196,175 @@ export default function DoorPage() {
   const [response, setResponse] = useState<DoorApiResponse | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
 
-  const theme = useMemo(
-    () => getTheme(response?.result),
-    [response?.result]
-  );
+  const theme = useMemo(() => getTheme(response?.result), [response?.result]);
 
-  useEffect(() => {
-    return () => {
-      controlsRef.current?.stop();
-      readerRef.current = null;
-    };
-  }, []);
-
-// 👇 QUI SOTTO aggiungi questo
-// eslint-disable-next-line react-hooks/exhaustive-deps
-useEffect(() => {
-  void loadDoorEvents();
-}, []);
-
-
-
-// eslint-disable-next-line react-hooks/exhaustive-deps
-useEffect(() => {
-  if (!selectedEventId) return;
-
-  let interval: NodeJS.Timeout;
-
-  interval = setInterval(() => {
-    if (document.hidden) return;
-    if (syncing) return;
-
-    void refreshDoorData();
-  }, 12000);
-
-  return () => {
-    if (interval) clearInterval(interval);
-  };
-}, [selectedEventId, syncing]);
-
-
-
-async function loadDoorEvents() {
-  try {
-    setLoadingEvents(true);
-    setUiError(null);
-
-    const res = await fetch("/api/public/door-events", {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      throw new Error(`Load eventi fallita (${res.status})`);
-    }
-
-    const json = await res.json();
-    const items = Array.isArray(json) ? json : json?.events || json?.data || [];
-
-    setEvents(items);
-
-    if (!selectedEventId && items.length > 0) {
-      setSelectedEventId(items[0].id);
-    }
-  } catch (error) {
-    const msg =
-      error instanceof Error ? error.message : "Errore caricamento eventi";
-    setUiError(msg);
-  } finally {
-    setLoadingEvents(false);
-  }
-}
-
-  async function evaluateQr(qr: string, opts?: { silent?: boolean }) {
-    const value = qr.trim();
-    if (!value) return;
-
-    if (!opts?.silent) {
-      setLoading(true);
-    }
-    setUiError(null);
-
+  const loadDoorEvents = useCallback(async () => {
     try {
-      const res = await fetch("/api/door/xceed-live-evaluate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ qrCode: value }),
+      setLoadingEvents(true);
+      setUiError(null);
+
+      const res = await fetch("/api/public/door-events", {
+        method: "GET",
+        cache: "no-store",
       });
 
-      const json = (await res.json()) as DoorApiResponse;
-      setResponse(json);
-      setLastQr(value);
+      if (!res.ok) {
+        throw new Error(`Load eventi fallita (${res.status})`);
+      }
+
+      const json = await res.json();
+      const items = Array.isArray(json) ? json : json?.events || json?.data || [];
+
+      setEvents(items);
+
+      setSelectedEventId((prev) => {
+        if (prev) return prev;
+        return items.length > 0 ? items[0].id : "";
+      });
     } catch (error) {
       const msg =
-        error instanceof Error ? error.message : "Errore di rete";
+        error instanceof Error ? error.message : "Errore caricamento eventi";
       setUiError(msg);
-      setResponse({
-        ok: false,
-        result: "ERROR",
-        title: "ERRORE",
-        message: "Errore chiamata API",
-        error: msg,
-      });
     } finally {
+      setLoadingEvents(false);
+    }
+  }, []);
+
+  const evaluateQr = useCallback(
+    async (qr: string, opts?: { silent?: boolean }) => {
+      const value = qr.trim();
+      if (!value) return;
+
       if (!opts?.silent) {
-        setLoading(false);
+        setLoading(true);
       }
+      setUiError(null);
+
+      try {
+        const res = await fetch("/api/door/xceed-live-evaluate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ qrCode: value }),
+        });
+
+        const json = (await res.json()) as DoorApiResponse;
+        setResponse(json);
+        setLastQr(value);
+      } catch (error) {
+        const msg =
+          error instanceof Error ? error.message : "Errore di rete";
+        setUiError(msg);
+        setResponse({
+          ok: false,
+          result: "ERROR",
+          title: "ERRORE",
+          message: "Errore chiamata API",
+          error: msg,
+        });
+      } finally {
+        if (!opts?.silent) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
+
+  const loadLatestCheckedInResult = useCallback(
+    async (eventId: string) => {
+      try {
+        const res = await fetch("/api/door/xceed-live-evaluate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            eventId,
+            latestCheckedIn: true,
+          }),
+        });
+
+        const json = (await res.json()) as DoorApiResponse & {
+          live_key?: string | null;
+        };
+
+        if (!res.ok || !json?.ok) return;
+
+        const nextKey =
+          json.live_key ||
+          json.ticket?.id ||
+          json.ticket?.transaction_id ||
+          json.ticket?.qr_code ||
+          "";
+
+        if (!nextKey) return;
+        if (nextKey === lastLiveTicketKey) return;
+
+        setResponse(json);
+        setLastLiveTicketKey(nextKey);
+
+        if (json.ticket?.qr_code) {
+          setLastQr(json.ticket.qr_code);
+          setManualQr(json.ticket.qr_code);
+        }
+      } catch (error) {
+        console.error("Errore loadLatestCheckedInResult", error);
+      }
+    },
+    [lastLiveTicketKey]
+  );
+
+  const refreshDoorData = useCallback(async () => {
+    try {
+      if (syncing) return;
+
+      setSyncing(true);
+      setUiError(null);
+
+      const localEventId = selectedEventId || response?.event?.id || null;
+
+      if (!localEventId) {
+        throw new Error("Seleziona un evento prima di eseguire il sync");
+      }
+
+      const syncUrl = new URL("/api/xceed/sync-tickets", window.location.origin);
+      syncUrl.searchParams.set("localEventId", localEventId);
+
+      const syncRes = await fetch(syncUrl.toString(), {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const syncJson = await syncRes.json().catch(() => null);
+
+      if (!syncRes.ok || !syncJson?.ok) {
+        throw new Error(
+          `Sync tickets fallita (${syncRes.status}) ${
+            syncJson?.error || syncJson?.details || ""
+          }`.trim()
+        );
+      }
+
+      if (syncJson?.ok) {
+        setLastSyncAt(Date.now());
+      }
+
+      await loadLatestCheckedInResult(localEventId);
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : "Errore refresh dati";
+      setUiError(msg);
+    } finally {
+      setSyncing(false);
     }
-  }
-
-async function loadLatestCheckedInResult(eventId: string) {
-  try {
-    const res = await fetch("/api/door/xceed-live-evaluate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        eventId,
-        latestCheckedIn: true,
-      }),
-    });
-
-    const json = (await res.json()) as DoorApiResponse & {
-      live_key?: string | null;
-      no_change?: boolean;
-    };
-
-    if (!res.ok || !json?.ok) return;
-
-    const nextKey =
-      json.live_key ||
-      json.ticket?.id ||
-      json.ticket?.transaction_id ||
-      json.ticket?.qr_code ||
-      "";
-
-    if (!nextKey) return;
-    if (nextKey === lastLiveTicketKey) return;
-
-    setResponse(json);
-    setLastLiveTicketKey(nextKey);
-
-    if (json.ticket?.qr_code) {
-      setLastQr(json.ticket.qr_code);
-      setManualQr(json.ticket.qr_code);
-    }
-  } catch (error) {
-    console.error("Errore loadLatestCheckedInResult", error);
-  }
-}
+  }, [
+    syncing,
+    selectedEventId,
+    response?.event?.id,
+    loadLatestCheckedInResult,
+  ]);
 
   async function startScanner() {
     if (!videoRef.current) return;
@@ -359,18 +376,8 @@ async function loadLatestCheckedInResult(eventId: string) {
       const reader = new BrowserMultiFormatReader();
       readerRef.current = reader;
 
-      const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-      const preferredDeviceId = devices[0]?.deviceId;
-
-      if (!preferredDeviceId) {
-        setUiError(
-          "Nessuna camera disponibile. Per il flusso reale si usa Xceed app; qui resta solo test."
-        );
-        return;
-      }
-
       const controls = await reader.decodeFromVideoDevice(
-        preferredDeviceId,
+        undefined,
         videoRef.current,
         (result, error, controls) => {
           controlsRef.current = controls;
@@ -396,11 +403,13 @@ async function loadLatestCheckedInResult(eventId: string) {
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Errore avvio camera";
-      setUiError(msg);
+
+      setUiError(
+        `Scanner test non disponibile su questo device/browser. Nessun problema: il flusso reale resta Xceed app, qui puoi usare input manuale QR. Dettaglio: ${msg}`
+      );
       setScanActive(false);
     }
   }
-
   function stopScanner() {
     controlsRef.current?.stop();
     setScanActive(false);
@@ -415,60 +424,29 @@ async function loadLatestCheckedInResult(eventId: string) {
     stopScanner();
   }
 
-async function refreshDoorData() {
-  try {
-    if (syncing) return;
+  useEffect(() => {
+    return () => {
+      controlsRef.current?.stop();
+      readerRef.current = null;
+    };
+  }, []);
 
-    setSyncing(true);
-    setUiError(null);
+  useEffect(() => {
+    void loadDoorEvents();
+  }, [loadDoorEvents]);
 
-    const localEventId = selectedEventId || response?.event?.id || null;
+  useEffect(() => {
+    if (!selectedEventId) return;
 
-    if (!localEventId) {
-      throw new Error("Seleziona un evento prima di eseguire il sync");
-    }
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      void refreshDoorData();
+    }, 12000);
 
-    const syncUrl = new URL("/api/xceed/sync-tickets", window.location.origin);
-    syncUrl.searchParams.set("localEventId", localEventId);
-
-    const syncRes = await fetch(syncUrl.toString(), {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    const syncJson = await syncRes.json().catch(() => null);
-
-    if (!syncRes.ok || !syncJson?.ok) {
-      throw new Error(
-        `Sync tickets fallita (${syncRes.status}) ${
-          syncJson?.error || syncJson?.details || ""
-        }`.trim()
-      );
-    }
-
-    if (syncJson?.ok) {
-      setLastSyncAt(Date.now());
-    }
-
-    // 1) se hai appena verificato un QR manuale / scanner test, rivaluta quello
-    if (lastQr) {
-      await evaluateQr(lastQr, { silent: true });
-    }
-
-    // 2) in ogni caso prova a caricare l’ultimo checked_in arrivato da Xceed
-    await loadLatestCheckedInResult(localEventId);
-  } catch (error) {
-    const msg =
-      error instanceof Error ? error.message : "Errore refresh dati";
-    setUiError(msg);
-  } finally {
-    setSyncing(false);
-  }
-}
-
-
-
-
+    return () => {
+      clearInterval(interval);
+    };
+  }, [selectedEventId, refreshDoorData]);
 
   const bigTitle = response?.title || "DOOR CHECK";
   const bigMessage =
@@ -489,33 +467,32 @@ async function refreshDoorData() {
               Xceed app scansiona → sync ticket → verifica socio → esito ingresso
             </div>
           </div>
-<div className="min-w-[280px]">
-  <select
-    value={selectedEventId}
-    onChange={(e) => setSelectedEventId(e.target.value)}
-    className="w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white backdrop-blur outline-none"
-  >
-    <option value="" className="text-black">
-      {loadingEvents ? "Caricamento eventi..." : "Seleziona evento"}
-    </option>
-    {events.map((event) => (
-      <option key={event.id} value={event.id} className="text-black">
-        {event.name}
-        {event.city ? ` - ${event.city}` : ""}
-        {event.venue ? ` - ${event.venue}` : ""}
-      </option>
-    ))}
-  </select>
-</div>
 
-
+          <div className="min-w-[280px]">
+            <select
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+              className="w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white backdrop-blur outline-none"
+            >
+              <option value="" className="text-black">
+                {loadingEvents ? "Caricamento eventi..." : "Seleziona evento"}
+              </option>
+              {events.map((event) => (
+                <option key={event.id} value={event.id} className="text-black">
+                  {event.name}
+                  {event.city ? ` - ${event.city}` : ""}
+                  {event.venue ? ` - ${event.venue}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => void startScanner()}
               className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium backdrop-blur transition hover:bg-white/15"
             >
-              {scanActive ? "Scanner attivo" : "Apri scanner test"}
+              {scanActive ? "Scanner test attivo" : "Avvia scanner test"}
             </button>
 
             <button
@@ -561,7 +538,7 @@ async function refreshDoorData() {
               </div>
 
               <div className="mt-3 text-xs text-slate-400">
-                Nel flusso finale la scansione ufficiale resta su Xceed app. Qui la camera serve solo come supporto test.
+                Nel flusso reale la scansione ufficiale resta su Xceed app. Questo scanner è solo un test locale opzionale: se la camera del device/browser non parte, usa input manuale QR.
               </div>
             </div>
 
@@ -590,6 +567,12 @@ async function refreshDoorData() {
               {lastQr ? (
                 <div className="mt-3 text-xs text-slate-400 break-all">
                   Ultimo QR: {lastQr}
+                </div>
+              ) : null}
+
+              {lastSyncAt ? (
+                <div className="mt-2 text-xs text-slate-500">
+                  Ultimo sync: {new Date(lastSyncAt).toLocaleTimeString()}
                 </div>
               ) : null}
             </div>
@@ -637,16 +620,17 @@ async function refreshDoorData() {
                 ) : null}
               </div>
 
-{response?.result === "OK_PRIORITY" || response?.member?.door_role === "loyalty" ? (
-  <div className="mb-4 rounded-2xl border border-yellow-300/40 bg-yellow-300/15 px-4 py-3 text-center">
-    <div className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-200">
-      Accesso privilegiato
-    </div>
-    <div className="mt-1 text-lg font-semibold text-yellow-100">
-      Priority Pass
-    </div>
-  </div>
-) : null}
+              {response?.result === "OK_PRIORITY" ||
+              response?.member?.door_role === "loyalty" ? (
+                <div className="mb-4 rounded-2xl border border-yellow-300/40 bg-yellow-300/15 px-4 py-3 text-center">
+                  <div className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-200">
+                    Accesso privilegiato
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-yellow-100">
+                    Priority Pass
+                  </div>
+                </div>
+              ) : null}
 
               <div
                 className={`text-4xl font-semibold tracking-tight md:text-7xl ${theme.title}`}
@@ -693,17 +677,6 @@ async function refreshDoorData() {
                 {row("Status", response?.member?.status)}
                 {row("Scadenza", response?.member?.membership_expires_at)}
                 {row("Member ID", response?.member?.id)}
-{response?.booking ? (
-  <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl">
-    <div className="mb-3 text-sm font-semibold text-slate-300">
-      Booking progress
-    </div>
-    {row("Booking ID", response.booking.booking_id)}
-    {row("Totale ticket", String(response.booking.ticket_count))}
-    {row("Entrati", String(response.booking.checked_in_count))}
-    {row("Progress", response.booking.progress_label)}
-  </div>
-) : null}
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl">
@@ -726,6 +699,18 @@ async function refreshDoorData() {
                 {row("Email ticket", response?.ticket?.email)}
                 {row("Buyer email", response?.ticket?.buyer_email)}
               </div>
+
+              {response?.booking ? (
+                <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl xl:col-span-2">
+                  <div className="mb-3 text-sm font-semibold text-slate-300">
+                    Booking progress
+                  </div>
+                  {row("Booking ID", response.booking.booking_id)}
+                  {row("Totale ticket", String(response.booking.ticket_count))}
+                  {row("Entrati", String(response.booking.checked_in_count))}
+                  {row("Progress", response.booking.progress_label)}
+                </div>
+              ) : null}
 
               <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl xl:col-span-2">
                 <div className="mb-3 text-sm font-semibold text-slate-300">
