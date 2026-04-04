@@ -15,6 +15,7 @@ type DoorResult =
   | "OK_PRIORITY"
   | "OK_PRIVILEGED";
 
+
 type DoorApiResponse = {
   ok: boolean;
   result: DoorResult;
@@ -53,6 +54,12 @@ type DoorApiResponse = {
     offer_type?: string | null;
     source?: "xceed_tickets";
   } | null;
+  booking?: {
+    booking_id: string | null;
+    ticket_count: number;
+    checked_in_count: number;
+    progress_label: string;
+  } | null;
   event?: {
     id: string;
     xceed_event_uuid: string | null;
@@ -66,7 +73,10 @@ type DoorApiResponse = {
     source?: "xceed_tickets" | "xceed_raw";
   };
   error?: string;
+  live_key?: string | null;
 };
+
+
 
 type UiTheme = {
   shell: string;
@@ -200,29 +210,32 @@ export default function DoorPage() {
   }, []);
 
 // 👇 QUI SOTTO aggiungi questo
+// eslint-disable-next-line react-hooks/exhaustive-deps
 useEffect(() => {
   void loadDoorEvents();
 }, []);
 
+
+
+// eslint-disable-next-line react-hooks/exhaustive-deps
 useEffect(() => {
   if (!selectedEventId) return;
 
   let interval: NodeJS.Timeout;
 
   interval = setInterval(() => {
-    // pausa se tab non attiva
     if (document.hidden) return;
-
-    // evita doppie chiamate
     if (syncing) return;
 
     void refreshDoorData();
-  }, 12000); // 12 sec
+  }, 12000);
 
   return () => {
     if (interval) clearInterval(interval);
   };
 }, [selectedEventId, syncing]);
+
+
 
 async function loadDoorEvents() {
   try {
@@ -624,6 +637,17 @@ async function refreshDoorData() {
                 ) : null}
               </div>
 
+{response?.result === "OK_PRIORITY" || response?.member?.door_role === "loyalty" ? (
+  <div className="mb-4 rounded-2xl border border-yellow-300/40 bg-yellow-300/15 px-4 py-3 text-center">
+    <div className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-200">
+      Accesso privilegiato
+    </div>
+    <div className="mt-1 text-lg font-semibold text-yellow-100">
+      Priority Pass
+    </div>
+  </div>
+) : null}
+
               <div
                 className={`text-4xl font-semibold tracking-tight md:text-7xl ${theme.title}`}
               >
@@ -669,6 +693,17 @@ async function refreshDoorData() {
                 {row("Status", response?.member?.status)}
                 {row("Scadenza", response?.member?.membership_expires_at)}
                 {row("Member ID", response?.member?.id)}
+{response?.booking ? (
+  <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl">
+    <div className="mb-3 text-sm font-semibold text-slate-300">
+      Booking progress
+    </div>
+    {row("Booking ID", response.booking.booking_id)}
+    {row("Totale ticket", String(response.booking.ticket_count))}
+    {row("Entrati", String(response.booking.checked_in_count))}
+    {row("Progress", response.booking.progress_label)}
+  </div>
+) : null}
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl">

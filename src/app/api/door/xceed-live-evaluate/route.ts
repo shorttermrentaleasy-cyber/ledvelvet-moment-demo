@@ -56,9 +56,17 @@ type LocalXceedTicket = {
   raw: any;
 };
 
+type BookingStats = {
+  booking_id: string | null;
+  ticket_count: number;
+  checked_in_count: number;
+  progress_label: string;
+};
+
 type ApiResponse = {
   ok: boolean;
   result: DoorResult;
+  booking?: BookingStats | null;
   title: string;
   message: string;
   badge?: string;
@@ -271,9 +279,16 @@ async function buildLocalTicketFromRaw(raw: any): Promise<LocalXceedTicket | nul
   if (!qrCode) return null;
 
   const bookingBuyerFirst =
-    raw?.booking?.buyer?.firstName ?? raw?.ticket?.firstName ?? raw?.pass?.firstName ?? null;
+    raw?.booking?.buyer?.firstName ??
+    raw?.ticket?.firstName ??
+    raw?.pass?.firstName ??
+    null;
+
   const bookingBuyerLast =
-    raw?.booking?.buyer?.lastName ?? raw?.ticket?.lastName ?? raw?.pass?.lastName ?? null;
+    raw?.booking?.buyer?.lastName ??
+    raw?.ticket?.lastName ??
+    raw?.pass?.lastName ??
+    null;
 
   return {
     id: "xceed-raw",
@@ -411,6 +426,41 @@ async function findMemberByName(
   );
 }
 
+async function getBookingStats(ticket: LocalXceedTicket): Promise<BookingStats | null> {
+  const bookingId = getBookingIdFromRaw(ticket.raw);
+  if (!bookingId) return null;
+
+  const { data, error } = await supabase
+    .from("xceed_tickets")
+    .select("status, raw")
+    .or(
+      `raw->ticket->booking->bookingUuid.eq.${bookingId},raw->booking->bookingUuid.eq.${bookingId},raw->booking->id.eq.${bookingId}`
+    );
+
+  if (error) throw error;
+
+  const rows = data || [];
+  const ticketCount = rows.length;
+
+  const checkedInCount = rows.filter((row: any) => {
+    const status = String(row?.status || "").toLowerCase();
+    if (status === "checked_in") return true;
+
+    return Boolean(
+      row?.raw?.pass?.hasCheckedIn ||
+        row?.raw?.ticket?.hasCheckedIn ||
+        row?.raw?.hasCheckedIn
+    );
+  }).length;
+
+  return {
+    booking_id: bookingId,
+    ticket_count: ticketCount,
+    checked_in_count: checkedInCount,
+    progress_label: `${checkedInCount} / ${ticketCount}`,
+  };
+}
+
 async function matchMemberFromLocalTicket(ticket: LocalXceedTicket): Promise<{
   member: MemberRow | null;
   matchedBy: "email" | "phone" | "name" | null;
@@ -472,6 +522,16 @@ function mapTicketForResponse(ticket: LocalXceedTicket) {
   };
 }
 
+function attachBooking(
+  payload: ApiResponse,
+  booking: BookingStats | null
+): ApiResponse {
+  return {
+    ...payload,
+    booking,
+  };
+}
+
 function buildErrorResponse(
   message: string,
   error?: string,
@@ -487,6 +547,7 @@ function buildErrorResponse(
     ticket: null,
     event: mapEventForResponse(event || null),
     live_key: null,
+    booking: null,
   };
 }
 
@@ -521,6 +582,7 @@ function buildDenyWallyResponse(
       source,
     },
     live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
+    booking: null,
   };
 }
 
@@ -554,6 +616,7 @@ function buildDenyRenewalResponse(
       source,
     },
     live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
+    booking: null,
   };
 }
 
@@ -591,6 +654,7 @@ function buildAlreadyCheckedInResponse(
       source,
     },
     live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
+    booking: null,
   };
 }
 
@@ -639,6 +703,7 @@ function buildOkResponse(
       source,
     },
     live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
+    booking: null,
   };
 }
 
@@ -677,7 +742,9 @@ function decideDoorResult(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const qrCode = String(body?.qrCode || body?.qr_code || body?.qr || "").trim();
+    const qrCode = String(
+      body?.qrCode || body?.qr_code || body?.qr || ""
+    ).trim();
     const xceedRaw = body?.xceedRaw || null;
     const latestCheckedIn = body?.latestCheckedIn === true;
     const eventId = String(body?.eventId || "").trim();
@@ -687,10 +754,9 @@ export async function POST(req: NextRequest) {
 
     if (latestCheckedIn) {
       if (!eventId) {
-        return NextResponse.json(
-          buildErrorResponse("eventId mancante"),
-          { status: 400 }
-        );
+        return NextResponse.json(buildErrorResponse("eventId mancante"), {
+          status: 400,
+        });
       }
 
       ticket = await fetchLatestCheckedInTicketByEventId(eventId);
@@ -742,53 +808,63 @@ export async function POST(req: NextRequest) {
     }
 
     const { member, matchedBy } = await matchMemberFromLocalTicket(ticket);
+    const bookingStats = await getBookingStats(ticket);
     const alreadyCheckedIn = isAlreadyCheckedInFromLocalTicket(ticket);
     const result = decideDoorResult(eventPolicy, member, alreadyCheckedIn);
 
     if (result === "DENY_WALLY") {
-      return NextResponse.json(
-        buildDenyWallyResponse(ticket, eventPolicy, matchedBy, source),
-        { status: 200 }
+      const payload = buildDenyWallyResponse(
+        ticket,
+        eventPolicy,
+        matchedBy,
+        source
       );
+
+      return NextResponse.json(attachBooking(payload, bookingStats), {
+        status: 200,
+      });
     }
 
     if (result === "DENY_RENEWAL") {
-      return NextResponse.json(
-        buildDenyRenewalResponse(
-          member as MemberRow,
-          ticket,
-          eventPolicy,
-          matchedBy,
-          source
-        ),
-        { status: 200 }
-      );
-    }
-
-    if (result === "ALREADY_CHECKED_IN") {
-      return NextResponse.json(
-        buildAlreadyCheckedInResponse(
-          member,
-          ticket,
-          eventPolicy,
-          matchedBy,
-          source
-        ),
-        { status: 200 }
-      );
-    }
-
-    return NextResponse.json(
-      buildOkResponse(
-        result,
+      const payload = buildDenyRenewalResponse(
         member as MemberRow,
         ticket,
         eventPolicy,
         matchedBy,
         source
-      ),
-      { status: 200 }
+      );
+
+      return NextResponse.json(attachBooking(payload, bookingStats), {
+        status: 200,
+      });
+    }
+
+    if (result === "ALREADY_CHECKED_IN") {
+      const payload = buildAlreadyCheckedInResponse(
+        member,
+        ticket,
+        eventPolicy,
+        matchedBy,
+        source
+      );
+
+      return NextResponse.json(attachBooking(payload, bookingStats), {
+        status: 200,
+      });
+    }
+
+    const payload = buildOkResponse(
+      result,
+      member as MemberRow,
+      ticket,
+      eventPolicy,
+      matchedBy,
+      source
     );
+
+    return NextResponse.json(attachBooking(payload, bookingStats), {
+      status: 200,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Errore interno sconosciuto";
