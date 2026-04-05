@@ -95,6 +95,7 @@ type UiTheme = {
   badge: string;
   title: string;
   accent: string;
+  spotlight: string;
 };
 
 function getTheme(result?: DoorResult): UiTheme {
@@ -102,97 +103,153 @@ function getTheme(result?: DoorResult): UiTheme {
     case "OK_MEMBER":
       return {
         shell:
-          "bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.25),_rgba(2,6,23,1)_45%)]",
-        card: "bg-emerald-500/15",
-        border: "border-emerald-400/40",
-        glow: "shadow-[0_0_50px_rgba(34,197,94,0.25)]",
-        badge: "bg-emerald-400 text-black",
-        title: "text-emerald-300",
-        accent: "text-emerald-200",
+          "bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.22),_rgba(27,33,54,0.72),_rgba(7,10,21,1)_70%)]",
+        card: "bg-emerald-500/12",
+        border: "border-emerald-300/30",
+        glow: "shadow-[0_0_60px_rgba(16,185,129,0.18)]",
+        badge: "bg-emerald-300 text-black",
+        title: "text-emerald-200",
+        accent: "text-emerald-100",
+        spotlight: "from-emerald-400/20 via-transparent to-transparent",
       };
     case "OK_PRIORITY":
       return {
         shell:
-          "bg-[radial-gradient(circle_at_top,_rgba(250,204,21,0.28),_rgba(88,28,135,0.35),_rgba(2,6,23,1)_55%)]",
+          "bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.22),_rgba(120,43,157,0.28),_rgba(7,10,21,1)_72%)]",
         card: "bg-yellow-400/12",
-        border: "border-yellow-300/40",
-        glow: "shadow-[0_0_60px_rgba(250,204,21,0.25)]",
+        border: "border-yellow-300/30",
+        glow: "shadow-[0_0_70px_rgba(245,158,11,0.18)]",
         badge: "bg-yellow-300 text-black",
-        title: "text-yellow-200",
+        title: "text-yellow-100",
         accent: "text-fuchsia-100",
+        spotlight: "from-yellow-300/20 via-fuchsia-400/10 to-transparent",
       };
     case "OK_PRIVILEGED":
       return {
         shell:
-          "bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.28),_rgba(2,6,23,1)_50%)]",
-        card: "bg-blue-500/15",
-        border: "border-blue-400/40",
-        glow: "shadow-[0_0_50px_rgba(59,130,246,0.25)]",
-        badge: "bg-blue-300 text-slate-950",
-        title: "text-blue-200",
-        accent: "text-blue-100",
+          "bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.22),_rgba(35,65,140,0.20),_rgba(7,10,21,1)_70%)]",
+        card: "bg-blue-500/12",
+        border: "border-blue-300/30",
+        glow: "shadow-[0_0_65px_rgba(59,130,246,0.18)]",
+        badge: "bg-blue-300 text-black",
+        title: "text-blue-100",
+        accent: "text-sky-100",
+        spotlight: "from-blue-300/20 via-cyan-300/10 to-transparent",
       };
     case "ALREADY_CHECKED_IN":
       return {
         shell:
-          "bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.28),_rgba(2,6,23,1)_50%)]",
-        card: "bg-amber-500/15",
-        border: "border-amber-400/40",
-        glow: "shadow-[0_0_50px_rgba(245,158,11,0.25)]",
+          "bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.18),_rgba(69,44,12,0.20),_rgba(7,10,21,1)_72%)]",
+        card: "bg-amber-500/12",
+        border: "border-amber-300/30",
+        glow: "shadow-[0_0_65px_rgba(251,191,36,0.15)]",
         badge: "bg-amber-300 text-black",
-        title: "text-amber-200",
-        accent: "text-amber-100",
+        title: "text-amber-100",
+        accent: "text-amber-50",
+        spotlight: "from-amber-300/20 via-orange-300/10 to-transparent",
       };
     case "DENY_RENEWAL":
       return {
         shell:
-          "bg-[radial-gradient(circle_at_top,_rgba(249,115,22,0.28),_rgba(2,6,23,1)_50%)]",
-        card: "bg-orange-500/15",
-        border: "border-orange-400/40",
-        glow: "shadow-[0_0_50px_rgba(249,115,22,0.25)]",
+          "bg-[radial-gradient(circle_at_top,_rgba(249,115,22,0.20),_rgba(95,41,18,0.20),_rgba(7,10,21,1)_72%)]",
+        card: "bg-orange-500/12",
+        border: "border-orange-300/30",
+        glow: "shadow-[0_0_65px_rgba(249,115,22,0.16)]",
         badge: "bg-orange-300 text-black",
-        title: "text-orange-200",
-        accent: "text-orange-100",
+        title: "text-orange-100",
+        accent: "text-orange-50",
+        spotlight: "from-orange-300/20 via-red-300/10 to-transparent",
       };
     case "DENY_WALLY":
       return {
         shell:
-          "bg-[radial-gradient(circle_at_top,_rgba(239,68,68,0.28),_rgba(2,6,23,1)_50%)]",
-        card: "bg-red-500/15",
-        border: "border-red-400/40",
-        glow: "shadow-[0_0_50px_rgba(239,68,68,0.25)]",
-        badge: "bg-red-300 text-black",
-        title: "text-red-200",
-        accent: "text-red-100",
+          "bg-[radial-gradient(circle_at_top,_rgba(244,63,94,0.20),_rgba(88,23,46,0.18),_rgba(7,10,21,1)_72%)]",
+        card: "bg-rose-500/12",
+        border: "border-rose-300/30",
+        glow: "shadow-[0_0_70px_rgba(244,63,94,0.17)]",
+        badge: "bg-rose-300 text-black",
+        title: "text-rose-100",
+        accent: "text-rose-50",
+        spotlight: "from-rose-300/20 via-fuchsia-300/10 to-transparent",
       };
     case "ERROR":
     default:
       return {
         shell:
-          "bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.22),_rgba(2,6,23,1)_45%)]",
-        card: "bg-white/8",
-        border: "border-white/15",
-        glow: "shadow-[0_0_40px_rgba(255,255,255,0.08)]",
-        badge: "bg-slate-300 text-black",
+          "bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.14),_rgba(36,26,72,0.24),_rgba(7,10,21,1)_74%)]",
+        card: "bg-white/7",
+        border: "border-white/12",
+        glow: "shadow-[0_0_50px_rgba(168,85,247,0.10)]",
+        badge: "bg-slate-200 text-black",
         title: "text-white",
         accent: "text-slate-200",
+        spotlight: "from-fuchsia-300/10 via-violet-300/10 to-transparent",
       };
   }
 }
 
 function row(label: string, value?: React.ReactNode) {
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-white/10 py-2 last:border-b-0">
+    <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-white/8 py-2 last:border-b-0">
       <div className="text-sm text-slate-400">{label}</div>
       <div className="text-sm text-white break-all">{value || "—"}</div>
     </div>
   );
 }
 
+function playDoorTone(kind?: DoorResult) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioCtx) return;
+
+    const ctx = new AudioCtx();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    oscillator.type = kind === "DENY_WALLY" || kind === "DENY_RENEWAL" || kind === "ERROR"
+      ? "sawtooth"
+      : "sine";
+
+    const freq =
+      kind === "OK_PRIORITY"
+        ? 880
+        : kind === "OK_PRIVILEGED"
+        ? 740
+        : kind === "OK_MEMBER"
+        ? 660
+        : kind === "ALREADY_CHECKED_IN"
+        ? 420
+        : 300;
+
+    oscillator.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.3);
+
+    window.setTimeout(() => {
+      void ctx.close().catch(() => {});
+    }, 450);
+  } catch {
+    // silent fail
+  }
+}
+
 export default function DoorPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const lastSoundKeyRef = useRef<string>("");
 
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -208,13 +265,20 @@ export default function DoorPage() {
   const [response, setResponse] = useState<DoorApiResponse | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [manualWallyOpen, setManualWallyOpen] = useState(false);
 
   const theme = useMemo(() => getTheme(response?.result), [response?.result]);
 
+  const envManualWallyUrl =
+    typeof window !== "undefined"
+      ? (process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL || "").trim()
+      : (process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL || "").trim();
+
   const wallyActionUrl = useMemo(() => {
-    const value = response?.action === "OPEN_WALLY" ? response?.action_url?.trim() : "";
-    return value || "";
-  }, [response?.action, response?.action_url]);
+    const automatic =
+      response?.action === "OPEN_WALLY" ? response?.action_url?.trim() || "" : "";
+    return automatic || envManualWallyUrl || "";
+  }, [response?.action, response?.action_url, envManualWallyUrl]);
 
   const bookingSummary = useMemo(() => {
     const booking = response?.booking;
@@ -238,14 +302,10 @@ export default function DoorPage() {
     try {
       await navigator.clipboard.writeText(value);
       setCopyMessage("Link copiato");
-      window.setTimeout(() => {
-        setCopyMessage(null);
-      }, 2200);
+      window.setTimeout(() => setCopyMessage(null), 2200);
     } catch {
       setCopyMessage("Copia non riuscita");
-      window.setTimeout(() => {
-        setCopyMessage(null);
-      }, 2200);
+      window.setTimeout(() => setCopyMessage(null), 2200);
     }
   }, []);
 
@@ -289,6 +349,7 @@ export default function DoorPage() {
       if (!opts?.silent) {
         setLoading(true);
       }
+
       setUiError(null);
       setCopyMessage(null);
 
@@ -473,6 +534,7 @@ export default function DoorPage() {
     setResponse(null);
     setUiError(null);
     setCopyMessage(null);
+    setManualWallyOpen(false);
     stopScanner();
   }
 
@@ -493,156 +555,75 @@ export default function DoorPage() {
     const interval = setInterval(() => {
       if (document.hidden) return;
       void refreshDoorData();
-    }, 12000);
+    }, 6000);
 
-    return () => {
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [selectedEventId, refreshDoorData]);
+
+  useEffect(() => {
+    const key =
+      response?.live_key ||
+      response?.ticket?.id ||
+      response?.ticket?.qr_code ||
+      "";
+
+    if (!key) return;
+    if (lastSoundKeyRef.current === key) return;
+
+    lastSoundKeyRef.current = key;
+    playDoorTone(response?.result);
+  }, [response]);
 
   const bigTitle = response?.title || "DOOR CHECK";
   const bigMessage =
     response?.message || "Monitor porta: Xceed scansiona, qui controlli l’esito";
 
+  const showAutomaticWally = Boolean(response?.action === "OPEN_WALLY" && wallyActionUrl);
+  const showManualWally = Boolean(manualWallyOpen && wallyActionUrl);
+
   return (
     <div className={`min-h-screen text-white ${theme.shell}`}>
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-6">
-        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-[0.28em] text-slate-400">
-              LedVelvet Door
-            </div>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-5xl">
-              Monitor Porta
-            </h1>
-            <div className="mt-2 text-sm text-slate-300 md:text-base">
-              Xceed app scansiona → sync ticket → verifica socio → esito ingresso
-            </div>
-          </div>
-
-          <div className="min-w-[280px]">
-            <select
-              value={selectedEventId}
-              onChange={(e) => setSelectedEventId(e.target.value)}
-              className="w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white backdrop-blur outline-none"
-            >
-              <option value="" className="text-black">
-                {loadingEvents ? "Caricamento eventi..." : "Seleziona evento"}
-              </option>
-              {events.map((event) => (
-                <option key={event.id} value={event.id} className="text-black">
-                  {event.name}
-                  {event.city ? ` - ${event.city}` : ""}
-                  {event.venue ? ` - ${event.venue}` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => void startScanner()}
-              className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium backdrop-blur transition hover:bg-white/15"
-            >
-              {scanActive ? "Scanner test attivo" : "Avvia scanner test"}
-            </button>
-
-            <button
-              onClick={stopScanner}
-              className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium transition hover:bg-white/10"
-            >
-              Stop
-            </button>
-
-            <button
-              onClick={() => void refreshDoorData()}
-              disabled={syncing || loading}
-              className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {syncing ? "Aggiornamento..." : "Aggiorna dati"}
-            </button>
-
-            <button
-              onClick={resetAll}
-              className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium transition hover:bg-white/10"
-            >
-              Reset
-            </button>
-          </div>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-          <div className="space-y-6">
-            <div
-              className={`rounded-3xl border ${theme.border} bg-black/25 p-4 backdrop-blur-xl`}
-            >
-              <div className="mb-3 text-sm font-medium text-slate-300">
-                Camera scanner (solo test)
+      <div className="mx-auto max-w-7xl px-4 py-5 md:px-6">
+        <div className="relative overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(135deg,rgba(18,22,38,0.96),rgba(28,18,50,0.92),rgba(8,10,20,0.98))] p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] md:p-6">
+          <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${theme.spotlight}`} />
+          <div className="relative z-10 mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.34em] text-fuchsia-200/80">
+                LedVelvet Door
               </div>
-
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
-                <video
-                  ref={videoRef}
-                  className="aspect-[3/4] w-full object-cover"
-                  muted
-                  playsInline
-                />
-              </div>
-
-              <div className="mt-3 text-xs text-slate-400">
-                Nel flusso reale la scansione ufficiale resta su Xceed app. Questo scanner è solo un test locale opzionale: se la camera del device/browser non parte, usa input manuale QR.
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-5xl">
+                Monitor Porta
+              </h1>
+              <div className="mt-2 max-w-3xl text-sm text-slate-300 md:text-base">
+                Output in testa, operatività sotto. Xceed scansiona, DoorCheck mostra esito, booking e accesso tessera.
               </div>
             </div>
 
-            <div
-              className={`rounded-3xl border ${theme.border} bg-black/25 p-4 backdrop-blur-xl`}
-            >
-              <div className="mb-3 text-sm font-medium text-slate-300">
-                Input manuale QR
-              </div>
-
-              <textarea
-                value={manualQr}
-                onChange={(e) => setManualQr(e.target.value)}
-                placeholder="Incolla qui il QR code"
-                className="min-h-[110px] w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
-              />
-
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => void evaluateQr(manualQr)}
-                disabled={!manualQr.trim() || loading}
-                className="mt-3 w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => void refreshDoorData()}
+                disabled={syncing || loading}
+                className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {loading ? "Verifica in corso..." : "Verifica QR"}
+                {syncing ? "Aggiornamento..." : "Aggiorna dati"}
               </button>
 
-              {lastQr ? (
-                <div className="mt-3 text-xs text-slate-400 break-all">
-                  Ultimo QR: {lastQr}
-                </div>
-              ) : null}
-
-              {lastSyncAt ? (
-                <div className="mt-2 text-xs text-slate-500">
-                  Ultimo sync: {new Date(lastSyncAt).toLocaleTimeString()}
-                </div>
-              ) : null}
+              <button
+                onClick={resetAll}
+                className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+              >
+                Reset
+              </button>
             </div>
-
-            {uiError ? (
-              <div className="rounded-3xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
-                {uiError}
-              </div>
-            ) : null}
           </div>
 
-          <div className="space-y-6">
+          <div className="relative z-10 space-y-6">
             <div
-              className={`rounded-[32px] border ${theme.border} ${theme.card} ${theme.glow} p-6 md:p-8`}
+              className={`overflow-hidden rounded-[30px] border ${theme.border} ${theme.card} ${theme.glow} p-6 md:p-8`}
             >
               <div className="mb-5 flex flex-wrap items-center gap-3">
                 <span
-                  className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] ${theme.badge}`}
+                  className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${theme.badge}`}
                 >
                   {response?.badge || "Door"}
                 </span>
@@ -670,12 +651,18 @@ export default function DoorPage() {
                     syncing...
                   </span>
                 ) : null}
+
+                {lastSyncAt ? (
+                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                    sync {new Date(lastSyncAt).toLocaleTimeString()}
+                  </span>
+                ) : null}
               </div>
 
               {bookingSummary ? (
-                <div className="mb-4 grid gap-3 md:grid-cols-2">
+                <div className="mb-5 grid gap-3 lg:grid-cols-2">
                   <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                    <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+                    <div className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
                       Booking
                     </div>
                     <div className="mt-2 text-2xl font-semibold text-white md:text-3xl">
@@ -688,7 +675,7 @@ export default function DoorPage() {
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                    <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+                    <div className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
                       Progress ingresso
                     </div>
                     <div className="mt-2 text-2xl font-semibold text-white md:text-3xl">
@@ -703,19 +690,17 @@ export default function DoorPage() {
 
               {response?.result === "OK_PRIORITY" ||
               response?.member?.door_role === "loyalty" ? (
-                <div className="mb-4 rounded-2xl border border-yellow-300/40 bg-yellow-300/15 px-4 py-3 text-center">
-                  <div className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-200">
+                <div className="mb-5 rounded-2xl border border-yellow-300/40 bg-yellow-300/12 px-4 py-3 text-center">
+                  <div className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-100">
                     Accesso privilegiato
                   </div>
-                  <div className="mt-1 text-lg font-semibold text-yellow-100">
+                  <div className="mt-1 text-lg font-semibold text-yellow-50">
                     Priority Pass
                   </div>
                 </div>
               ) : null}
 
-              <div
-                className={`text-4xl font-semibold tracking-tight md:text-7xl ${theme.title}`}
-              >
+              <div className={`text-4xl font-semibold tracking-tight md:text-7xl ${theme.title}`}>
                 {bigTitle}
               </div>
 
@@ -725,7 +710,7 @@ export default function DoorPage() {
 
               {response?.person?.full_name ? (
                 <div className="mt-8 rounded-3xl border border-white/10 bg-black/20 p-5">
-                  <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                  <div className="text-xs uppercase tracking-[0.22em] text-slate-400">
                     Persona
                   </div>
                   <div className="mt-2 text-2xl font-semibold md:text-4xl">
@@ -738,13 +723,60 @@ export default function DoorPage() {
                 </div>
               ) : null}
 
-              {wallyActionUrl ? (
+              <div className="mt-6 flex flex-wrap gap-3">
+                {wallyActionUrl ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setManualWallyOpen((prev) => !prev)}
+                      className="inline-flex rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
+                    >
+                      {manualWallyOpen ? "Chiudi QR Wally" : "Apri QR Wally"}
+                    </button>
+
+                    <a
+                      href={wallyActionUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex rounded-2xl border border-white/15 bg-white/8 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
+                    >
+                      Apri Wally diretto
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => void copyToClipboard(wallyActionUrl)}
+                      className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+                    >
+                      Copia link Wally
+                    </button>
+                  </>
+                ) : null}
+              </div>
+
+              {copyMessage ? (
+                <div className="mt-3 text-sm text-slate-300">{copyMessage}</div>
+              ) : null}
+
+              {(showAutomaticWally || showManualWally) && wallyActionUrl ? (
                 <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
-                  <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
-                    Accesso Wally
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+                      Accesso Wally
+                    </div>
+                    {showAutomaticWally ? (
+                      <span className="rounded-full border border-rose-300/25 bg-rose-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-rose-100">
+                        trigger automatico
+                      </span>
+                    ) : null}
+                    {showManualWally && !showAutomaticWally ? (
+                      <span className="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-fuchsia-100">
+                        apertura manuale staff
+                      </span>
+                    ) : null}
                   </div>
 
-                  <div className="mt-3 grid gap-5 lg:grid-cols-[220px_1fr]">
+                  <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
                     <div className="flex items-center justify-center rounded-3xl border border-white/10 bg-white p-4">
                       <QRCode
                         value={wallyActionUrl}
@@ -757,10 +789,10 @@ export default function DoorPage() {
                     <div className="flex flex-col justify-between">
                       <div>
                         <div className="text-lg font-semibold text-white">
-                          Apri tessera dal telefono
+                          Tessera / rinnovo dal telefono
                         </div>
                         <div className="mt-2 text-sm text-slate-300">
-                          Scansiona il QR oppure apri il link diretto. Utile anche per invio rapido via WhatsApp.
+                          Scansiona il QR oppure apri il link diretto. Utile anche se un socio ha acquistato più biglietti per persone non socie.
                         </div>
 
                         <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-slate-300 break-all">
@@ -786,12 +818,6 @@ export default function DoorPage() {
                           Copia link
                         </button>
                       </div>
-
-                      {copyMessage ? (
-                        <div className="mt-3 text-sm text-slate-300">
-                          {copyMessage}
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -799,8 +825,8 @@ export default function DoorPage() {
             </div>
 
             <div className="grid gap-6 xl:grid-cols-2">
-              <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl">
-                <div className="mb-3 text-sm font-semibold text-slate-300">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+                <div className="mb-3 text-sm font-semibold text-slate-200">
                   Dati socio
                 </div>
                 {row("Door role", response?.member?.door_role)}
@@ -810,17 +836,14 @@ export default function DoorPage() {
                 {row("Member ID", response?.member?.id)}
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl">
-                <div className="mb-3 text-sm font-semibold text-slate-300">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+                <div className="mb-3 text-sm font-semibold text-slate-200">
                   Dati ticket
                 </div>
                 {row("QR", response?.ticket?.qr_code)}
                 {row("Ticket source", response?.ticket?.source)}
                 {row("Stato ticket", response?.ticket?.status)}
-                {row(
-                  "Checked in",
-                  String(response?.ticket?.checked_in ?? false)
-                )}
+                {row("Checked in", String(response?.ticket?.checked_in ?? false))}
                 {row("Offer type", response?.ticket?.offer_type)}
                 {row("Offer name", response?.ticket?.offer_name)}
                 {row("Booking ID", response?.ticket?.booking_id)}
@@ -832,8 +855,8 @@ export default function DoorPage() {
               </div>
 
               {response?.booking ? (
-                <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl xl:col-span-2">
-                  <div className="mb-3 text-sm font-semibold text-slate-300">
+                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl xl:col-span-2">
+                  <div className="mb-3 text-sm font-semibold text-slate-200">
                     Booking progress
                   </div>
                   {row("Booking ID", response.booking.booking_id)}
@@ -843,8 +866,8 @@ export default function DoorPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-3xl border border-white/10 bg-black/25 p-5 backdrop-blur-xl xl:col-span-2">
-                <div className="mb-3 text-sm font-semibold text-slate-300">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl xl:col-span-2">
+                <div className="mb-3 text-sm font-semibold text-slate-200">
                   Policy evento
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
@@ -852,7 +875,7 @@ export default function DoorPage() {
                     <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
                       Require ticket
                     </div>
-                    <div className="mt-2 text-xl font-semibold">
+                    <div className="mt-2 text-xl font-semibold text-white">
                       {String(response?.event?.require_ticket ?? false)}
                     </div>
                   </div>
@@ -860,7 +883,7 @@ export default function DoorPage() {
                     <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
                       Require membership
                     </div>
-                    <div className="mt-2 text-xl font-semibold">
+                    <div className="mt-2 text-xl font-semibold text-white">
                       {String(response?.event?.require_membership ?? false)}
                     </div>
                   </div>
@@ -868,10 +891,8 @@ export default function DoorPage() {
                     <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
                       Require active
                     </div>
-                    <div className="mt-2 text-xl font-semibold">
-                      {String(
-                        response?.event?.require_active_membership ?? false
-                      )}
+                    <div className="mt-2 text-xl font-semibold text-white">
+                      {String(response?.event?.require_active_membership ?? false)}
                     </div>
                   </div>
                 </div>
@@ -888,6 +909,107 @@ export default function DoorPage() {
                   {response.error}
                 </div>
               ) : null}
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+                <div className="mb-3 text-sm font-semibold text-slate-200">
+                  Scanner / input QR
+                </div>
+
+                <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+                  <div>
+                    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
+                      <video
+                        ref={videoRef}
+                        className="aspect-[3/4] w-full object-cover"
+                        muted
+                        playsInline
+                      />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        onClick={() => void startScanner()}
+                        className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/15"
+                      >
+                        {scanActive ? "Scanner test attivo" : "Avvia scanner test"}
+                      </button>
+
+                      <button
+                        onClick={stopScanner}
+                        className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                      >
+                        Stop
+                      </button>
+                    </div>
+
+                    <div className="mt-3 text-xs text-slate-400">
+                      Nel flusso reale la scansione ufficiale resta su Xceed app. Questo scanner è solo test locale opzionale.
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-3 text-sm font-medium text-slate-300">
+                      Input manuale QR
+                    </div>
+
+                    <textarea
+                      value={manualQr}
+                      onChange={(e) => setManualQr(e.target.value)}
+                      placeholder="Incolla qui il QR code"
+                      className="min-h-[170px] w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                    />
+
+                    <button
+                      onClick={() => void evaluateQr(manualQr)}
+                      disabled={!manualQr.trim() || loading}
+                      className="mt-3 w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {loading ? "Verifica in corso..." : "Verifica QR"}
+                    </button>
+
+                    {lastQr ? (
+                      <div className="mt-3 text-xs text-slate-400 break-all">
+                        Ultimo QR: {lastQr}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+                <div className="mb-3 text-sm font-semibold text-slate-200">
+                  Evento attivo
+                </div>
+
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className="w-full rounded-2xl border border-fuchsia-300/20 bg-[linear-gradient(135deg,rgba(36,22,60,0.92),rgba(19,25,46,0.96))] px-4 py-3 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] outline-none"
+                >
+                  <option value="" className="bg-slate-950 text-white">
+                    {loadingEvents ? "Caricamento eventi..." : "Seleziona evento"}
+                  </option>
+                  {events.map((event) => (
+                    <option key={event.id} value={event.id} className="bg-slate-950 text-white">
+                      {event.name}
+                      {event.city ? ` - ${event.city}` : ""}
+                      {event.venue ? ` - ${event.venue}` : ""}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-300">
+                  Questo pannello è pensato per mostrare in testa l’ultimo risultato e lasciare scanner e input in fondo, così lo staff guarda subito l’esito.
+                </div>
+
+                {uiError ? (
+                  <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
+                    {uiError}
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
