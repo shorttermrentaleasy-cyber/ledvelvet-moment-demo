@@ -672,8 +672,8 @@ function buildAlreadyCheckedInResponse(
   return {
     ok: true,
     result: "ALREADY_CHECKED_IN",
-    title: "GIÀ ENTRATO",
-    message: "Check-in già registrato",
+    title: "CHECK-IN REGISTRATO",
+    message: "Scansione Xceed Acquisita correttamente.",
     badge: "Check-in",
     action: memberNeedsWally ? "OPEN_WALLY" : undefined,
     action_url: memberNeedsWally ? WALLY_URL : undefined,

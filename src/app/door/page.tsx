@@ -87,6 +87,17 @@ type DoorApiResponse = {
   live_key?: string | null;
 };
 
+type MemberSearchRow = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  membership_group: string | null;
+  status: string | null;
+  membership_expires_at: string | null;
+};
+
 type UiTheme = {
   shell: string;
   card: string;
@@ -190,9 +201,9 @@ function getTheme(result?: DoorResult): UiTheme {
 
 function row(label: string, value?: React.ReactNode) {
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-white/8 py-2 last:border-b-0">
-      <div className="text-sm text-slate-400">{label}</div>
-      <div className="text-sm text-white break-all">{value || "—"}</div>
+    <div className="grid grid-cols-[110px_1fr] gap-2 border-b border-white/8 py-1.5 last:border-b-0">
+      <div className="text-xs text-slate-400">{label}</div>
+      <div className="text-xs text-white break-all">{value || "—"}</div>
     </div>
   );
 }
@@ -211,9 +222,10 @@ function playDoorTone(kind?: DoorResult) {
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    oscillator.type = kind === "DENY_WALLY" || kind === "DENY_RENEWAL" || kind === "ERROR"
-      ? "sawtooth"
-      : "sine";
+    oscillator.type =
+      kind === "DENY_WALLY" || kind === "DENY_RENEWAL" || kind === "ERROR"
+        ? "sawtooth"
+        : "sine";
 
     const freq =
       kind === "OK_PRIORITY"
@@ -241,7 +253,7 @@ function playDoorTone(kind?: DoorResult) {
       void ctx.close().catch(() => {});
     }, 450);
   } catch {
-    // silent fail
+    //
   }
 }
 
@@ -267,12 +279,15 @@ export default function DoorPage() {
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [manualWallyOpen, setManualWallyOpen] = useState(false);
 
+  const [openMemberSearch, setOpenMemberSearch] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false);
+  const [memberSearchResults, setMemberSearchResults] = useState<MemberSearchRow[]>([]);
+  const [memberSearchError, setMemberSearchError] = useState<string | null>(null);
+
   const theme = useMemo(() => getTheme(response?.result), [response?.result]);
 
-  const envManualWallyUrl =
-    typeof window !== "undefined"
-      ? (process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL || "").trim()
-      : (process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL || "").trim();
+  const envManualWallyUrl = (process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL || "").trim();
 
   const wallyActionUrl = useMemo(() => {
     const automatic =
@@ -292,7 +307,6 @@ export default function DoorPage() {
       ticketCount,
       checkedInCount,
       progressLabel,
-      hasMultipleTickets: ticketCount > 1,
     };
   }, [response?.booking]);
 
@@ -477,6 +491,43 @@ export default function DoorPage() {
     loadLatestCheckedInResult,
   ]);
 
+  const searchMembers = useCallback(async (q: string) => {
+    setMemberSearchQuery(q);
+    setMemberSearchError(null);
+
+    if (q.trim().length < 2) {
+      setMemberSearchResults([]);
+      return;
+    }
+
+    try {
+      setMemberSearchLoading(true);
+
+      const res = await fetch(
+        `/api/door/member-search?q=${encodeURIComponent(q.trim())}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      const json = await res.json();
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Errore ricerca soci");
+      }
+
+      setMemberSearchResults(Array.isArray(json.items) ? json.items : []);
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : "Errore ricerca soci";
+      setMemberSearchError(msg);
+      setMemberSearchResults([]);
+    } finally {
+      setMemberSearchLoading(false);
+    }
+  }, []);
+
   async function startScanner() {
     if (!videoRef.current) return;
 
@@ -504,7 +555,7 @@ export default function DoorPage() {
           }
 
           if (error) {
-            // ignore continuous scanner errors
+            //
           }
         }
       );
@@ -583,18 +634,19 @@ export default function DoorPage() {
 
   return (
     <div className={`min-h-screen text-white ${theme.shell}`}>
-      <div className="mx-auto max-w-7xl px-4 py-5 md:px-6">
-        <div className="relative overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(135deg,rgba(18,22,38,0.96),rgba(28,18,50,0.92),rgba(8,10,20,0.98))] p-5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] md:p-6">
+      <div className="mx-auto max-w-7xl px-4 py-4 md:px-5">
+        <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,rgba(18,22,38,0.96),rgba(28,18,50,0.92),rgba(8,10,20,0.98))] p-4 shadow-[0_20px_80px_rgba(0,0,0,0.35)] md:p-5">
           <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${theme.spotlight}`} />
-          <div className="relative z-10 mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+
+          <div className="relative z-10 mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <div className="text-[11px] uppercase tracking-[0.34em] text-fuchsia-200/80">
+              <div className="text-[11px] uppercase tracking-[0.28em] text-fuchsia-200/80">
                 LedVelvet Door
               </div>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-5xl">
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">
                 Monitor Porta
               </h1>
-              <div className="mt-2 max-w-3xl text-sm text-slate-300 md:text-base">
+              <div className="mt-1 max-w-3xl text-xs text-slate-300 md:text-sm">
                 Output in testa, operatività sotto. Xceed scansiona, DoorCheck mostra esito, booking e accesso tessera.
               </div>
             </div>
@@ -603,85 +655,85 @@ export default function DoorPage() {
               <button
                 onClick={() => void refreshDoorData()}
                 disabled={syncing || loading}
-                className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {syncing ? "Aggiornamento..." : "Aggiorna dati"}
               </button>
 
               <button
                 onClick={resetAll}
-                className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/10"
               >
                 Reset
               </button>
             </div>
           </div>
 
-          <div className="relative z-10 space-y-6">
+          <div className="relative z-10 space-y-4">
             <div
-              className={`overflow-hidden rounded-[30px] border ${theme.border} ${theme.card} ${theme.glow} p-6 md:p-8`}
+              className={`overflow-hidden rounded-[26px] border ${theme.border} ${theme.card} ${theme.glow} p-4 md:p-5`}
             >
-              <div className="mb-5 flex flex-wrap items-center gap-3">
+              <div className="mb-4 flex flex-wrap items-center gap-2">
                 <span
-                  className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${theme.badge}`}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] ${theme.badge}`}
                 >
                   {response?.badge || "Door"}
                 </span>
 
                 {response?.result ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-200">
+                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-200">
                     {response.result}
                   </span>
                 ) : null}
 
                 {response?.debug?.source ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
                     source: {response.debug.source}
                   </span>
                 ) : null}
 
                 {response?.debug?.matched_by ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
                     match: {response.debug.matched_by}
                   </span>
                 ) : null}
 
                 {syncing ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
                     syncing...
                   </span>
                 ) : null}
 
                 {lastSyncAt ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
                     sync {new Date(lastSyncAt).toLocaleTimeString()}
                   </span>
                 ) : null}
               </div>
 
               {bookingSummary ? (
-                <div className="mb-5 grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                    <div className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                <div className="mb-4 grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Booking
                     </div>
-                    <div className="mt-2 text-2xl font-semibold text-white md:text-3xl">
+                    <div className="mt-1 text-xl font-semibold text-white md:text-2xl">
                       {bookingSummary.ticketCount}{" "}
                       {bookingSummary.ticketCount === 1 ? "biglietto" : "biglietti"}
                     </div>
-                    <div className="mt-1 text-sm text-slate-300">
+                    <div className="mt-1 text-xs text-slate-300">
                       Acquisto collegato al ticket letto
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                    <div className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Progress ingresso
                     </div>
-                    <div className="mt-2 text-2xl font-semibold text-white md:text-3xl">
+                    <div className="mt-1 text-xl font-semibold text-white md:text-2xl">
                       {bookingSummary.progressLabel}
                     </div>
-                    <div className="mt-1 text-sm text-slate-300">
+                    <div className="mt-1 text-xs text-slate-300">
                       Entrati: {bookingSummary.checkedInCount} su {bookingSummary.ticketCount}
                     </div>
                   </div>
@@ -690,46 +742,54 @@ export default function DoorPage() {
 
               {response?.result === "OK_PRIORITY" ||
               response?.member?.door_role === "loyalty" ? (
-                <div className="mb-5 rounded-2xl border border-yellow-300/40 bg-yellow-300/12 px-4 py-3 text-center">
-                  <div className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-100">
+                <div className="mb-4 rounded-2xl border border-yellow-300/40 bg-yellow-300/12 px-4 py-3 text-center">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-yellow-100">
                     Accesso privilegiato
                   </div>
-                  <div className="mt-1 text-lg font-semibold text-yellow-50">
+                  <div className="mt-1 text-base font-semibold text-yellow-50">
                     Priority Pass
                   </div>
                 </div>
               ) : null}
 
-              <div className={`text-4xl font-semibold tracking-tight md:text-7xl ${theme.title}`}>
+              <div className={`text-3xl font-semibold tracking-tight md:text-5xl ${theme.title}`}>
                 {bigTitle}
               </div>
 
-              <div className={`mt-3 text-lg md:text-2xl ${theme.accent}`}>
+              <div className={`mt-2 text-base md:text-lg ${theme.accent}`}>
                 {bigMessage}
               </div>
 
               {response?.person?.full_name ? (
-                <div className="mt-8 rounded-3xl border border-white/10 bg-black/20 p-5">
-                  <div className="text-xs uppercase tracking-[0.22em] text-slate-400">
+                <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
                     Persona
                   </div>
-                  <div className="mt-2 text-2xl font-semibold md:text-4xl">
+                  <div className="mt-1 text-xl font-semibold md:text-2xl">
                     {response.person.full_name}
                   </div>
-                  <div className="mt-2 text-sm text-slate-300">
+                  <div className="mt-1 text-xs text-slate-300">
                     {response.person.email || "—"}
                     {response.person.phone ? ` · ${response.person.phone}` : ""}
                   </div>
                 </div>
               ) : null}
 
-              <div className="mt-6 flex flex-wrap gap-3">
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOpenMemberSearch(true)}
+                  className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2.5 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
+                >
+                  Cerca socio
+                </button>
+
                 {wallyActionUrl ? (
                   <>
                     <button
                       type="button"
                       onClick={() => setManualWallyOpen((prev) => !prev)}
-                      className="inline-flex rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-5 py-3 text-sm font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
+                      className="inline-flex rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2.5 text-xs font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
                     >
                       {manualWallyOpen ? "Chiudi QR Wally" : "Apri QR Wally"}
                     </button>
@@ -738,7 +798,7 @@ export default function DoorPage() {
                       href={wallyActionUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex rounded-2xl border border-white/15 bg-white/8 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
+                      className="inline-flex rounded-2xl border border-white/15 bg-white/8 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-white/12"
                     >
                       Apri Wally diretto
                     </a>
@@ -746,7 +806,7 @@ export default function DoorPage() {
                     <button
                       type="button"
                       onClick={() => void copyToClipboard(wallyActionUrl)}
-                      className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+                      className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-white/10"
                     >
                       Copia link Wally
                     </button>
@@ -755,32 +815,32 @@ export default function DoorPage() {
               </div>
 
               {copyMessage ? (
-                <div className="mt-3 text-sm text-slate-300">{copyMessage}</div>
+                <div className="mt-2 text-xs text-slate-300">{copyMessage}</div>
               ) : null}
 
               {(showAutomaticWally || showManualWally) && wallyActionUrl ? (
-                <div className="mt-6 rounded-3xl border border-white/10 bg-black/20 p-5">
+                <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-4">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                       Accesso Wally
                     </div>
                     {showAutomaticWally ? (
-                      <span className="rounded-full border border-rose-300/25 bg-rose-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-rose-100">
+                      <span className="rounded-full border border-rose-300/25 bg-rose-400/10 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-rose-100">
                         trigger automatico
                       </span>
                     ) : null}
                     {showManualWally && !showAutomaticWally ? (
-                      <span className="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-fuchsia-100">
+                      <span className="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-fuchsia-100">
                         apertura manuale staff
                       </span>
                     ) : null}
                   </div>
 
-                  <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
-                    <div className="flex items-center justify-center rounded-3xl border border-white/10 bg-white p-4">
+                  <div className="grid gap-4 lg:grid-cols-[190px_1fr]">
+                    <div className="flex items-center justify-center rounded-3xl border border-white/10 bg-white p-3">
                       <QRCode
                         value={wallyActionUrl}
-                        size={180}
+                        size={160}
                         bgColor="#FFFFFF"
                         fgColor="#000000"
                       />
@@ -788,24 +848,24 @@ export default function DoorPage() {
 
                     <div className="flex flex-col justify-between">
                       <div>
-                        <div className="text-lg font-semibold text-white">
+                        <div className="text-base font-semibold text-white">
                           Tessera / rinnovo dal telefono
                         </div>
-                        <div className="mt-2 text-sm text-slate-300">
+                        <div className="mt-2 text-xs text-slate-300">
                           Scansiona il QR oppure apri il link diretto. Utile anche se un socio ha acquistato più biglietti per persone non socie.
                         </div>
 
-                        <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-slate-300 break-all">
+                        <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-slate-300 break-all">
                           {wallyActionUrl}
                         </div>
                       </div>
 
-                      <div className="mt-4 flex flex-wrap gap-3">
+                      <div className="mt-3 flex flex-wrap gap-2">
                         <a
                           href={wallyActionUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex rounded-2xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-semibold transition hover:bg-white/15"
+                          className="inline-flex rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-semibold transition hover:bg-white/15"
                         >
                           Apri Wally
                         </a>
@@ -813,7 +873,7 @@ export default function DoorPage() {
                         <button
                           type="button"
                           onClick={() => void copyToClipboard(wallyActionUrl)}
-                          className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold transition hover:bg-white/10"
+                          className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold transition hover:bg-white/10"
                         >
                           Copia link
                         </button>
@@ -824,9 +884,9 @@ export default function DoorPage() {
               ) : null}
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-2">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-                <div className="mb-3 text-sm font-semibold text-slate-200">
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Dati socio
                 </div>
                 {row("Door role", response?.member?.door_role)}
@@ -836,8 +896,8 @@ export default function DoorPage() {
                 {row("Member ID", response?.member?.id)}
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-                <div className="mb-3 text-sm font-semibold text-slate-200">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Dati ticket
                 </div>
                 {row("QR", response?.ticket?.qr_code)}
@@ -855,8 +915,8 @@ export default function DoorPage() {
               </div>
 
               {response?.booking ? (
-                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl xl:col-span-2">
-                  <div className="mb-3 text-sm font-semibold text-slate-200">
+                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl xl:col-span-2">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                     Booking progress
                   </div>
                   {row("Booking ID", response.booking.booking_id)}
@@ -866,38 +926,38 @@ export default function DoorPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl xl:col-span-2">
-                <div className="mb-3 text-sm font-semibold text-slate-200">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl xl:col-span-2">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Policy evento
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
                       Require ticket
                     </div>
-                    <div className="mt-2 text-xl font-semibold text-white">
+                    <div className="mt-1 text-lg font-semibold text-white">
                       {String(response?.event?.require_ticket ?? false)}
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
                       Require membership
                     </div>
-                    <div className="mt-2 text-xl font-semibold text-white">
+                    <div className="mt-1 text-lg font-semibold text-white">
                       {String(response?.event?.require_membership ?? false)}
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
                       Require active
                     </div>
-                    <div className="mt-2 text-xl font-semibold text-white">
+                    <div className="mt-1 text-lg font-semibold text-white">
                       {String(response?.event?.require_active_membership ?? false)}
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-4">
+                <div className="mt-3">
                   {row("Evento locale", response?.event?.id)}
                   {row("Xceed UUID", response?.event?.xceed_event_uuid)}
                   {row("Xceed ref", response?.event?.xceed_event_ref)}
@@ -905,19 +965,19 @@ export default function DoorPage() {
               </div>
 
               {response?.error ? (
-                <div className="rounded-3xl border border-red-400/20 bg-red-500/10 p-5 text-sm text-red-200 xl:col-span-2">
+                <div className="rounded-3xl border border-red-400/20 bg-red-500/10 p-4 text-xs text-red-200 xl:col-span-2">
                   {response.error}
                 </div>
               ) : null}
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-                <div className="mb-3 text-sm font-semibold text-slate-200">
+            <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Scanner / input QR
                 </div>
 
-                <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+                <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
                   <div>
                     <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
                       <video
@@ -931,26 +991,26 @@ export default function DoorPage() {
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         onClick={() => void startScanner()}
-                        className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/15"
+                        className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15"
                       >
                         {scanActive ? "Scanner test attivo" : "Avvia scanner test"}
                       </button>
 
                       <button
                         onClick={stopScanner}
-                        className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                        className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/10"
                       >
                         Stop
                       </button>
                     </div>
 
-                    <div className="mt-3 text-xs text-slate-400">
+                    <div className="mt-2 text-[11px] text-slate-400">
                       Nel flusso reale la scansione ufficiale resta su Xceed app. Questo scanner è solo test locale opzionale.
                     </div>
                   </div>
 
                   <div>
-                    <div className="mb-3 text-sm font-medium text-slate-300">
+                    <div className="mb-2 text-xs font-medium text-slate-300">
                       Input manuale QR
                     </div>
 
@@ -958,19 +1018,19 @@ export default function DoorPage() {
                       value={manualQr}
                       onChange={(e) => setManualQr(e.target.value)}
                       placeholder="Incolla qui il QR code"
-                      className="min-h-[170px] w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                      className="min-h-[150px] w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-xs text-white outline-none placeholder:text-slate-500"
                     />
 
                     <button
                       onClick={() => void evaluateQr(manualQr)}
                       disabled={!manualQr.trim() || loading}
-                      className="mt-3 w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="mt-3 w-full rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {loading ? "Verifica in corso..." : "Verifica QR"}
                     </button>
 
                     {lastQr ? (
-                      <div className="mt-3 text-xs text-slate-400 break-all">
+                      <div className="mt-2 text-[11px] text-slate-400 break-all">
                         Ultimo QR: {lastQr}
                       </div>
                     ) : null}
@@ -978,15 +1038,15 @@ export default function DoorPage() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-                <div className="mb-3 text-sm font-semibold text-slate-200">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Evento attivo
                 </div>
 
                 <select
                   value={selectedEventId}
                   onChange={(e) => setSelectedEventId(e.target.value)}
-                  className="w-full rounded-2xl border border-fuchsia-300/20 bg-[linear-gradient(135deg,rgba(36,22,60,0.92),rgba(19,25,46,0.96))] px-4 py-3 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] outline-none"
+                  className="w-full rounded-2xl border border-fuchsia-300/20 bg-[linear-gradient(135deg,rgba(36,22,60,0.92),rgba(19,25,46,0.96))] px-3 py-2.5 text-xs text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] outline-none"
                 >
                   <option value="" className="bg-slate-950 text-white">
                     {loadingEvents ? "Caricamento eventi..." : "Seleziona evento"}
@@ -1000,12 +1060,12 @@ export default function DoorPage() {
                   ))}
                 </select>
 
-                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-300">
-                  Questo pannello è pensato per mostrare in testa l’ultimo risultato e lasciare scanner e input in fondo, così lo staff guarda subito l’esito.
+                <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-slate-300">
+                  Questo pannello mostra in testa l’ultimo risultato e lascia scanner e input in fondo, così lo staff guarda subito l’esito.
                 </div>
 
                 {uiError ? (
-                  <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
+                  <div className="mt-3 rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-xs text-red-200">
                     {uiError}
                   </div>
                 ) : null}
@@ -1014,6 +1074,120 @@ export default function DoorPage() {
           </div>
         </div>
       </div>
+
+      {openMemberSearch ? (
+        <div className="fixed inset-0 z-50 bg-black/75 p-4 backdrop-blur-sm">
+          <div className="mx-auto mt-6 max-w-2xl rounded-[28px] border border-white/12 bg-[linear-gradient(135deg,rgba(18,22,38,0.98),rgba(28,18,50,0.96),rgba(8,10,20,0.99))] p-4 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-200/80">
+                  Door support
+                </div>
+                <div className="mt-1 text-lg font-semibold text-white">
+                  Ricerca Soci
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setOpenMemberSearch(false)}
+                className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white transition hover:bg-white/10"
+              >
+                Chiudi
+              </button>
+            </div>
+
+            <input
+              autoFocus
+              value={memberSearchQuery}
+              onChange={(e) => void searchMembers(e.target.value)}
+              placeholder="Nome, cognome, email o telefono"
+              className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+            />
+
+            <div className="mt-3 text-[11px] text-slate-400">
+              Servizio rapido porta: verifica se il nome risulta socio e di che tipo.
+            </div>
+
+            {memberSearchLoading ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-slate-300">
+                Ricerca in corso...
+              </div>
+            ) : null}
+
+            {memberSearchError ? (
+              <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-xs text-red-200">
+                {memberSearchError}
+              </div>
+            ) : null}
+
+            <div className="mt-4 max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+              {!memberSearchLoading &&
+              !memberSearchError &&
+              memberSearchQuery.trim().length >= 2 &&
+              memberSearchResults.length === 0 ? (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-slate-300">
+                  Nessun socio trovato.
+                </div>
+              ) : null}
+
+              {memberSearchResults.map((m) => {
+                const full = `${m.first_name || ""} ${m.last_name || ""}`.trim() || "—";
+                const isActive = String(m.status || "").toUpperCase().includes("ATTIV") || String(m.status || "").toUpperCase() === "ACTIVE";
+
+                return (
+                  <div
+                    key={m.id}
+                    className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-semibold text-white">
+                          {full}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          {m.email || "—"}
+                          {m.phone ? ` · ${m.phone}` : ""}
+                        </div>
+                      </div>
+
+                      <span
+                        className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                          isActive
+                            ? "border border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
+                            : "border border-rose-300/25 bg-rose-400/10 text-rose-100"
+                        }`}
+                      >
+                        {m.status || "—"}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                          Gruppo
+                        </div>
+                        <div className="mt-1 text-xs text-white">
+                          {m.membership_group || "—"}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                          Scadenza
+                        </div>
+                        <div className="mt-1 text-xs text-white">
+                          {m.membership_expires_at || "—"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
