@@ -7,32 +7,66 @@ const supabase = createClient(
   { auth: { persistSession: false } }
 );
 
+function esc(value: string) {
+  return value.replace(/[%(),]/g, " ").trim();
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const q = String(searchParams.get("q") || "").trim();
+    const rawQ = String(searchParams.get("q") || "").trim();
 
-    if (!q || q.length < 2) {
+    if (!rawQ || rawQ.length < 2) {
       return NextResponse.json({ ok: true, items: [] });
     }
 
-    const { data, error } = await supabase
+    const q = esc(rawQ);
+    const parts = q.split(/\s+/).filter(Boolean);
+
+    let query = supabase
       .from("members")
-      .select("id, first_name, last_name, email, phone, membership_group, status")
-      .or(`
-        first_name.ilike.%${q}%,
-        last_name.ilike.%${q}%,
-        email.ilike.%${q}%,
-        phone.ilike.%${q}%
-      `)
-      .limit(10);
+      .select(
+        "id, first_name, last_name, email, phone, membership_group, status, membership_expires_at"
+      )
+      .limit(12);
+
+    if (parts.length >= 2) {
+      const first = esc(parts[0]);
+      const last = esc(parts.slice(1).join(" "));
+
+      query = query.or(
+        [
+          `and(first_name.ilike.%${first}%,last_name.ilike.%${last}%)`,
+          `and(first_name.ilike.%${last}%,last_name.ilike.%${first}%)`,
+          `email.ilike.%${q}%`,
+          `phone.ilike.%${q}%`,
+        ].join(",")
+      );
+    } else {
+      query = query.or(
+        [
+          `first_name.ilike.%${q}%`,
+          `last_name.ilike.%${q}%`,
+          `email.ilike.%${q}%`,
+          `phone.ilike.%${q}%`,
+        ].join(",")
+      );
+    }
+
+    const { data, error } = await query;
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ ok: true, items: data || [] });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: "server_error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: "server_error" },
+      { status: 500 }
+    );
   }
 }
