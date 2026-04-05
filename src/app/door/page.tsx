@@ -208,17 +208,11 @@ function row(label: string, value?: React.ReactNode) {
   );
 }
 
-function playDoorTone(kind?: DoorResult) {
-  if (typeof window === "undefined") return;
-
+function playDoorToneWithContext(
+  ctx: AudioContext,
+  kind?: DoorResult
+) {
   try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-
-    if (!AudioCtx) return;
-
-    const ctx = new AudioCtx();
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -248,10 +242,6 @@ function playDoorTone(kind?: DoorResult) {
 
     oscillator.start();
     oscillator.stop(ctx.currentTime + 0.3);
-
-    window.setTimeout(() => {
-      void ctx.close().catch(() => {});
-    }, 450);
   } catch {
     //
   }
@@ -262,6 +252,8 @@ export default function DoorPage() {
   const controlsRef = useRef<IScannerControls | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const lastSoundKeyRef = useRef<string>("");
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState(false);
 
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -573,6 +565,36 @@ export default function DoorPage() {
     }
   }
 
+
+const unlockAudio = useCallback(async () => {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioCtx) return false;
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioCtx();
+    }
+
+    if (audioContextRef.current.state !== "running") {
+      await audioContextRef.current.resume();
+    }
+
+    setAudioEnabled(audioContextRef.current.state === "running");
+
+    if (audioContextRef.current.state === "running") {
+      playDoorToneWithContext(audioContextRef.current, "OK_MEMBER");
+    }
+
+    return audioContextRef.current.state === "running";
+  } catch {
+    setAudioEnabled(false);
+    return false;
+  }
+}, []);
+
   function stopScanner() {
     controlsRef.current?.stop();
     setScanActive(false);
@@ -611,19 +633,26 @@ export default function DoorPage() {
     return () => clearInterval(interval);
   }, [selectedEventId, refreshDoorData]);
 
-  useEffect(() => {
-    const key =
-      response?.live_key ||
-      response?.ticket?.id ||
-      response?.ticket?.qr_code ||
-      "";
+useEffect(() => {
+  const key =
+    response?.live_key ||
+    response?.ticket?.id ||
+    response?.ticket?.qr_code ||
+    "";
 
-    if (!key) return;
-    if (lastSoundKeyRef.current === key) return;
+  if (!key) return;
+  if (lastSoundKeyRef.current === key) return;
 
-    lastSoundKeyRef.current = key;
-    playDoorTone(response?.result);
-  }, [response]);
+  lastSoundKeyRef.current = key;
+
+  const ctx = audioContextRef.current;
+  if (!ctx) return;
+  if (ctx.state !== "running") return;
+
+  playDoorToneWithContext(ctx, response?.result);
+}, [response]);
+
+
 
   const bigTitle = response?.title || "DOOR CHECK";
   const bigMessage =
@@ -653,7 +682,10 @@ export default function DoorPage() {
 
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => void refreshDoorData()}
+                onClick={async () => {
+                   await unlockAudio();
+                   void refreshDoorData();
+                }}
                 disabled={syncing || loading}
                 className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -666,6 +698,14 @@ export default function DoorPage() {
               >
                 Reset
               </button>
+<button
+  onClick={async () => {
+    await unlockAudio();
+  }}
+  className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/10"
+>
+  {audioEnabled ? "Audio attivo" : "Attiva audio"}
+</button>
             </div>
           </div>
 
@@ -990,7 +1030,10 @@ export default function DoorPage() {
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
-                        onClick={() => void startScanner()}
+                       onClick={async () => {
+                         await unlockAudio();
+                         void startScanner();
+                       }}
                         className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15"
                       >
                         {scanActive ? "Scanner test attivo" : "Avvia scanner test"}
@@ -1022,7 +1065,11 @@ export default function DoorPage() {
                     />
 
                     <button
-                      onClick={() => void evaluateQr(manualQr)}
+                    onClick={async () => {
+                       await unlockAudio();
+                       void evaluateQr(manualQr);
+                    }}
+
                       disabled={!manualQr.trim() || loading}
                       className="mt-3 w-full rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                     >
