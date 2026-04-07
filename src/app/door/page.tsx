@@ -368,14 +368,40 @@ export default function DoorPage() {
       setUiError(null);
       setCopyMessage(null);
 
+
       try {
-        const res = await fetch("/api/door/xceed-live-evaluate", {
+
+
+        const evalUrl = new URL(
+          "/api/door/xceed-live-evaluate",
+          window.location.origin
+        );
+
+        if (deviceContext.gateId) {
+          evalUrl.searchParams.set("gate_id", deviceContext.gateId);
+        }
+
+        if (deviceContext.doorRole) {
+          evalUrl.searchParams.set("door_role", deviceContext.doorRole);
+        }
+
+        if (deviceContext.deviceLabel) {
+          evalUrl.searchParams.set("device_label", deviceContext.deviceLabel);
+        }
+
+        const effectiveEventId = selectedEventId || response?.event?.id || "";
+
+        const res = await fetch(evalUrl.toString(), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ qrCode: value }),
+          body: JSON.stringify({
+            qrCode: value,
+            eventId: effectiveEventId,
+          }),
         });
+
 
         const json = (await res.json()) as DoorApiResponse;
         setResponse(json);
@@ -397,19 +423,32 @@ export default function DoorPage() {
         }
       }
     },
-    []
-  );
 
+
+    [deviceContext.gateId, deviceContext.doorRole, deviceContext.deviceLabel, selectedEventId, response?.event?.id]
+  );
+    
   const loadLatestCheckedInResult = useCallback(
     async (eventId: string) => {
       try {
-        const res = await fetch(
-          `/api/door/live-latest?eventId=${encodeURIComponent(eventId)}&gateId=default`,
-          {
-            method: "GET",
-            cache: "no-store",
-          }
+
+
+        const liveUrl = new URL(
+          "/api/door/live-latest",
+          window.location.origin
         );
+
+        liveUrl.searchParams.set("eventId", eventId);
+
+        if (deviceContext.gateId) {
+          liveUrl.searchParams.set("gate_id", deviceContext.gateId);
+        }
+
+        const res = await fetch(liveUrl.toString(), {
+          method: "GET",
+          cache: "no-store",
+        });
+
 
         const json = (await res.json()) as {
           ok: boolean;
@@ -439,7 +478,7 @@ export default function DoorPage() {
         console.error("Errore loadLatestCheckedInResult", error);
       }
     },
-    [lastLiveTicketKey]
+    [lastLiveTicketKey, deviceContext.gateId]
   );
 
   const refreshDoorData = useCallback(async () => {
@@ -646,6 +685,11 @@ const unlockAudio = useCallback(async () => {
   }, [loadDoorEvents]);
 
   useEffect(() => {
+    setLastLiveTicketKey("");
+  }, [selectedEventId, deviceContext.gateId]);
+
+
+  useEffect(() => {
     if (!selectedEventId) return;
 
     const interval = setInterval(() => {
@@ -655,6 +699,9 @@ const unlockAudio = useCallback(async () => {
 
     return () => clearInterval(interval);
   }, [selectedEventId, refreshDoorData]);
+
+
+
 
 useEffect(() => {
   const key =

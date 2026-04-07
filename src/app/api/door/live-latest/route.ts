@@ -24,8 +24,11 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const eventId = String(searchParams.get("eventId") || "").trim();
-    const gateId = String(searchParams.get("gateId") || "default").trim();
-
+    const gateId = String(
+  searchParams.get("gateId") ||
+    searchParams.get("gate_id") ||
+    ""
+).trim();
     if (!eventId) {
       return NextResponse.json(
         { ok: false, error: "Missing eventId" },
@@ -33,16 +36,21 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const { data, error } = await supabase
-      .from("door_live_events")
-      .select(
-        "id, event_id, gate_id, live_key, ticket_id, ticket_qr_code, payload_json, created_at"
-      )
-      .eq("event_id", eventId)
-      .eq("gate_id", gateId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+let query = supabase
+  .from("door_live_events")
+  .select(
+    "id, event_id, gate_id, door_role, device_label, live_key, ticket_id, ticket_qr_code, payload_json, created_at"
+  )
+  .eq("event_id", eventId)
+  .order("created_at", { ascending: false })
+  .limit(1);
+
+if (gateId) {
+  query = query.eq("gate_id", gateId);
+}
+
+const { data, error } = await query.maybeSingle();
+
 
     if (error) {
       return NextResponse.json(
