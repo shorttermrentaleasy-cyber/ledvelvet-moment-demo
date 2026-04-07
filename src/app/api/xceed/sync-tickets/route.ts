@@ -140,8 +140,34 @@ async function insertDoorLiveEvents(params: {
 }) {
   const { supabase, req, rows } = params;
 
+  const { searchParams } = new URL(req.url);
+  const gateId =
+    String(
+      searchParams.get("gateId") ||
+      searchParams.get("gate_id") ||
+      "default"
+    ).trim() || "default";
+
+  const doorRole =
+    String(
+      searchParams.get("doorRole") ||
+      searchParams.get("door_role") ||
+      ""
+    ).trim() || null;
+
+  const deviceLabel =
+    String(
+      searchParams.get("deviceLabel") ||
+      searchParams.get("device_label") ||
+      ""
+    ).trim() || null;
+
   let liveEventsWritten = 0;
+
   let liveEventsCandidates = 0;
+
+
+
 
   const liveEventsDebug: Array<{
     qr_code: string | null;
@@ -167,10 +193,11 @@ async function insertDoorLiveEvents(params: {
       .from("door_live_events")
       .select("id")
       .eq("event_id", eventId)
-      .eq("gate_id", "default")
+      .eq("gate_id", gateId)
       .eq("live_key", liveKey)
       .limit(1)
       .maybeSingle();
+
 
     if (existingLiveError) {
       liveEventsDebug.push({
@@ -202,6 +229,10 @@ async function insertDoorLiveEvents(params: {
     
     const payload = await evaluateDoorXceedLive({
       qrCode,
+      eventId,
+      gateId,
+      doorRole: doorRole || undefined,
+      deviceLabel: deviceLabel || undefined,
     });
 
     if (!payload?.ok) {
@@ -217,12 +248,14 @@ async function insertDoorLiveEvents(params: {
 
     const insertRow: DoorLiveInsertRow = {
       event_id: eventId,
-      gate_id: "default",
+      gate_id: gateId,
       live_key: liveKey,
       ticket_id: row?.id ? String(row.id) : null,
       ticket_qr_code: qrCode,
       payload_json: payload,
-    };
+      door_role: doorRole,
+      device_label: deviceLabel,
+    } as any;
 
     const { error: liveInsertError } = await (supabase as any)
       .from("door_live_events")
