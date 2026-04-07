@@ -124,6 +124,9 @@ export type EvaluateDoorXceedLiveInput = {
   xceedRaw?: any;
   latestCheckedIn?: boolean;
   eventId?: string;
+  gateId?: string;
+  doorRole?: string;
+  deviceLabel?: string;
 };
 
 function normalizeText(value?: string | null) {
@@ -563,6 +566,40 @@ function attachBooking(
   };
 }
 
+async function saveDoorLiveEvent(params: {
+  payload: DoorApiResponse;
+  ticket: LocalXceedTicket;
+  gateId: string | null;
+  doorRole: string | null;
+  deviceLabel: string | null;
+}) {
+  const { payload, ticket, gateId, doorRole, deviceLabel } = params;
+
+  try {
+    
+const { error } = await supabase.from("door_live_events").insert({
+  event_id: payload.event?.id ?? ticket.event_id ?? null,
+  qr_code: ticket.qr_code ?? null,
+  result: payload.result,
+  full_name: payload.person?.full_name ?? ticket.full_name ?? null,
+  email: payload.person?.email ?? ticket.email ?? null,
+  membership_group: payload.member?.membership_group ?? null,
+  gate_id: gateId,
+  door_role: doorRole,
+  device_label: deviceLabel,
+  live_key: payload.live_key ?? null,
+  payload_json: payload as any,
+  created_at: new Date().toISOString(),
+});
+
+    if (error) {
+      console.error("DOOR LIVE INSERT ERROR", error);
+    }
+  } catch (error) {
+    console.error("DOOR LIVE INSERT EXCEPTION", error);
+  }
+}
+
 function buildErrorResponse(
   message: string,
   error?: string,
@@ -785,6 +822,9 @@ export async function evaluateDoorXceedLive(
     const xceedRaw = input?.xceedRaw || null;
     const latestCheckedIn = input?.latestCheckedIn === true;
     const eventId = String(input?.eventId || "").trim();
+    const gateId = String(input?.gateId || "").trim() || null;
+    const doorRole = String(input?.doorRole || "").trim() || null;
+    const deviceLabel = String(input?.deviceLabel || "").trim() || null;
 
     let ticket: LocalXceedTicket | null = null;
     let source: "xceed_tickets" | "xceed_raw" = "xceed_tickets";
@@ -810,6 +850,9 @@ export async function evaluateDoorXceedLive(
       source,
       latestCheckedIn,
       eventId: eventId || null,
+      gateId,
+      doorRole,
+      deviceLabel,
       inputQr: qrCode || null,
       ticketQr: ticket?.qr_code ?? null,
       fullName: ticket?.full_name ?? null,
@@ -844,48 +887,82 @@ export async function evaluateDoorXceedLive(
     const alreadyCheckedIn = isAlreadyCheckedInFromLocalTicket(ticket);
     const result = decideDoorResult(eventPolicy, member, alreadyCheckedIn);
 
-    if (result === "DENY_WALLY") {
-      const payload = buildDenyWallyResponse(
-        ticket,
-        eventPolicy,
-        matchedBy,
-        source
-      );
-      return attachBooking(payload, bookingStats);
-    }
+if (result === "DENY_WALLY") {
+  const payload = buildDenyWallyResponse(
+    ticket,
+    eventPolicy,
+    matchedBy,
+    source
+  );
+  const finalPayload = attachBooking(payload, bookingStats);
+  await saveDoorLiveEvent({
+    payload: finalPayload,
+    ticket,
+    gateId,
+    doorRole,
+    deviceLabel,
+  });
+  return finalPayload;
+}
+if (result === "DENY_RENEWAL") {
+  const payload = buildDenyRenewalResponse(
+    member as MemberRow,
+    ticket,
+    eventPolicy,
+    matchedBy,
+    source
+  );
+  const finalPayload = attachBooking(payload, bookingStats);
+  await saveDoorLiveEvent({
+    payload: finalPayload,
+    ticket,
+    gateId,
+    doorRole,
+    deviceLabel,
+  });
+  return finalPayload;
+}
 
-    if (result === "DENY_RENEWAL") {
-      const payload = buildDenyRenewalResponse(
-        member as MemberRow,
-        ticket,
-        eventPolicy,
-        matchedBy,
-        source
-      );
-      return attachBooking(payload, bookingStats);
-    }
+if (result === "ALREADY_CHECKED_IN") {
+  const payload = buildAlreadyCheckedInResponse(
+    member,
+    ticket,
+    eventPolicy,
+    matchedBy,
+    source
+  );
+  const finalPayload = attachBooking(payload, bookingStats);
+  await saveDoorLiveEvent({
+    payload: finalPayload,
+    ticket,
+    gateId,
+    doorRole,
+    deviceLabel,
+  });
+  return finalPayload;
+}
 
-    if (result === "ALREADY_CHECKED_IN") {
-      const payload = buildAlreadyCheckedInResponse(
-        member,
-        ticket,
-        eventPolicy,
-        matchedBy,
-        source
-      );
-      return attachBooking(payload, bookingStats);
-    }
+const payload = buildOkResponse(
+  result,
+  member as MemberRow,
+  ticket,
+  eventPolicy,
+  matchedBy,
+  source
+);
 
-    const payload = buildOkResponse(
-      result,
-      member as MemberRow,
-      ticket,
-      eventPolicy,
-      matchedBy,
-      source
-    );
+const finalPayload = attachBooking(payload, bookingStats);
 
-    return attachBooking(payload, bookingStats);
+await saveDoorLiveEvent({
+  payload: finalPayload,
+  ticket,
+  gateId,
+  doorRole,
+  deviceLabel,
+});
+
+return finalPayload;
+
   } catch (error: any) {
     const message =
       error instanceof Error
@@ -898,6 +975,7 @@ export async function evaluateDoorXceedLive(
       error,
       message,
     });
+
 
     return buildErrorResponse("Errore interno", message);
   }
