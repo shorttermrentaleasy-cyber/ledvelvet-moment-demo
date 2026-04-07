@@ -254,6 +254,15 @@ export default function DoorPage() {
   const lastSoundKeyRef = useRef<string>("");
   const audioContextRef = useRef<AudioContext | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [deviceContext, setDeviceContext] = useState<{
+    gateId: string | null;
+    doorRole: string | null;
+    deviceLabel: string | null;
+  }>({
+    gateId: null,
+    doorRole: null,
+    deviceLabel: null,
+  });
 
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -619,6 +628,20 @@ const unlockAudio = useCallback(async () => {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    const gateId = params.get("gate_id")?.trim() || null;
+    const doorRole = params.get("door_role")?.trim() || null;
+    const deviceLabel = params.get("device_label")?.trim() || null;
+
+    setDeviceContext({
+      gateId,
+      doorRole,
+      deviceLabel,
+    });
+  }, []);
+
+  useEffect(() => {
     void loadDoorEvents();
   }, [loadDoorEvents]);
 
@@ -654,9 +677,55 @@ useEffect(() => {
 
 
 
-  const bigTitle = response?.title || "DOOR CHECK";
+   const bigTitle = response?.title || "DOOR CHECK";
   const bigMessage =
     response?.message || "Monitor porta: Xceed scansiona, qui controlli l’esito";
+
+  const gatePresentation = useMemo(() => {
+    const role = deviceContext.doorRole;
+
+    if (role === "loyalty") {
+      return {
+        title: "PRIORITY ACCESS",
+        subtitle: "Loyalty / Fast Lane",
+        box: "border-violet-300/30 bg-violet-500/15",
+        titleClass: "text-violet-100",
+        subtitleClass: "text-violet-200/80",
+        badgeClass: "border-violet-300/30 bg-violet-400/15 text-violet-100",
+      };
+    }
+
+    if (role === "privileged") {
+      return {
+        title: "ACCESSO STAFF / PRIVILEGED",
+        subtitle: "Staff / Guest / Special Access",
+        box: "border-sky-300/30 bg-sky-500/15",
+        titleClass: "text-sky-100",
+        subtitleClass: "text-sky-200/80",
+        badgeClass: "border-sky-300/30 bg-sky-400/15 text-sky-100",
+      };
+    }
+
+    if (role === "wally") {
+      return {
+        title: "DESK TESSERE / SUPPORTO",
+        subtitle: "Nuove tessere / Rinnovi / Assistenza",
+        box: "border-fuchsia-300/30 bg-fuchsia-500/15",
+        titleClass: "text-fuchsia-100",
+        subtitleClass: "text-fuchsia-200/80",
+        badgeClass: "border-fuchsia-300/30 bg-fuchsia-400/15 text-fuchsia-100",
+      };
+    }
+
+    return {
+      title: "INGRESSO STANDARD",
+      subtitle: "Soci ordinari / Nuovi ingressi",
+      box: "border-emerald-300/30 bg-emerald-500/15",
+      titleClass: "text-emerald-100",
+      subtitleClass: "text-emerald-200/80",
+      badgeClass: "border-emerald-300/30 bg-emerald-400/15 text-emerald-100",
+    };
+  }, [deviceContext.doorRole]);
 
   const showAutomaticWally = Boolean(response?.action === "OPEN_WALLY" && wallyActionUrl);
   const showManualWally = Boolean(manualWallyOpen && wallyActionUrl);
@@ -711,6 +780,43 @@ useEffect(() => {
 
           <div className="relative z-10 space-y-4">
             <div
+              className={`rounded-[26px] border p-4 md:p-5 ${gatePresentation.box}`}
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className={`text-[11px] font-bold uppercase tracking-[0.22em] ${gatePresentation.subtitleClass}`}>
+                    Configurazione Gate
+                  </div>
+                  <div className={`mt-1 text-2xl font-semibold tracking-tight md:text-3xl ${gatePresentation.titleClass}`}>
+                    {gatePresentation.title}
+                  </div>
+                  <div className={`mt-1 text-sm ${gatePresentation.subtitleClass}`}>
+                    {gatePresentation.subtitle}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {deviceContext.gateId ? (
+                    <span className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${gatePresentation.badgeClass}`}>
+                      Gate: {deviceContext.gateId}
+                    </span>
+                  ) : null}
+
+                  {deviceContext.doorRole ? (
+                    <span className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${gatePresentation.badgeClass}`}>
+                      Role: {deviceContext.doorRole}
+                    </span>
+                  ) : null}
+
+                  {deviceContext.deviceLabel ? (
+                    <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+                      Device: {deviceContext.deviceLabel}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div> 
+           <div
               className={`overflow-hidden rounded-[26px] border ${theme.border} ${theme.card} ${theme.glow} p-4 md:p-5`}
             >
               <div className="mb-4 flex flex-wrap items-center gap-2">
