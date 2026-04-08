@@ -246,40 +246,14 @@ async function insertDoorLiveEvents(params: {
       continue;
     }
 
-    const insertRow: DoorLiveInsertRow = {
-      event_id: eventId,
-      gate_id: gateId,
-      live_key: liveKey,
-      ticket_id: row?.id ? String(row.id) : null,
-      ticket_qr_code: qrCode,
-      payload_json: payload,
-      door_role: doorRole,
-      device_label: deviceLabel,
-    } as any;
-
-    const { error: liveInsertError } = await (supabase as any)
-      .from("door_live_events")
-      .insert([insertRow]);
-
-    if (liveInsertError) {
-      liveEventsDebug.push({
-        qr_code: qrCode,
-        event_id: eventId,
-        live_key: liveKey,
-        step: "insert_failed",
-        details: liveInsertError.message,
-      });
-      continue;
-    }
-
-    liveEventsWritten += 1;
+        liveEventsWritten += 1;
 
     liveEventsDebug.push({
       qr_code: qrCode,
       event_id: eventId,
       live_key: liveKey,
       step: "insert_ok",
-      details: null,
+      details: "live event written by evaluateDoorXceedLive core",
     });
   }
 
