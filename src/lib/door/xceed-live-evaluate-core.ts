@@ -577,9 +577,16 @@ async function saveDoorLiveEvent(params: {
 
   try {
     
+const resolvedEventId = payload.event?.id ?? ticket.event_id ?? null;
+const resolvedQrCode = ticket.qr_code ?? null;
+const resolvedLiveKey =
+  resolvedEventId && resolvedQrCode
+    ? `${resolvedEventId}__${resolvedQrCode}__checked_in`
+    : payload.live_key ?? null;
+
 const { error } = await supabase.from("door_live_events").insert({
-  event_id: payload.event?.id ?? ticket.event_id ?? null,
-  qr_code: ticket.qr_code ?? null,
+  event_id: resolvedEventId,
+  qr_code: resolvedQrCode,
   result: payload.result,
   full_name: payload.person?.full_name ?? ticket.full_name ?? null,
   email: payload.person?.email ?? ticket.email ?? null,
@@ -587,10 +594,11 @@ const { error } = await supabase.from("door_live_events").insert({
   gate_id: gateId,
   door_role: doorRole,
   device_label: deviceLabel,
-  live_key: payload.live_key ?? null,
+  live_key: resolvedLiveKey,
   payload_json: payload as any,
   created_at: new Date().toISOString(),
 });
+
 
     if (error) {
       console.error("DOOR LIVE INSERT ERROR", error);
