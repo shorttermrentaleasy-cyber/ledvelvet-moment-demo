@@ -463,10 +463,41 @@ export default function DoorPage() {
         if (!nextKey) return;
         if (nextKey === lastLiveTicketKey) return;
 
-        const payload = item.payload_json;
-        if (!payload) return;
+const payload = item.payload_json;
+if (!payload) return;
 
-        setResponse(payload);
+const result = payload?.result;
+const memberRole = payload?.member?.door_role;
+const doorRole = deviceContext.doorRole;
+
+// 🔵 DOOR STANDARD
+if (doorRole === "ordinary") {
+  const allowed =
+    result === "OK_MEMBER" ||
+    result === "OK_PRIORITY" ||
+    result === "DENY_WALLY" ||
+    result === "DENY_RENEWAL" ||
+    result === "ALREADY_CHECKED_IN";
+
+  if (!allowed) return;
+}
+
+// 🟣 DOOR LOYALTY
+if (doorRole === "loyalty") {
+  const allowed =
+    result === "OK_PRIORITY" ||
+    result === "DENY_WALLY" ||
+    result === "DENY_RENEWAL" ||
+    (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
+
+  if (!allowed) return;
+}
+
+// ✅ SOLO QUI passa
+setResponse(payload);
+
+
+
         setLastLiveTicketKey(nextKey);
         setCopyMessage(null);
 
