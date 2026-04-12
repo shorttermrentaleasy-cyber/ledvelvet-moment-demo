@@ -494,27 +494,8 @@ export default function DoorPage() {
         throw new Error("Seleziona un evento prima di eseguire il sync");
       }
 
-      const syncUrl = new URL("/api/xceed/sync-tickets", window.location.origin);
-      syncUrl.searchParams.set("localEventId", localEventId);
-
-      const syncRes = await fetch(syncUrl.toString(), {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      const syncJson = await syncRes.json().catch(() => null);
-
-      if (!syncRes.ok || !syncJson?.ok) {
-        throw new Error(
-          `Sync tickets fallita (${syncRes.status}) ${
-            syncJson?.error || syncJson?.details || ""
-          }`.trim()
-        );
-      }
-
-      if (syncJson?.ok) {
-        setLastSyncAt(Date.now());
-      }
+       // Sync Xceed disattivato dalla Door per evitare loop live.
+      // Il sync va lanciato manualmente o da flusso separato.
 
       await loadLatestCheckedInResult(localEventId);
     } catch (error) {
