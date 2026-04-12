@@ -977,7 +977,7 @@ export async function GET(req: NextRequest) {
     } = await insertDoorLiveEvents({
       supabase,
       req,
-      rows: upsertedRows || [],
+      rows: rows,
     });
 
     const { count: totalRowsAfterSync, error: countErr } = await supabase
