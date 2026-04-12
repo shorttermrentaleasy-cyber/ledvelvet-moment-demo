@@ -140,27 +140,10 @@ async function insertDoorLiveEvents(params: {
 }) {
   const { supabase, req, rows } = params;
 
-  const { searchParams } = new URL(req.url);
-  const gateId =
-    String(
-      searchParams.get("gateId") ||
-      searchParams.get("gate_id") ||
-      "default"
-    ).trim() || "default";
+new URL(req.url);
 
-  const doorRole =
-    String(
-      searchParams.get("doorRole") ||
-      searchParams.get("door_role") ||
-      ""
-    ).trim() || null;
 
-  const deviceLabel =
-    String(
-      searchParams.get("deviceLabel") ||
-      searchParams.get("device_label") ||
-      ""
-    ).trim() || null;
+ 
 
   let liveEventsWritten = 0;
 
@@ -193,7 +176,6 @@ async function insertDoorLiveEvents(params: {
       .from("door_live_events")
       .select("id")
       .eq("event_id", eventId)
-      .eq("gate_id", gateId)
       .eq("live_key", liveKey)
       .limit(1)
       .maybeSingle();
@@ -227,13 +209,10 @@ async function insertDoorLiveEvents(params: {
     }
 
     
-    const payload = await evaluateDoorXceedLive({
-      qrCode,
-      eventId,
-      gateId,
-      doorRole: doorRole || undefined,
-      deviceLabel: deviceLabel || undefined,
-    });
+const payload = await evaluateDoorXceedLive({
+  qrCode,
+  eventId,
+});
 
     if (!payload?.ok) {
       liveEventsDebug.push({
@@ -520,12 +499,16 @@ function buildRowFromTicket(params: {
     ticket.booking?.bookingId != null ? String(ticket.booking.bookingId) : null
   );
 
-  const status: XceedTicketRow["status"] =
-    ticket.isActive === false || matchedPass?.isActive === false
-      ? "cancelled"
-      : ticket.hasCheckedIn || matchedPass?.hasCheckedIn
-      ? "checked_in"
-      : "active";
+const status: XceedTicketRow["status"] =
+  ticket.isActive === false || matchedPass?.isActive === false
+    ? "cancelled"
+    : ticket.hasCheckedIn === true ||
+      matchedPass?.hasCheckedIn === true ||
+      ticket.checkedInTime != null ||
+      matchedPass?.checkedInTime != null
+    ? "checked_in"
+    : "active";
+
 
   return {
     event_id: localEventId,
