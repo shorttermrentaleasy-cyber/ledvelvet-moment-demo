@@ -579,6 +579,9 @@ async function saveDoorLiveEvent(params: {
     
 const resolvedEventId = payload.event?.id ?? ticket.event_id ?? null;
 const resolvedQrCode = ticket.qr_code ?? null;
+
+const resolvedGateId = gateId || "default_gate"; // 🔥 FIX
+
 const resolvedLiveKey =
   resolvedEventId && resolvedQrCode
     ? `${resolvedEventId}__${resolvedQrCode}__checked_in`
@@ -614,7 +617,7 @@ const { error } = await supabase.from("door_live_events").upsert(
     full_name: payload.person?.full_name ?? ticket.full_name ?? null,
     email: payload.person?.email ?? ticket.email ?? null,
     membership_group: payload.member?.membership_group ?? null,
-    gate_id: gateId,
+    gate_id: resolvedGateId,  // FIX
     door_role: doorRole,
     device_label: deviceLabel,
     live_key: resolvedLiveKey,
