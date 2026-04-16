@@ -970,15 +970,15 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const {
-      liveEventsWritten,
-      liveEventsCandidates,
-      liveEventsDebug,
-    } = await insertDoorLiveEvents({
-      supabase,
-      req,
-      rows: rows,
-    });
+const {
+  liveEventsWritten,
+  liveEventsCandidates,
+  liveEventsDebug,
+} = await insertDoorLiveEvents({
+  supabase,
+  req,
+  rows: rows,
+});
 
     const { count: totalRowsAfterSync, error: countErr } = await supabase
       .from("xceed_tickets")

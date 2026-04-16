@@ -584,25 +584,51 @@ const resolvedLiveKey =
     ? `${resolvedEventId}__${resolvedQrCode}__checked_in`
     : payload.live_key ?? null;
 
-const { error } = await supabase.from("door_live_events").insert({
-  event_id: resolvedEventId,
-  qr_code: resolvedQrCode,
-  result: payload.result,
-  full_name: payload.person?.full_name ?? ticket.full_name ?? null,
-  email: payload.person?.email ?? ticket.email ?? null,
-  membership_group: payload.member?.membership_group ?? null,
-  gate_id: gateId,
-  door_role: doorRole,
-  device_label: deviceLabel,
-  live_key: resolvedLiveKey,
-  payload_json: payload as any,
-  created_at: new Date().toISOString(),
+if (!resolvedEventId || !resolvedQrCode || !resolvedLiveKey) {
+  console.error("DOOR LIVE SKIP INSERT - missing required fields", {
+    resolvedEventId,
+    resolvedQrCode,
+    resolvedLiveKey,
+    gateId,
+    doorRole,
+    deviceLabel,
+  });
+  return;
+}
+
+console.log("DOOR LIVE INSERT DEBUG", {
+  resolvedEventId,
+  resolvedQrCode,
+  resolvedLiveKey,
+  gateId,
+  doorRole,
+  deviceLabel,
 });
 
 
-    if (error) {
-      console.error("DOOR LIVE INSERT ERROR", error);
-    }
+const { error } = await supabase.from("door_live_events").upsert(
+  {
+    event_id: resolvedEventId,
+    qr_code: resolvedQrCode,
+    result: payload.result,
+    full_name: payload.person?.full_name ?? ticket.full_name ?? null,
+    email: payload.person?.email ?? ticket.email ?? null,
+    membership_group: payload.member?.membership_group ?? null,
+    gate_id: gateId,
+    door_role: doorRole,
+    device_label: deviceLabel,
+    live_key: resolvedLiveKey,
+    payload_json: payload as any,
+    created_at: new Date().toISOString(),
+  },
+  { onConflict: "live_key" }
+);
+
+
+if (error) {
+  console.error("DOOR LIVE INSERT ERROR", error);
+  throw error;
+}
   } catch (error) {
     console.error("DOOR LIVE INSERT EXCEPTION", error);
   }
