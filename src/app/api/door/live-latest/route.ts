@@ -24,11 +24,6 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const eventId = String(searchParams.get("eventId") || "").trim();
-    const gateId = String(
-  searchParams.get("gateId") ||
-    searchParams.get("gate_id") ||
-    ""
-).trim();
     if (!eventId) {
       return NextResponse.json(
         { ok: false, error: "Missing eventId" },
@@ -44,10 +39,6 @@ let query = supabase
   .eq("event_id", eventId)
   .order("created_at", { ascending: false })
   .limit(1);
-
-if (gateId) {
-  query = query.eq("gate_id", gateId);
-}
 
 const { data, error } = await query.maybeSingle();
 

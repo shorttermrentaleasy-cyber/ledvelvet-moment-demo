@@ -440,10 +440,6 @@ export default function DoorPage() {
 
         liveUrl.searchParams.set("eventId", eventId);
 
-        if (deviceContext.gateId) {
-          liveUrl.searchParams.set("gate_id", deviceContext.gateId);
-        }
-
         const res = await fetch(liveUrl.toString(), {
           method: "GET",
           cache: "no-store",
@@ -470,11 +466,12 @@ const result = payload?.result;
 const memberRole = payload?.member?.door_role;
 const doorRole = deviceContext.doorRole;
 
-// 🔵 DOOR STANDARD
+// DOOR STANDARD
 if (doorRole === "ordinary") {
   const allowed =
     result === "OK_MEMBER" ||
     result === "OK_PRIORITY" ||
+    result === "OK_PRIVILEGED" ||
     result === "DENY_WALLY" ||
     result === "DENY_RENEWAL" ||
     result === "ALREADY_CHECKED_IN";
@@ -482,7 +479,7 @@ if (doorRole === "ordinary") {
   if (!allowed) return;
 }
 
-// 🟣 DOOR LOYALTY
+// DOOR LOYALTY
 if (doorRole === "loyalty") {
   const allowed =
     result === "OK_PRIORITY" ||
@@ -493,10 +490,7 @@ if (doorRole === "loyalty") {
   if (!allowed) return;
 }
 
-// ✅ SOLO QUI passa
 setResponse(payload);
-
-
 
         setLastLiveTicketKey(nextKey);
         setCopyMessage(null);
@@ -509,7 +503,7 @@ setResponse(payload);
         console.error("Errore loadLatestCheckedInResult", error);
       }
     },
-    [lastLiveTicketKey, deviceContext.gateId]
+    [lastLiveTicketKey, deviceContext.doorRole]
   );
 
   const refreshDoorData = useCallback(async () => {
