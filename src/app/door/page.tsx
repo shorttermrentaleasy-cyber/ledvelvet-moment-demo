@@ -883,6 +883,8 @@ useEffect(() => {
 
   const showAutomaticWally = Boolean(response?.action === "OPEN_WALLY" && wallyActionUrl);
   const showManualWally = Boolean(manualWallyOpen && wallyActionUrl);
+
+
 const displayOverride = response
   ? getDoorDisplayOverride({
       doorRole: deviceContext.doorRole,
@@ -990,43 +992,47 @@ const bigMessage =
            <div
               className={`overflow-hidden rounded-[26px] border ${theme.border} ${theme.card} ${theme.glow} p-4 md:p-5`}
             >
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] ${theme.badge}`}
-                >
-                  {response?.badge || "Door"}
-                </span>
 
-                {response?.result ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-200">
-                    {response.result}
-                  </span>
-                ) : null}
 
-                {response?.debug?.source ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
-                    source: {response.debug.source}
-                  </span>
-                ) : null}
+<div className="mb-5 flex flex-wrap items-center gap-3">
+  <span
+    className={`rounded-full px-4 py-2 text-[13px] font-bold uppercase tracking-[0.18em] ${theme.badge}`}
+  >
+    {response?.badge || "Door"}
+  </span>
 
-                {response?.debug?.matched_by ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
-                    match: {response.debug.matched_by}
-                  </span>
-                ) : null}
+  {response?.result ? (
+    <span className="rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[13px] font-semibold text-slate-100">
+      {response.result}
+    </span>
+  ) : null}
 
-                {syncing ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
-                    syncing...
-                  </span>
-                ) : null}
+  {response?.debug?.source ? (
+    <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-[13px] font-semibold text-cyan-100">
+      source: {response.debug.source}
+    </span>
+  ) : null}
 
-                {lastSyncAt ? (
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-slate-300">
-                    sync {new Date(lastSyncAt).toLocaleTimeString()}
-                  </span>
-                ) : null}
-              </div>
+  {response?.debug?.matched_by ? (
+    <span className="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-4 py-2 text-[13px] font-semibold text-fuchsia-100">
+      match: {response.debug.matched_by}
+    </span>
+  ) : null}
+
+  {syncing ? (
+    <span className="rounded-full border border-yellow-300/20 bg-yellow-400/10 px-4 py-2 text-[13px] font-semibold text-yellow-100">
+      syncing...
+    </span>
+  ) : null}
+
+  {lastSyncAt ? (
+    <span className="rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[13px] font-semibold text-slate-200">
+      sync {new Date(lastSyncAt).toLocaleTimeString()}
+    </span>
+  ) : null}
+</div>
+
+
 
               {bookingSummary ? (
                 <div className="mb-4 grid gap-3 lg:grid-cols-2">
@@ -1082,7 +1088,7 @@ const bigMessage =
                   <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
                     Persona
                   </div>
-                  <div className="mt-1 text-xl font-semibold md:text-2xl">
+                  <div className="mt-1 text-2xl font-bold md:text-3xl">
                     {response.person.full_name}
                   </div>
                   <div className="mt-1 text-xs text-slate-300">
