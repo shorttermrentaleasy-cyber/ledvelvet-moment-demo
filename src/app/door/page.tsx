@@ -1179,17 +1179,6 @@ export default function DoorPage() {
                       Tessera / rinnovo richiesto
                     </div>
 
-                    <div className="text-3xl font-bold tracking-tight text-rose-50 md:text-5xl">
-                      NON SOCIO
-                    </div>
-
-                    <div className="mt-1 text-base font-medium text-rose-200 md:text-xl">
-                      Tessera / rinnovo richiesto
-                    </div>
-
-
-
-
                     <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3 py-3 text-sm font-semibold text-amber-100">
                       Questo ospite non è socio, esibisce solo biglietto Xceed.
                     </div>
