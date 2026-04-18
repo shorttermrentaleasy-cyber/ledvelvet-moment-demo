@@ -455,9 +455,9 @@ export default function DoorPage() {
         const payload = item.payload_json;
         if (!payload) return;
 
-//        const result = payload?.result;
-//        const memberRole = payload?.member?.door_role;
-//        const doorRole = deviceContext.doorRole;
+        const result = payload?.result;
+        const memberRole = payload?.member?.door_role;
+        const doorRole = deviceContext.doorRole;
 
         // CURRENT LIMIT:
         // qui filtriamo solo per ruolo e tipo esito.
@@ -471,7 +471,7 @@ export default function DoorPage() {
 
 
 
-/*
+
         // DOOR STANDARD
         if (doorRole === "ordinary") {
           const allowed =
@@ -494,7 +494,7 @@ export default function DoorPage() {
           if (!allowed) return;
         }
 
-*/
+
 
         setResponse(payload);
         setLastLiveTicketKey(nextKey);
