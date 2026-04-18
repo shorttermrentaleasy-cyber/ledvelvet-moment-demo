@@ -1063,7 +1063,7 @@ export default function DoorPage() {
                           Booking
                         </div>
 
-                      <div className="mt-1 text-xl font-semibold text-white">
+                      <div className="mt-1 text-lg font-semibold text-white">
                         {bookingSummary.ticketCount}
                       </div>
 
@@ -1077,7 +1077,7 @@ export default function DoorPage() {
                           Progress ingresso
                         </div>
 
-                      <div className="mt-1 text-xl font-semibold text-white">
+                      <div className="mt-1 text-lg font-semibold text-white">
                         {bookingSummary.progressLabel}
                       </div>
 
@@ -1089,10 +1089,10 @@ export default function DoorPage() {
                     </div>
                   ) : null}
 
-
-                  <div className={`text-2xl font-semibold tracking-tight md:text-3xl ${theme.title}`}>
-                    {bigTitle}
-                  </div>
+<div className={`text-xl font-semibold tracking-tight md:text-2xl ${theme.title}`}>
+  {bigTitle}
+</div>
+  
 
                   <div className={`mt-1 text-xs md:text-sm ${theme.accent}`}>
                     {bigMessage}
@@ -1104,9 +1104,12 @@ export default function DoorPage() {
                       <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
                         Persona
                       </div>
-                      <div className="mt-1 text-xl font-bold md:text-2xl">
-                        {response.person.full_name}
-                      </div>
+
+
+<div className="mt-1 text-lg font-bold md:text-xl">
+  {response.person.full_name}
+</div>
+
                       <div className="mt-1 text-xs text-slate-300">
                         {response.person.email || "—"}
                         {response.person.phone ? ` · ${response.person.phone}` : ""}
@@ -1118,8 +1121,7 @@ export default function DoorPage() {
                     <button
                       type="button"
                       onClick={() => setOpenMemberSearch(true)}
-                      className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
-                    >
+                      className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"                    >
                       Cerca socio
                     </button>
 
@@ -1154,7 +1156,7 @@ export default function DoorPage() {
                   </div>
                 </>
               ) : (
-                <div className="grid gap-3 xl:grid-cols-[1.25fr_0.75fr]">
+                <div className="grid gap-2 xl:grid-cols-[1.25fr_0.75fr]">
 
 
 
@@ -1171,22 +1173,23 @@ export default function DoorPage() {
                       ) : null}
                     </div>
 
-                    <div className="text-3xl font-bold tracking-tight text-rose-50 md:text-4xl">
-                      NON SOCIO
-                    </div>
+                   <div className="text-2xl font-bold tracking-tight text-rose-50 md:text-3xl">
+  NON SOCIO
+</div>
 
-                    <div className="mt-1 text-sm font-medium text-rose-200 md:text-lg">
-                      Tessera / rinnovo richiesto
-                    </div>
+ <div className="mt-1 text-xs font-medium text-rose-200 md:text-sm">
+  Tessera / rinnovo richiesto
+</div>
 
-                    <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3 py-3 text-sm font-semibold text-amber-100">
-                      Questo ospite non è socio, esibisce solo biglietto Xceed.
-                    </div>
+<div className="mt-2 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100">
+  Questo ospite non è socio, esibisce solo biglietto Xceed.
+</div>
+
 
                     <div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3">
-                      <div className="text-2xl font-bold text-white md:text-3xl">
-                        {personName}
-                      </div>
+                      <div className="text-xl font-bold text-white md:text-2xl">
+  {personName}
+</div>
                       <div className="mt-1 text-sm text-slate-200">
                         {personEmail}
                       </div>
@@ -1198,7 +1201,7 @@ export default function DoorPage() {
                           href={wallyActionUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex rounded-2xl border border-rose-300/30 bg-rose-500/20 px-5 py-3 text-sm font-bold uppercase tracking-[0.08em] text-rose-50 transition hover:bg-rose-500/30"
+                          className="inline-flex rounded-2xl border border-rose-300/30 bg-rose-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.08em] text-rose-50 transition hover:bg-rose-500/30"
                         >
                           Apri Wally
                         </a>
@@ -1207,7 +1210,7 @@ export default function DoorPage() {
                       <button
                         type="button"
                         onClick={() => setOpenMemberSearch(true)}
-                        className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
+                        className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
                       >
                         Cerca socio
                       </button>
@@ -1232,7 +1235,7 @@ export default function DoorPage() {
                     ) : null}
                   </div>
 
-                  <div className="rounded-3xl border border-white/10 bg-black/25 p-3">
+                  <div className="rounded-3xl border border-white/10 bg-black/25 p-2.5">
                     <div className="mb-2 flex items-center gap-2">
                       <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-300">
                         Accesso Wally
@@ -1255,13 +1258,13 @@ export default function DoorPage() {
                           />
                         </div>
 
-                        <div className="mt-3 text-lg font-semibold text-white">
-                          Fai tessera dal telefono.
-                        </div>
+                       <div className="mt-2 text-base font-semibold text-white">
+  Fai tessera dal telefono.
+</div>
 
-                        <div className="mt-1 text-sm text-slate-300">
-                          Scansiona il QR o clicca Apri Wally ora.
-                        </div>
+<div className="mt-1 text-xs text-slate-300">
+  Scansiona il QR o clicca Apri Wally ora.
+</div>
 
                         <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-slate-300 break-all">
                           {wallyActionUrl}
