@@ -446,6 +446,51 @@ export default function DoorPage() {
     }
   }, []);
 
+const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | null) => {
+  if (!result) return;
+
+  const shouldTrack =
+    result.result === "DENY_WALLY" ||
+    (result.result === "ALREADY_CHECKED_IN" && !result.member);
+
+  if (!shouldTrack) return;
+
+  const event_id = result.event?.id?.trim();
+  const ticket_qr_code = result.ticket?.qr_code?.trim();
+
+  if (!event_id || !ticket_qr_code) return;
+
+  try {
+    await fetch("/api/door/non-member-attempt", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        event_id,
+        ticket_qr_code,
+        booking_id: result.ticket?.booking_id ?? null,
+        transaction_id: result.ticket?.transaction_id ?? null,
+        full_name:
+          result.person?.full_name ??
+          result.ticket?.full_name ??
+          null,
+        email:
+          result.person?.email ??
+          result.ticket?.email ??
+          result.ticket?.buyer_email ??
+          null,
+        phone:
+          result.person?.phone ??
+          result.ticket?.phone ??
+          null,
+      }),
+    });
+  } catch (error) {
+    console.error("registerNonMemberAttempt error", error);
+  }
+}, []);
+
   const evaluateQr = useCallback(
     async (qr: string, opts?: { silent?: boolean }) => {
       const value = qr.trim();
@@ -492,6 +537,8 @@ export default function DoorPage() {
         const json = (await res.json()) as DoorApiResponse;
         setResponse(json);
         setLastQr(value);
+        void registerNonMemberAttempt(json);
+
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Errore di rete";
         setUiError(msg);
@@ -514,6 +561,7 @@ export default function DoorPage() {
       deviceContext.deviceLabel,
       selectedEventId,
       response?.event?.id,
+      registerNonMemberAttempt,
     ]
   );
 
@@ -581,19 +629,25 @@ export default function DoorPage() {
           if (!allowed) return;
         }
 
-        setResponse(payload);
-        setLastLiveTicketKey(nextKey);
-        setCopyMessage(null);
 
-        if (item.ticket_qr_code) {
-          setLastQr(item.ticket_qr_code);
-          setManualQr(item.ticket_qr_code);
-        }
+
+setResponse(payload);
+setLastLiveTicketKey(nextKey);
+setCopyMessage(null);
+void registerNonMemberAttempt(payload);
+
+if (item.ticket_qr_code) {
+  setLastQr(item.ticket_qr_code);
+  setManualQr(item.ticket_qr_code);
+}
+
+
+
       } catch (error) {
         console.error("Errore loadLatestCheckedInResult", error);
       }
     },
-    [lastLiveTicketKey, deviceContext.doorRole]
+    [lastLiveTicketKey, deviceContext.doorRole, registerNonMemberAttempt]
   );
 
   const refreshDoorData = useCallback(async () => {
@@ -699,6 +753,7 @@ export default function DoorPage() {
       setMemberSearchLoading(false);
     }
   }, []);
+
 
   async function startScanner() {
     if (!videoRef.current) return;
