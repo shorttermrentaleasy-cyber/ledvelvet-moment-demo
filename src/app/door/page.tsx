@@ -1201,7 +1201,7 @@ export default function DoorPage() {
                           href={wallyActionUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex rounded-2xl border border-rose-300/30 bg-rose-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.08em] text-rose-50 transition hover:bg-rose-500/30"
+                          className="inline-flex rounded-2xl border border-rose-300/30 bg-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-50 transition hover:bg-rose-500/30"
                         >
                           Apri Wally
                         </a>
@@ -1219,7 +1219,7 @@ export default function DoorPage() {
                         <button
                           type="button"
                           onClick={() => setManualWallyOpen((prev) => !prev)}
-                          className="inline-flex rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-3 text-sm font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
+                         className="inline-flex rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
                         >
                           {manualWallyOpen ? "Chiudi QR Wally" : "Apri QR Wally"}
                         </button>
