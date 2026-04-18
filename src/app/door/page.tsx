@@ -109,6 +109,74 @@ type UiTheme = {
   spotlight: string;
 };
 
+function getDoorDisplayOverride({
+  doorRole,
+  result,
+  memberRole,
+}: {
+  doorRole: string | null;
+  result: string;
+  memberRole: string | null;
+}) {
+  // STANDARD DOOR
+  if (doorRole === "ordinary") {
+    if (result === "OK_MEMBER") {
+      return { title: "SOCIO", message: "OK PASSA" };
+    }
+
+    if (result === "OK_PRIORITY") {
+      return {
+        title: "PORTA SBAGLIATA",
+        message: "Cliente loyalty → indirizzare al priority access",
+      };
+    }
+
+    if (result === "ALREADY_CHECKED_IN") {
+      if (memberRole === "loyalty") {
+        return {
+          title: "GIÀ REGISTRATO (LOYALTY)",
+          message: "Cliente loyalty già registrato",
+        };
+      }
+      return {
+        title: "GIÀ REGISTRATO",
+        message: "Accesso già effettuato",
+      };
+    }
+  }
+
+  // LOYALTY DOOR
+  if (doorRole === "loyalty") {
+    if (result === "OK_PRIORITY") {
+      return { title: "LOYALTY", message: "PRIORITY PASS" };
+    }
+
+    if (result === "OK_MEMBER") {
+      return {
+        title: "PORTA SBAGLIATA",
+        message: "Socio ordinario → indirizzare alla porta standard",
+      };
+    }
+
+    if (result === "ALREADY_CHECKED_IN") {
+      if (memberRole === "ordinary") {
+        return {
+          title: "GIÀ REGISTRATO (ORDINARIO)",
+          message: "Socio ordinario già registrato",
+        };
+      }
+      return {
+        title: "GIÀ REGISTRATO",
+        message: "Accesso già effettuato",
+      };
+    }
+  }
+
+  // DEFAULT (fallback)
+  return null;
+}
+
+
 function getTheme(result?: DoorResult): UiTheme {
   switch (result) {
     case "OK_MEMBER":
@@ -483,12 +551,14 @@ if (doorRole === "ordinary") {
 if (doorRole === "loyalty") {
   const allowed =
     result === "OK_PRIORITY" ||
+    result === "OK_MEMBER" ||
     result === "DENY_WALLY" ||
     result === "DENY_RENEWAL" ||
-    (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
+    result === "ALREADY_CHECKED_IN";
 
   if (!allowed) return;
 }
+
 
 setResponse(payload);
 
@@ -506,36 +576,72 @@ setResponse(payload);
     [lastLiveTicketKey, deviceContext.doorRole]
   );
 
-  const refreshDoorData = useCallback(async () => {
-    try {
-      if (syncing) return;
+const refreshDoorData = useCallback(async () => {
+  try {
+    if (syncing) return;
 
-      setSyncing(true);
-      setUiError(null);
+    setSyncing(true);
+    setUiError(null);
 
-      const localEventId = selectedEventId || response?.event?.id || null;
+    const localEventId = selectedEventId || response?.event?.id || null;
 
-      if (!localEventId) {
-        throw new Error("Seleziona un evento prima di eseguire il sync");
-      }
-
-       // Sync Xceed disattivato dalla Door per evitare loop live.
-      // Il sync va lanciato manualmente o da flusso separato.
-
-      await loadLatestCheckedInResult(localEventId);
-    } catch (error) {
-      const msg =
-        error instanceof Error ? error.message : "Errore refresh dati";
-      setUiError(msg);
-    } finally {
-      setSyncing(false);
+    if (!localEventId) {
+      throw new Error("Seleziona un evento prima di eseguire il sync");
     }
-  }, [
-    syncing,
-    selectedEventId,
-    response?.event?.id,
-    loadLatestCheckedInResult,
-  ]);
+
+    const syncUrl = new URL(
+      "/api/xceed/sync-tickets",
+      window.location.origin
+    );
+
+    syncUrl.searchParams.set("localEventId", localEventId);
+
+    if (deviceContext.gateId) {
+      syncUrl.searchParams.set("gate_id", deviceContext.gateId);
+    }
+
+    if (deviceContext.doorRole) {
+      syncUrl.searchParams.set("door_role", deviceContext.doorRole);
+    }
+
+    if (deviceContext.deviceLabel) {
+      syncUrl.searchParams.set("device_label", deviceContext.deviceLabel);
+    }
+
+    const syncRes = await fetch(syncUrl.toString(), {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    const syncJson = await syncRes.json().catch(() => null);
+
+    if (!syncRes.ok || !syncJson?.ok) {
+      throw new Error(
+        `Sync tickets fallita (${syncRes.status}) ${
+          syncJson?.error || syncJson?.details || ""
+        }`.trim()
+      );
+    }
+
+    setLastSyncAt(Date.now());
+
+    await loadLatestCheckedInResult(localEventId);
+  } catch (error) {
+    const msg =
+      error instanceof Error ? error.message : "Errore refresh dati";
+    setUiError(msg);
+  } finally {
+    setSyncing(false);
+  }
+}, [
+  syncing,
+  selectedEventId,
+  response?.event?.id,
+  deviceContext.gateId,
+  deviceContext.doorRole,
+  deviceContext.deviceLabel,
+  loadLatestCheckedInResult,
+]);
 
   const searchMembers = useCallback(async (q: string) => {
     setMemberSearchQuery(q);
@@ -729,11 +835,6 @@ useEffect(() => {
 }, [response]);
 
 
-
-   const bigTitle = response?.title || "DOOR CHECK";
-  const bigMessage =
-    response?.message || "Monitor porta: Xceed scansiona, qui controlli l’esito";
-
   const gatePresentation = useMemo(() => {
     const role = deviceContext.doorRole;
 
@@ -782,6 +883,23 @@ useEffect(() => {
 
   const showAutomaticWally = Boolean(response?.action === "OPEN_WALLY" && wallyActionUrl);
   const showManualWally = Boolean(manualWallyOpen && wallyActionUrl);
+const displayOverride = response
+  ? getDoorDisplayOverride({
+      doorRole: deviceContext.doorRole,
+      result: response.result,
+      memberRole: response.member?.door_role ?? null,
+    })
+  : null;
+
+const bigTitle =
+  displayOverride?.title ||
+  response?.title ||
+  "DOOR CHECK";
+
+const bigMessage =
+  displayOverride?.message ||
+  response?.message ||
+  "Monitor porta: Xceed scansiona, qui controlli l’esito";
 
   return (
     <div className={`min-h-screen text-white ${theme.shell}`}>
