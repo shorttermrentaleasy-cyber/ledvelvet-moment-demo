@@ -511,7 +511,6 @@ async function matchMemberFromLocalTicket(ticket: LocalXceedTicket): Promise<{
 
   return { member: null, matchedBy: null };
 }
-
 function mapEventForResponse(event: EventPolicy | null) {
   if (!event) return null;
 
@@ -576,64 +575,76 @@ async function saveDoorLiveEvent(params: {
   const { payload, ticket, gateId, doorRole, deviceLabel } = params;
 
   try {
-    
-const resolvedEventId = payload.event?.id ?? ticket.event_id ?? null;
-const resolvedQrCode = ticket.qr_code ?? null;
+    const resolvedEventId = payload.event?.id ?? ticket.event_id ?? null;
+    const resolvedQrCode = ticket.qr_code ?? null;
+    const resolvedGateId = gateId || "default_gate";
 
-const resolvedGateId = gateId || "default_gate"; // 🔥 FIX
+    const resolvedLiveKey =
+      (resolvedEventId && resolvedQrCode
+        ? `${resolvedEventId}__${resolvedQrCode}__checked_in`
+        : payload.live_key) ||
+      `fallback_${Date.now()}`;
 
-const resolvedLiveKey =
-  resolvedEventId && resolvedQrCode
-    ? `${resolvedEventId}__${resolvedQrCode}__checked_in`
-    : payload.live_key ?? null;
+    if (!resolvedEventId || !resolvedQrCode || !resolvedLiveKey) {
+      console.error("DOOR LIVE SKIP INSERT - missing required fields", {
+        resolvedEventId,
+        resolvedQrCode,
+        resolvedLiveKey,
+        gateId,
+        doorRole,
+        deviceLabel,
+      });
+      return;
+    }
 
-if (!resolvedEventId || !resolvedQrCode || !resolvedLiveKey) {
-  console.error("DOOR LIVE SKIP INSERT - missing required fields", {
-    resolvedEventId,
-    resolvedQrCode,
-    resolvedLiveKey,
-    gateId,
-    doorRole,
-    deviceLabel,
-  });
-  return;
-}
+    console.log("DOOR LIVE INSERT DEBUG", {
+      resolvedEventId,
+      resolvedQrCode,
+      resolvedLiveKey,
+      gateId,
+      doorRole,
+      deviceLabel,
+    });
 
-console.log("DOOR LIVE INSERT DEBUG", {
-  resolvedEventId,
-  resolvedQrCode,
-  resolvedLiveKey,
-  gateId,
-  doorRole,
-  deviceLabel,
-});
+    const { error } = await supabase.from("door_live_events").upsert(
+      {
+        event_id: resolvedEventId,
+        qr_code: resolvedQrCode,
+        result: payload.result,
+        full_name: payload.person?.full_name ?? ticket.full_name ?? null,
+        email: payload.person?.email ?? ticket.email ?? null,
+        membership_group: payload.member?.membership_group ?? null,
+        gate_id: resolvedGateId,
+        door_role: doorRole,
+        device_label: deviceLabel,
+        live_key: resolvedLiveKey,
+        payload_json: payload as any,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "live_key" }
+    );
 
-
-const { error } = await supabase.from("door_live_events").upsert(
-  {
-    event_id: resolvedEventId,
-    qr_code: resolvedQrCode,
-    result: payload.result,
-    full_name: payload.person?.full_name ?? ticket.full_name ?? null,
-    email: payload.person?.email ?? ticket.email ?? null,
-    membership_group: payload.member?.membership_group ?? null,
-    gate_id: resolvedGateId,  // FIX
-    door_role: doorRole,
-    device_label: deviceLabel,
-    live_key: resolvedLiveKey,
-    payload_json: payload as any,
-    created_at: new Date().toISOString(),
-  },
-  { onConflict: "live_key" }
-);
-
-
-if (error) {
-  console.error("DOOR LIVE INSERT ERROR", error);
-  throw error;
-}
+    if (error) {
+      console.error("DOOR LIVE INSERT ERROR", {
+        error,
+        payload,
+        resolvedEventId,
+        resolvedQrCode,
+        resolvedGateId,
+        resolvedLiveKey,
+      });
+      throw error;
+    } else {
+      console.log("DOOR LIVE INSERT OK", {
+        resolvedEventId,
+        resolvedQrCode,
+        resolvedGateId,
+        resolvedLiveKey,
+      });
+    }
   } catch (error) {
     console.error("DOOR LIVE INSERT EXCEPTION", error);
+    throw error;
   }
 }
 
@@ -769,7 +780,6 @@ function buildAlreadyCheckedInResponse(
     booking: null,
   };
 }
-
 function buildOkResponse(
   result: DoorResult,
   member: MemberRow,
@@ -924,82 +934,82 @@ export async function evaluateDoorXceedLive(
     const alreadyCheckedIn = isAlreadyCheckedInFromLocalTicket(ticket);
     const result = decideDoorResult(eventPolicy, member, alreadyCheckedIn);
 
-if (result === "DENY_WALLY") {
-  const payload = buildDenyWallyResponse(
-    ticket,
-    eventPolicy,
-    matchedBy,
-    source
-  );
-  const finalPayload = attachBooking(payload, bookingStats);
-  await saveDoorLiveEvent({
-    payload: finalPayload,
-    ticket,
-    gateId,
-    doorRole,
-    deviceLabel,
-  });
-  return finalPayload;
-}
-if (result === "DENY_RENEWAL") {
-  const payload = buildDenyRenewalResponse(
-    member as MemberRow,
-    ticket,
-    eventPolicy,
-    matchedBy,
-    source
-  );
-  const finalPayload = attachBooking(payload, bookingStats);
-  await saveDoorLiveEvent({
-    payload: finalPayload,
-    ticket,
-    gateId,
-    doorRole,
-    deviceLabel,
-  });
-  return finalPayload;
-}
+    if (result === "DENY_WALLY") {
+      const payload = buildDenyWallyResponse(
+        ticket,
+        eventPolicy,
+        matchedBy,
+        source
+      );
+      const finalPayload = attachBooking(payload, bookingStats);
+      await saveDoorLiveEvent({
+        payload: finalPayload,
+        ticket,
+        gateId,
+        doorRole,
+        deviceLabel,
+      });
+      return finalPayload;
+    }
 
-if (result === "ALREADY_CHECKED_IN") {
-  const payload = buildAlreadyCheckedInResponse(
-    member,
-    ticket,
-    eventPolicy,
-    matchedBy,
-    source
-  );
-  const finalPayload = attachBooking(payload, bookingStats);
-  await saveDoorLiveEvent({
-    payload: finalPayload,
-    ticket,
-    gateId,
-    doorRole,
-    deviceLabel,
-  });
-  return finalPayload;
-}
+    if (result === "DENY_RENEWAL") {
+      const payload = buildDenyRenewalResponse(
+        member as MemberRow,
+        ticket,
+        eventPolicy,
+        matchedBy,
+        source
+      );
+      const finalPayload = attachBooking(payload, bookingStats);
+      await saveDoorLiveEvent({
+        payload: finalPayload,
+        ticket,
+        gateId,
+        doorRole,
+        deviceLabel,
+      });
+      return finalPayload;
+    }
 
-const payload = buildOkResponse(
-  result,
-  member as MemberRow,
-  ticket,
-  eventPolicy,
-  matchedBy,
-  source
-);
+    if (result === "ALREADY_CHECKED_IN") {
+      const payload = buildAlreadyCheckedInResponse(
+        member,
+        ticket,
+        eventPolicy,
+        matchedBy,
+        source
+      );
+      const finalPayload = attachBooking(payload, bookingStats);
+      await saveDoorLiveEvent({
+        payload: finalPayload,
+        ticket,
+        gateId,
+        doorRole,
+        deviceLabel,
+      });
+      return finalPayload;
+    }
 
-const finalPayload = attachBooking(payload, bookingStats);
+    const payload = buildOkResponse(
+      result,
+      member as MemberRow,
+      ticket,
+      eventPolicy,
+      matchedBy,
+      source
+    );
 
-await saveDoorLiveEvent({
-  payload: finalPayload,
-  ticket,
-  gateId,
-  doorRole,
-  deviceLabel,
-});
+    const finalPayload = attachBooking(payload, bookingStats);
 
-return finalPayload;
+    await saveDoorLiveEvent({
+      payload: finalPayload,
+      ticket,
+      gateId,
+      doorRole,
+      deviceLabel,
+    });
 
+    return finalPayload;
   } catch (error: any) {
     const message =
       error instanceof Error
@@ -1012,7 +1022,6 @@ return finalPayload;
       error,
       message,
     });
-
 
     return buildErrorResponse("Errore interno", message);
   }
