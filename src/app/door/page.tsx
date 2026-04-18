@@ -265,6 +265,12 @@ export default function DoorPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [eventSummary, setEventSummary] = useState<{
+  total_tickets: number;
+  entered_tickets: number;
+  missing_tickets: number;
+  } | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
 
   const [lastLiveTicketKey, setLastLiveTicketKey] = useState("");
   const [manualQr, setManualQr] = useState("");
@@ -445,6 +451,43 @@ export default function DoorPage() {
       setLoadingEvents(false);
     }
   }, []);
+
+const loadEventSummary = useCallback(async (eventId: string) => {
+  const id = eventId.trim();
+  if (!id) {
+    setEventSummary(null);
+    return;
+  }
+
+  try {
+    setLoadingSummary(true);
+
+    const res = await fetch(
+      `/api/door/event-summary?eventId=${encodeURIComponent(id)}`,
+      {
+        method: "GET",
+        cache: "no-store",
+      }
+    );
+
+    const json = await res.json();
+
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.error || "Errore caricamento contatore evento");
+    }
+
+    setEventSummary({
+      total_tickets: Number(json.total_tickets || 0),
+      entered_tickets: Number(json.entered_tickets || 0),
+      missing_tickets: Number(json.missing_tickets || 0),
+    });
+  } catch (error) {
+    console.error("Errore loadEventSummary", error);
+    setEventSummary(null);
+  } finally {
+    setLoadingSummary(false);
+  }
+}, []);
 
 const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | null) => {
   if (!result) return;
@@ -697,9 +740,15 @@ if (item.ticket_qr_code) {
         );
       }
 
-      setLastSyncAt(Date.now());
+setLastSyncAt(Date.now());
 
-      await loadLatestCheckedInResult(localEventId);
+await Promise.all([
+  loadLatestCheckedInResult(localEventId),
+  loadEventSummary(localEventId),
+]);
+
+
+
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Errore refresh dati";
@@ -714,6 +763,8 @@ if (item.ticket_qr_code) {
     deviceContext.gateId,
     deviceContext.doorRole,
     deviceContext.deviceLabel,
+    loadLatestCheckedInResult,
+    loadEventSummary,
     loadLatestCheckedInResult,
   ]);
 
@@ -869,9 +920,21 @@ if (item.ticket_qr_code) {
     void loadDoorEvents();
   }, [loadDoorEvents]);
 
+
+
   useEffect(() => {
     setLastLiveTicketKey("");
   }, [selectedEventId, deviceContext.gateId]);
+
+useEffect(() => {
+  if (!selectedEventId) {
+    setEventSummary(null);
+    return;
+  }
+
+  void loadEventSummary(selectedEventId);
+}, [selectedEventId, loadEventSummary]);
+
 
   useEffect(() => {
     if (!selectedEventId) return;
@@ -994,34 +1057,64 @@ if (item.ticket_qr_code) {
                   ) : null}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                  <button
-                    onClick={async () => {
-                      await unlockAudio();
-                      void refreshDoorData();
-                    }}
-                    disabled={syncing || loading}
-                    className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {syncing ? "Aggiornamento..." : "Aggiorna dati"}
-                  </button>
 
-                  <button
-                    onClick={resetAll}
-                    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10"
-                  >
-                    Reset
-                  </button>
+<div className="flex flex-wrap items-center gap-2 xl:justify-end">
+  <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white">
+    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
+      Totale
+    </div>
+    <div className="mt-1 text-sm font-semibold">
+      {loadingSummary ? "..." : eventSummary?.total_tickets ?? 0}
+    </div>
+  </div>
 
-                  <button
-                    onClick={async () => {
-                      await unlockAudio();
-                    }}
-                    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10"
-                  >
-                    {audioEnabled ? "Audio attivo" : "Attiva audio"}
-                  </button>
-                </div>
+  <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white">
+    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
+      Entrati
+    </div>
+    <div className="mt-1 text-sm font-semibold">
+      {loadingSummary ? "..." : eventSummary?.entered_tickets ?? 0}
+    </div>
+  </div>
+
+  <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white">
+    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
+      Mancano
+    </div>
+    <div className="mt-1 text-sm font-semibold">
+      {loadingSummary ? "..." : eventSummary?.missing_tickets ?? 0}
+    </div>
+  </div>
+
+  <button
+    onClick={async () => {
+      await unlockAudio();
+      void refreshDoorData();
+    }}
+    disabled={syncing || loading}
+    className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+  >
+    {syncing ? "Aggiornamento..." : "Aggiorna dati"}
+  </button>
+
+  <button
+    onClick={resetAll}
+    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+  >
+    Reset
+  </button>
+
+  <button
+    onClick={async () => {
+      await unlockAudio();
+    }}
+    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+  >
+    {audioEnabled ? "Audio attivo" : "Attiva audio"}
+  </button>
+</div>
+
+
               </div>
             </div>
 
