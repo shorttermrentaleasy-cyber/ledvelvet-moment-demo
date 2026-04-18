@@ -109,74 +109,6 @@ type UiTheme = {
   spotlight: string;
 };
 
-function getDoorDisplayOverride({
-  doorRole,
-  result,
-  memberRole,
-}: {
-  doorRole: string | null;
-  result: string;
-  memberRole: string | null;
-}) {
-  // STANDARD DOOR
-  if (doorRole === "ordinary") {
-    if (result === "OK_MEMBER") {
-      return { title: "SOCIO", message: "OK PASSA" };
-    }
-
-    if (result === "OK_PRIORITY") {
-      return {
-        title: "PORTA SBAGLIATA",
-        message: "Cliente loyalty → indirizzare al priority access",
-      };
-    }
-
-    if (result === "ALREADY_CHECKED_IN") {
-      if (memberRole === "loyalty") {
-        return {
-          title: "GIÀ REGISTRATO (LOYALTY)",
-          message: "Cliente loyalty già registrato",
-        };
-      }
-      return {
-        title: "GIÀ REGISTRATO",
-        message: "Accesso già effettuato",
-      };
-    }
-  }
-
-  // LOYALTY DOOR
-  if (doorRole === "loyalty") {
-    if (result === "OK_PRIORITY") {
-      return { title: "LOYALTY", message: "PRIORITY PASS" };
-    }
-
-    if (result === "OK_MEMBER") {
-      return {
-        title: "PORTA SBAGLIATA",
-        message: "Socio ordinario → indirizzare alla porta standard",
-      };
-    }
-
-    if (result === "ALREADY_CHECKED_IN") {
-      if (memberRole === "ordinary") {
-        return {
-          title: "GIÀ REGISTRATO (ORDINARIO)",
-          message: "Socio ordinario già registrato",
-        };
-      }
-      return {
-        title: "GIÀ REGISTRATO",
-        message: "Accesso già effettuato",
-      };
-    }
-  }
-
-  // DEFAULT (fallback)
-  return null;
-}
-
-
 function getTheme(result?: DoorResult): UiTheme {
   switch (result) {
     case "OK_MEMBER":
@@ -276,10 +208,7 @@ function row(label: string, value?: React.ReactNode) {
   );
 }
 
-function playDoorToneWithContext(
-  ctx: AudioContext,
-  kind?: DoorResult
-) {
+function playDoorToneWithContext(ctx: AudioContext, kind?: DoorResult) {
   try {
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -321,6 +250,7 @@ export default function DoorPage() {
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const lastSoundKeyRef = useRef<string>("");
   const audioContextRef = useRef<AudioContext | null>(null);
+
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [deviceContext, setDeviceContext] = useState<{
     gateId: string | null;
@@ -423,7 +353,6 @@ export default function DoorPage() {
       setLoadingEvents(false);
     }
   }, []);
-
   const evaluateQr = useCallback(
     async (qr: string, opts?: { silent?: boolean }) => {
       const value = qr.trim();
@@ -436,10 +365,7 @@ export default function DoorPage() {
       setUiError(null);
       setCopyMessage(null);
 
-
       try {
-
-
         const evalUrl = new URL(
           "/api/door/xceed-live-evaluate",
           window.location.origin
@@ -470,13 +396,11 @@ export default function DoorPage() {
           }),
         });
 
-
         const json = (await res.json()) as DoorApiResponse;
         setResponse(json);
         setLastQr(value);
       } catch (error) {
-        const msg =
-          error instanceof Error ? error.message : "Errore di rete";
+        const msg = error instanceof Error ? error.message : "Errore di rete";
         setUiError(msg);
         setResponse({
           ok: false,
@@ -491,16 +415,18 @@ export default function DoorPage() {
         }
       }
     },
-
-
-    [deviceContext.gateId, deviceContext.doorRole, deviceContext.deviceLabel, selectedEventId, response?.event?.id]
+    [
+      deviceContext.gateId,
+      deviceContext.doorRole,
+      deviceContext.deviceLabel,
+      selectedEventId,
+      response?.event?.id,
+    ]
   );
-    
+
   const loadLatestCheckedInResult = useCallback(
     async (eventId: string) => {
       try {
-
-
         const liveUrl = new URL(
           "/api/door/live-latest",
           window.location.origin
@@ -512,7 +438,6 @@ export default function DoorPage() {
           method: "GET",
           cache: "no-store",
         });
-
 
         const json = (await res.json()) as {
           ok: boolean;
@@ -527,41 +452,51 @@ export default function DoorPage() {
         if (!nextKey) return;
         if (nextKey === lastLiveTicketKey) return;
 
-const payload = item.payload_json;
-if (!payload) return;
+        const payload = item.payload_json;
+        if (!payload) return;
 
-const result = payload?.result;
-const memberRole = payload?.member?.door_role;
-const doorRole = deviceContext.doorRole;
+//        const result = payload?.result;
+//        const memberRole = payload?.member?.door_role;
+//        const doorRole = deviceContext.doorRole;
 
-// DOOR STANDARD
-if (doorRole === "ordinary") {
-  const allowed =
-    result === "OK_MEMBER" ||
-    result === "OK_PRIORITY" ||
-    result === "OK_PRIVILEGED" ||
-    result === "DENY_WALLY" ||
-    result === "DENY_RENEWAL" ||
-    result === "ALREADY_CHECKED_IN";
+        // CURRENT LIMIT:
+        // qui filtriamo solo per ruolo e tipo esito.
+        // Non sappiamo ancora da quale device/Xceed app è partito lo scan.
+        // Quindi questa logica NON rappresenta ancora la porta fisica reale del check-in.
 
-  if (!allowed) return;
-}
-
-// DOOR LOYALTY
-if (doorRole === "loyalty") {
-  const allowed =
-    result === "OK_PRIORITY" ||
-    result === "OK_MEMBER" ||
-    result === "DENY_WALLY" ||
-    result === "DENY_RENEWAL" ||
-    result === "ALREADY_CHECKED_IN";
-
-  if (!allowed) return;
-}
+        // TEMP UI FILTER:
+        // la pagina standard / loyalty mostra eventi in base al ruolo atteso.
+        // Finché non avremo checked_in_by, questo filtro serve solo a rendere leggibile la UI,
+        // non a certificare da quale porta è stato fatto davvero il check-in.
 
 
-setResponse(payload);
 
+/*
+        // DOOR STANDARD
+        if (doorRole === "ordinary") {
+          const allowed =
+            result === "OK_MEMBER" ||
+            result === "DENY_WALLY" ||
+            result === "DENY_RENEWAL" ||
+            (result === "ALREADY_CHECKED_IN" && memberRole === "ordinary");
+
+          if (!allowed) return;
+        }
+
+        // DOOR LOYALTY
+        if (doorRole === "loyalty") {
+          const allowed =
+            result === "OK_PRIORITY" ||
+            result === "DENY_WALLY" ||
+            result === "DENY_RENEWAL" ||
+            (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
+
+          if (!allowed) return;
+        }
+
+*/
+
+        setResponse(payload);
         setLastLiveTicketKey(nextKey);
         setCopyMessage(null);
 
@@ -573,75 +508,78 @@ setResponse(payload);
         console.error("Errore loadLatestCheckedInResult", error);
       }
     },
-    [lastLiveTicketKey, deviceContext.doorRole]
+
+//    [lastLiveTicketKey, deviceContext.doorRole]  
+
+    [lastLiveTicketKey]
   );
 
-const refreshDoorData = useCallback(async () => {
-  try {
-    if (syncing) return;
+  const refreshDoorData = useCallback(async () => {
+    try {
+      if (syncing) return;
 
-    setSyncing(true);
-    setUiError(null);
+      setSyncing(true);
+      setUiError(null);
 
-    const localEventId = selectedEventId || response?.event?.id || null;
+      const localEventId = selectedEventId || response?.event?.id || null;
 
-    if (!localEventId) {
-      throw new Error("Seleziona un evento prima di eseguire il sync");
-    }
+      if (!localEventId) {
+        throw new Error("Seleziona un evento prima di eseguire il sync");
+      }
 
-    const syncUrl = new URL(
-      "/api/xceed/sync-tickets",
-      window.location.origin
-    );
-
-    syncUrl.searchParams.set("localEventId", localEventId);
-
-    if (deviceContext.gateId) {
-      syncUrl.searchParams.set("gate_id", deviceContext.gateId);
-    }
-
-    if (deviceContext.doorRole) {
-      syncUrl.searchParams.set("door_role", deviceContext.doorRole);
-    }
-
-    if (deviceContext.deviceLabel) {
-      syncUrl.searchParams.set("device_label", deviceContext.deviceLabel);
-    }
-
-    const syncRes = await fetch(syncUrl.toString(), {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    const syncJson = await syncRes.json().catch(() => null);
-
-    if (!syncRes.ok || !syncJson?.ok) {
-      throw new Error(
-        `Sync tickets fallita (${syncRes.status}) ${
-          syncJson?.error || syncJson?.details || ""
-        }`.trim()
+      const syncUrl = new URL(
+        "/api/xceed/sync-tickets",
+        window.location.origin
       );
+
+      syncUrl.searchParams.set("localEventId", localEventId);
+
+      if (deviceContext.gateId) {
+        syncUrl.searchParams.set("gate_id", deviceContext.gateId);
+      }
+
+      if (deviceContext.doorRole) {
+        syncUrl.searchParams.set("door_role", deviceContext.doorRole);
+      }
+
+      if (deviceContext.deviceLabel) {
+        syncUrl.searchParams.set("device_label", deviceContext.deviceLabel);
+      }
+
+      const syncRes = await fetch(syncUrl.toString(), {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const syncJson = await syncRes.json().catch(() => null);
+
+      if (!syncRes.ok || !syncJson?.ok) {
+        throw new Error(
+          `Sync tickets fallita (${syncRes.status}) ${
+            syncJson?.error || syncJson?.details || ""
+          }`.trim()
+        );
+      }
+
+      setLastSyncAt(Date.now());
+
+      await loadLatestCheckedInResult(localEventId);
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : "Errore refresh dati";
+      setUiError(msg);
+    } finally {
+      setSyncing(false);
     }
-
-    setLastSyncAt(Date.now());
-
-    await loadLatestCheckedInResult(localEventId);
-  } catch (error) {
-    const msg =
-      error instanceof Error ? error.message : "Errore refresh dati";
-    setUiError(msg);
-  } finally {
-    setSyncing(false);
-  }
-}, [
-  syncing,
-  selectedEventId,
-  response?.event?.id,
-  deviceContext.gateId,
-  deviceContext.doorRole,
-  deviceContext.deviceLabel,
-  loadLatestCheckedInResult,
-]);
+  }, [
+    syncing,
+    selectedEventId,
+    response?.event?.id,
+    deviceContext.gateId,
+    deviceContext.doorRole,
+    deviceContext.deviceLabel,
+    loadLatestCheckedInResult,
+  ]);
 
   const searchMembers = useCallback(async (q: string) => {
     setMemberSearchQuery(q);
@@ -725,35 +663,34 @@ const refreshDoorData = useCallback(async () => {
     }
   }
 
+  const unlockAudio = useCallback(async () => {
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 
-const unlockAudio = useCallback(async () => {
-  try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return false;
 
-    if (!AudioCtx) return false;
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioCtx();
+      }
 
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioCtx();
+      if (audioContextRef.current.state !== "running") {
+        await audioContextRef.current.resume();
+      }
+
+      setAudioEnabled(audioContextRef.current.state === "running");
+
+      if (audioContextRef.current.state === "running") {
+        playDoorToneWithContext(audioContextRef.current, "OK_MEMBER");
+      }
+
+      return audioContextRef.current.state === "running";
+    } catch {
+      setAudioEnabled(false);
+      return false;
     }
-
-    if (audioContextRef.current.state !== "running") {
-      await audioContextRef.current.resume();
-    }
-
-    setAudioEnabled(audioContextRef.current.state === "running");
-
-    if (audioContextRef.current.state === "running") {
-      playDoorToneWithContext(audioContextRef.current, "OK_MEMBER");
-    }
-
-    return audioContextRef.current.state === "running";
-  } catch {
-    setAudioEnabled(false);
-    return false;
-  }
-}, []);
+  }, []);
 
   function stopScanner() {
     controlsRef.current?.stop();
@@ -800,7 +737,6 @@ const unlockAudio = useCallback(async () => {
     setLastLiveTicketKey("");
   }, [selectedEventId, deviceContext.gateId]);
 
-
   useEffect(() => {
     if (!selectedEventId) return;
 
@@ -812,28 +748,24 @@ const unlockAudio = useCallback(async () => {
     return () => clearInterval(interval);
   }, [selectedEventId, refreshDoorData]);
 
+  useEffect(() => {
+    const key =
+      response?.live_key ||
+      response?.ticket?.id ||
+      response?.ticket?.qr_code ||
+      "";
 
+    if (!key) return;
+    if (lastSoundKeyRef.current === key) return;
 
+    lastSoundKeyRef.current = key;
 
-useEffect(() => {
-  const key =
-    response?.live_key ||
-    response?.ticket?.id ||
-    response?.ticket?.qr_code ||
-    "";
+    const ctx = audioContextRef.current;
+    if (!ctx) return;
+    if (ctx.state !== "running") return;
 
-  if (!key) return;
-  if (lastSoundKeyRef.current === key) return;
-
-  lastSoundKeyRef.current = key;
-
-  const ctx = audioContextRef.current;
-  if (!ctx) return;
-  if (ctx.state !== "running") return;
-
-  playDoorToneWithContext(ctx, response?.result);
-}, [response]);
-
+    playDoorToneWithContext(ctx, response?.result);
+  }, [response]);
 
   const gatePresentation = useMemo(() => {
     const role = deviceContext.doorRole;
@@ -884,25 +816,9 @@ useEffect(() => {
   const showAutomaticWally = Boolean(response?.action === "OPEN_WALLY" && wallyActionUrl);
   const showManualWally = Boolean(manualWallyOpen && wallyActionUrl);
 
-
-const displayOverride = response
-  ? getDoorDisplayOverride({
-      doorRole: deviceContext.doorRole,
-      result: response.result,
-      memberRole: response.member?.door_role ?? null,
-    })
-  : null;
-
-const bigTitle =
-  displayOverride?.title ||
-  response?.title ||
-  "DOOR CHECK";
-
-const bigMessage =
-  displayOverride?.message ||
-  response?.message ||
-  "Monitor porta: Xceed scansiona, qui controlli l’esito";
-
+  const bigTitle = response?.title || "DOOR CHECK";
+  const bigMessage =
+    response?.message || "Monitor porta: Xceed scansiona, qui controlli l’esito";
   return (
     <div className={`min-h-screen text-white ${theme.shell}`}>
       <div className="mx-auto max-w-7xl px-4 py-4 md:px-5">
@@ -925,8 +841,8 @@ const bigMessage =
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={async () => {
-                   await unlockAudio();
-                   void refreshDoorData();
+                  await unlockAudio();
+                  void refreshDoorData();
                 }}
                 disabled={syncing || loading}
                 className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
@@ -940,21 +856,20 @@ const bigMessage =
               >
                 Reset
               </button>
-<button
-  onClick={async () => {
-    await unlockAudio();
-  }}
-  className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/10"
->
-  {audioEnabled ? "Audio attivo" : "Attiva audio"}
-</button>
+
+              <button
+                onClick={async () => {
+                  await unlockAudio();
+                }}
+                className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/10"
+              >
+                {audioEnabled ? "Audio attivo" : "Attiva audio"}
+              </button>
             </div>
           </div>
 
           <div className="relative z-10 space-y-4">
-            <div
-              className={`rounded-[26px] border p-4 md:p-5 ${gatePresentation.box}`}
-            >
+            <div className={`rounded-[26px] border p-4 md:p-5 ${gatePresentation.box}`}>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className={`text-[11px] font-bold uppercase tracking-[0.22em] ${gatePresentation.subtitleClass}`}>
@@ -988,51 +903,48 @@ const bigMessage =
                   ) : null}
                 </div>
               </div>
-            </div> 
-           <div
+            </div>
+
+            <div
               className={`overflow-hidden rounded-[26px] border ${theme.border} ${theme.card} ${theme.glow} p-4 md:p-5`}
             >
+              <div className="mb-5 flex flex-wrap items-center gap-3">
+                <span
+                  className={`rounded-full px-4 py-2 text-[13px] font-bold uppercase tracking-[0.18em] ${theme.badge}`}
+                >
+                  {response?.badge || "Door"}
+                </span>
 
+                {response?.result ? (
+                  <span className="rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[13px] font-semibold text-slate-100">
+                    {response.result}
+                  </span>
+                ) : null}
 
-<div className="mb-5 flex flex-wrap items-center gap-3">
-  <span
-    className={`rounded-full px-4 py-2 text-[13px] font-bold uppercase tracking-[0.18em] ${theme.badge}`}
-  >
-    {response?.badge || "Door"}
-  </span>
+                {response?.debug?.source ? (
+                  <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-[13px] font-semibold text-cyan-100">
+                    source: {response.debug.source}
+                  </span>
+                ) : null}
 
-  {response?.result ? (
-    <span className="rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[13px] font-semibold text-slate-100">
-      {response.result}
-    </span>
-  ) : null}
+                {response?.debug?.matched_by ? (
+                  <span className="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-4 py-2 text-[13px] font-semibold text-fuchsia-100">
+                    match: {response.debug.matched_by}
+                  </span>
+                ) : null}
 
-  {response?.debug?.source ? (
-    <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-[13px] font-semibold text-cyan-100">
-      source: {response.debug.source}
-    </span>
-  ) : null}
+                {syncing ? (
+                  <span className="rounded-full border border-yellow-300/20 bg-yellow-400/10 px-4 py-2 text-[13px] font-semibold text-yellow-100">
+                    syncing...
+                  </span>
+                ) : null}
 
-  {response?.debug?.matched_by ? (
-    <span className="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-4 py-2 text-[13px] font-semibold text-fuchsia-100">
-      match: {response.debug.matched_by}
-    </span>
-  ) : null}
-
-  {syncing ? (
-    <span className="rounded-full border border-yellow-300/20 bg-yellow-400/10 px-4 py-2 text-[13px] font-semibold text-yellow-100">
-      syncing...
-    </span>
-  ) : null}
-
-  {lastSyncAt ? (
-    <span className="rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[13px] font-semibold text-slate-200">
-      sync {new Date(lastSyncAt).toLocaleTimeString()}
-    </span>
-  ) : null}
-</div>
-
-
+                {lastSyncAt ? (
+                  <span className="rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[13px] font-semibold text-slate-200">
+                    sync {new Date(lastSyncAt).toLocaleTimeString()}
+                  </span>
+                ) : null}
+              </div>
 
               {bookingSummary ? (
                 <div className="mb-4 grid gap-3 lg:grid-cols-2">
@@ -1059,18 +971,6 @@ const bigMessage =
                     <div className="mt-1 text-xs text-slate-300">
                       Entrati: {bookingSummary.checkedInCount} su {bookingSummary.ticketCount}
                     </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {response?.result === "OK_PRIORITY" ||
-              response?.member?.door_role === "loyalty" ? (
-                <div className="mb-4 rounded-2xl border border-yellow-300/40 bg-yellow-300/12 px-4 py-3 text-center">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-yellow-100">
-                    Accesso privilegiato
-                  </div>
-                  <div className="mt-1 text-base font-semibold text-yellow-50">
-                    Priority Pass
                   </div>
                 </div>
               ) : null}
@@ -1313,10 +1213,10 @@ const bigMessage =
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
-                       onClick={async () => {
-                         await unlockAudio();
-                         void startScanner();
-                       }}
+                        onClick={async () => {
+                          await unlockAudio();
+                          void startScanner();
+                        }}
                         className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15"
                       >
                         {scanActive ? "Scanner test attivo" : "Avvia scanner test"}
@@ -1348,11 +1248,10 @@ const bigMessage =
                     />
 
                     <button
-                    onClick={async () => {
-                       await unlockAudio();
-                       void evaluateQr(manualQr);
-                    }}
-
+                      onClick={async () => {
+                        await unlockAudio();
+                        void evaluateQr(manualQr);
+                      }}
                       disabled={!manualQr.trim() || loading}
                       className="mt-3 w-full rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -1463,7 +1362,9 @@ const bigMessage =
 
               {memberSearchResults.map((m) => {
                 const full = `${m.first_name || ""} ${m.last_name || ""}`.trim() || "—";
-                const isActive = String(m.status || "").toUpperCase().includes("ATTIV") || String(m.status || "").toUpperCase() === "ACTIVE";
+                const isActive =
+                  String(m.status || "").toUpperCase().includes("ATTIV") ||
+                  String(m.status || "").toUpperCase() === "ACTIVE";
 
                 return (
                   <div
