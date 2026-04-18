@@ -487,8 +487,8 @@ export default function DoorPage() {
         if (doorRole === "loyalty") {
           const allowed =
             result === "OK_PRIORITY" ||
-            result === "DENY_WALLY" ||
-            result === "DENY_RENEWAL" ||
+//            result === "DENY_WALLY" ||
+//            result === "DENY_RENEWAL" ||
             (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
 
           if (!allowed) return;
@@ -509,9 +509,9 @@ export default function DoorPage() {
       }
     },
 
-//    [lastLiveTicketKey, deviceContext.doorRole]  
+    [lastLiveTicketKey, deviceContext.doorRole]  
 
-    [lastLiveTicketKey]
+
   );
 
   const refreshDoorData = useCallback(async () => {
