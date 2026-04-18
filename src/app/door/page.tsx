@@ -478,7 +478,8 @@ export default function DoorPage() {
             result === "OK_MEMBER" ||
             result === "DENY_WALLY" ||
             result === "DENY_RENEWAL" ||
-            (result === "ALREADY_CHECKED_IN" && memberRole === "ordinary");
+            (result === "ALREADY_CHECKED_IN" &&
+            (memberRole === "ordinary" || memberRole == null));
 
           if (!allowed) return;
         }
