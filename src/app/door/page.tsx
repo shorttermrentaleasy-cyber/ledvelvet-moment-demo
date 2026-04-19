@@ -291,6 +291,7 @@ export default function DoorPage() {
   const [memberSearchError, setMemberSearchError] = useState<string | null>(null);
   const [manualLinkSaving, setManualLinkSaving] = useState(false);
   const [manualLinkMessage, setManualLinkMessage] = useState<string | null>(null);
+  const [manualLinkType, setManualLinkType] = useState<"created" | "updated" | "unchanged" | null>(null);
 
   const theme = useMemo(() => getTheme(response?.result), [response?.result]);
 
@@ -871,15 +872,17 @@ await Promise.all([
         throw new Error(json?.error || "Errore salvataggio link manuale");
       }
 
-      if (json?.unchanged === true) {
-        setManualLinkMessage("Questo socio è già collegato al ticket");
-      } else {
-        setManualLinkMessage(
-          json?.created === true
-            ? "Socio collegato al ticket corrente"
-            : "Collegamento ticket aggiornato"
-        );
-      }
+if (json?.unchanged === true) {
+  setManualLinkType("unchanged");
+  setManualLinkMessage("Questo socio è già collegato al ticket");
+} else if (json?.created === true) {
+  setManualLinkType("created");
+  setManualLinkMessage("Socio collegato al ticket corrente");
+} else {
+  setManualLinkType("updated");
+  setManualLinkMessage("Collegamento ticket aggiornato");
+}
+
 
     } catch (error) {
       const msg =
@@ -1453,6 +1456,7 @@ useEffect(() => {
                         onClick={() => {
                           setManualLinkMessage(null);
                           setOpenMemberSearch(true);
+                          setManualLinkType(null);
                         }}
                         className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
                       >
@@ -1837,12 +1841,23 @@ useEffect(() => {
               </div>
             ) : null}
 
-            {manualLinkMessage ? (
-              <div className="mt-4 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-3 text-xs text-cyan-100">
-                {manualLinkMessage}
-              </div>
-            ) : null}
-
+{manualLinkMessage ? (
+  <div
+    className={`mt-4 rounded-2xl p-3 text-xs
+      ${
+        manualLinkType === "created"
+          ? "border border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+          : manualLinkType === "updated"
+          ? "border border-blue-300/20 bg-blue-400/10 text-blue-100"
+          : manualLinkType === "unchanged"
+          ? "border border-amber-300/20 bg-amber-400/10 text-amber-100"
+          : "border border-cyan-300/20 bg-cyan-400/10 text-cyan-100"
+      }
+    `}
+  >
+    {manualLinkMessage}
+  </div>
+) : null}
             <div className="mt-4 max-h-[55vh] space-y-2 overflow-y-auto pr-1">
               {!memberSearchLoading &&
               !memberSearchError &&
