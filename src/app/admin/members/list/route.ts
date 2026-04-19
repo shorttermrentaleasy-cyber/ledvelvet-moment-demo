@@ -25,10 +25,6 @@ async function requireAdmin() {
   return { ok: true as const, email };
 }
 
-function safeLike(q: string) {
-  return `%${q.replace(/%/g, "\\%")}%`;
-}
-
 function clampInt(v: string | null, def: number, min: number, max: number) {
   const n = Number.parseInt(String(v ?? ""), 10);
   if (!Number.isFinite(n)) return def;
@@ -38,35 +34,31 @@ function clampInt(v: string | null, def: number, min: number, max: number) {
 export async function GET(req: Request) {
   try {
     const admin = await requireAdmin();
-    if (!admin.ok) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: admin.code });
+    if (!admin.ok) {
+      return NextResponse.json(
+        { ok: false, error: "unauthorized" },
+        { status: admin.code }
+      );
+    }
 
-    const supabase = createClient(assertEnv("SUPABASE_URL"), assertEnv("SUPABASE_SERVICE_ROLE"), {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    const supabase = createClient(
+      assertEnv("SUPABASE_URL"),
+      assertEnv("SUPABASE_SERVICE_ROLE"),
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+      }
+    );
 
     const { searchParams } = new URL(req.url);
     const q = String(searchParams.get("q") || "").trim();
-    const status = String(searchParams.get("status") || "").trim(); // "ATTIVA" | "NON ATTIVA" | ""
+    const status = String(searchParams.get("status") || "").trim();
     const limit = clampInt(searchParams.get("limit"), 200, 1, 500);
     const offset = clampInt(searchParams.get("offset"), 0, 0, 100000);
 
-    let query = supabase
-      .from("members")
-      .select(
-        "id, first_name, last_name, email, phone, codice_fiscale, legacy_barcode, status, updated_at, created_at",
-        { count: "exact" }
-      )
-      .eq("legacy", true) // soci ETS importati
-      .order("updated_at", { ascending: true });
-
-    if (status && status.toLowerCase() !== "all") {
-      query = query.eq("status", status);
-    }
-
     if (q) {
-      const like = safeLike(q);
+      const nq = q.trim().toLowerCase().replace(/\s+/g, " ");
 
-      const { data, error } = await supabase
+      let searchQuery = supabase
         .from("members")
         .select(
           "id, first_name, last_name, email, phone, codice_fiscale, legacy_barcode, status, membership_group, updated_at, created_at",
@@ -75,11 +67,18 @@ export async function GET(req: Request) {
         .eq("legacy", true)
         .order("updated_at", { ascending: true });
 
-      if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      if (status && status.toLowerCase() !== "all") {
+        searchQuery = searchQuery.eq("status", status);
       }
 
-      const nq = q.trim().toLowerCase().replace(/\s+/g, " ");
+      const { data, error } = await searchQuery;
+
+      if (error) {
+        return NextResponse.json(
+          { ok: false, error: error.message },
+          { status: 500 }
+        );
+      }
 
       const filtered = (data || []).filter((row: any) => {
         const first = String(row.first_name || "").trim().toLowerCase();
@@ -115,10 +114,29 @@ export async function GET(req: Request) {
       });
     }
 
+    let query = supabase
+      .from("members")
+      .select(
+        "id, first_name, last_name, email, phone, codice_fiscale, legacy_barcode, status, membership_group, updated_at, created_at",
+        { count: "exact" }
+      )
+      .eq("legacy", true)
+      .order("updated_at", { ascending: true });
+
+    if (status && status.toLowerCase() !== "all") {
+      query = query.eq("status", status);
+    }
+
     query = query.range(offset, offset + limit - 1);
 
     const { data, error, count } = await query;
-    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+
+    if (error) {
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
@@ -128,6 +146,9 @@ export async function GET(req: Request) {
       offset,
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "server_error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "server_error" },
+      { status: 500 }
+    );
   }
 }
