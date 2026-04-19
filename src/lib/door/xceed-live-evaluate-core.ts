@@ -141,9 +141,21 @@ function normalizeEmail(value?: string | null) {
   return normalizeText(value);
 }
 
+
+
 function normalizePhone(value?: string | null) {
-  return (value || "").replace(/[^\d+]/g, "").trim();
+  const digits = String(value || "").replace(/\D/g, "").trim();
+
+  if (!digits) return "";
+
+  if (digits.startsWith("39") && digits.length > 10) {
+    return digits.slice(2);
+  }
+
+  return digits;
 }
+
+
 
 function fullName(first?: string | null, last?: string | null) {
   return [first || "", last || ""].join(" ").trim();
@@ -290,15 +302,15 @@ async function buildLocalTicketFromRaw(raw: any): Promise<LocalXceedTicket | nul
   if (!qrCode) return null;
 
   const bookingBuyerFirst =
-    raw?.booking?.buyer?.firstName ??
-    raw?.ticket?.firstName ??
     raw?.pass?.firstName ??
+    raw?.ticket?.firstName ??
+    raw?.booking?.buyer?.firstName ??
     null;
 
   const bookingBuyerLast =
-    raw?.booking?.buyer?.lastName ??
-    raw?.ticket?.lastName ??
     raw?.pass?.lastName ??
+    raw?.ticket?.lastName ??
+    raw?.booking?.buyer?.lastName ??
     null;
 
   return {
@@ -403,12 +415,14 @@ async function findMemberByPhone(phone?: string | null): Promise<MemberRow | nul
   const { data, error } = await supabase
     .from("members")
     .select(MEMBER_SELECT)
-    .limit(200);
+    .not("phone", "is", null)
+    .limit(7000);
 
   if (error) throw error;
 
   return data?.find((row) => normalizePhone(row.phone) === normalized) || null;
 }
+
 
 async function findMemberByName(
   firstName?: string | null,
@@ -495,15 +509,57 @@ async function getBookingStats(ticket: LocalXceedTicket): Promise<BookingStats |
   };
 }
 
+
+
 async function matchMemberFromLocalTicket(ticket: LocalXceedTicket): Promise<{
   member: MemberRow | null;
   matchedBy: "email" | "phone" | "name" | null;
 }> {
-  const byEmail = await findMemberByEmail(ticket.email);
-  if (byEmail) return { member: byEmail, matchedBy: "email" };
+  const candidateEmails = [
+    ticket.email,
+    ticket.buyer_email,
+    ticket.raw?.pass?.email,
+    ticket.raw?.ticket?.email,
+    ticket.raw?.booking?.buyer?.email,
+  ].filter(Boolean) as string[];
 
-  const byPhone = await findMemberByPhone(ticket.phone);
-  if (byPhone) return { member: byPhone, matchedBy: "phone" };
+  for (const email of candidateEmails) {
+    const byEmail = await findMemberByEmail(email);
+    if (byEmail) {
+      return { member: byEmail, matchedBy: "email" };
+    }
+  }
+
+  const candidatePhones = [
+    ticket.phone,
+    ticket.raw?.pass?.phone,
+    ticket.raw?.ticket?.phone,
+    ticket.raw?.booking?.buyer?.phone,
+  ].filter(Boolean) as string[];
+
+  for (const phone of candidatePhones) {
+    const byPhone = await findMemberByPhone(phone);
+    if (byPhone) {
+      return { member: byPhone, matchedBy: "phone" };
+    }
+  }
+
+  const passFirstName =
+    ticket.raw?.pass?.firstName ??
+    ticket.raw?.ticket?.firstName ??
+    null;
+
+  const passLastName =
+    ticket.raw?.pass?.lastName ??
+    ticket.raw?.ticket?.lastName ??
+    null;
+
+  if (passFirstName && passLastName) {
+    const byPassName = await findMemberByName(passFirstName, passLastName);
+    if (byPassName) {
+      return { member: byPassName, matchedBy: "name" };
+    }
+  }
 
   const split = splitFullName(ticket.full_name);
   const byName = await findMemberByName(split.firstName, split.lastName);
@@ -511,6 +567,7 @@ async function matchMemberFromLocalTicket(ticket: LocalXceedTicket): Promise<{
 
   return { member: null, matchedBy: null };
 }
+
 function mapEventForResponse(event: EventPolicy | null) {
   if (!event) return null;
 
