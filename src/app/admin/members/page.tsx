@@ -339,6 +339,21 @@ export default function AdminMembersPage() {
 
       <div style={styles.wrap}>
         <header style={styles.header}>
+<section style={styles.guideBox}>
+  <div style={styles.guideTitle}>Procedura soci (IMPORTANTE)</div>
+
+  <div style={styles.guideStep}>
+    1️⃣ Importa file CSV da Wallyfor
+  </div>
+
+  <div style={styles.guideStep}>
+    2️⃣ Premi "Sync → members"
+  </div>
+
+  <div style={styles.guideStep}>
+    3️⃣ I soci sono pronti per DoorCheck
+  </div>
+</section>
           <div>
             <div style={styles.kicker}>LED VELVET • ADMIN</div>
             <h1 style={styles.h1}>{title}</h1>
@@ -822,6 +837,25 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 12,
   },
+guideBox: {
+  marginBottom: 16,
+  borderRadius: 14,
+  padding: 14,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(0,255,209,0.06)",
+},
+
+guideTitle: {
+  fontSize: 14,
+  fontWeight: 800,
+  marginBottom: 8,
+},
+
+guideStep: {
+  fontSize: 13,
+  opacity: 0.9,
+  marginBottom: 4,
+},
   qrBox: {
     borderRadius: 16,
     padding: 14,
