@@ -871,11 +871,16 @@ await Promise.all([
         throw new Error(json?.error || "Errore salvataggio link manuale");
       }
 
-      setManualLinkMessage(
-        json?.created === true
-          ? "Socio collegato al ticket corrente"
-          : "Collegamento ticket aggiornato"
-      );
+      if (json?.unchanged === true) {
+        setManualLinkMessage("Questo socio è già collegato al ticket");
+      } else {
+        setManualLinkMessage(
+          json?.created === true
+            ? "Socio collegato al ticket corrente"
+            : "Collegamento ticket aggiornato"
+        );
+      }
+
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Errore collegamento socio-ticket";

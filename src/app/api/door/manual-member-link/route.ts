@@ -52,7 +52,9 @@ export async function POST(req: NextRequest) {
 
     const { data: existing, error: existingError } = await supabase
       .from("door_manual_member_links")
-      .select("id")
+      .select(
+        "id,event_id,ticket_qr_code,linked_member_id,linked_member_name,booking_id,ticket_full_name,linked_by,gate_id,created_at"
+      )
       .eq("event_id", event_id)
       .eq("ticket_qr_code", ticket_qr_code)
       .maybeSingle();
@@ -63,6 +65,17 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    if (existing && existing.linked_member_id === linked_member_id) {
+      return NextResponse.json({
+        ok: true,
+        created: false,
+        unchanged: true,
+        link: existing,
+      });
+    }
+
+
 
     const payload = {
       event_id,
