@@ -25,45 +25,108 @@ async function requireAdmin() {
   return { ok: true as const, email };
 }
 
-function safeLike(q: string) {
-  return `%${q.replace(/%/g, "\\%")}%`;
+function clampInt(v: string | null, def: number, min: number, max: number) {
+  const n = Number.parseInt(String(v ?? ""), 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(max, n));
 }
 
 export async function GET(req: Request) {
   try {
     const admin = await requireAdmin();
-    if (!admin.ok) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: admin.code });
-
-    const { searchParams } = new URL(req.url);
-    const q = String(searchParams.get("q") || "").trim();
-    const status = String(searchParams.get("status") || "").trim(); // opzionale
-    const limit = Math.max(1, Math.min(500, Number(searchParams.get("limit") || 200)));
-    const offset = Math.max(0, Number(searchParams.get("offset") || 0));
-
-    const supabase = createClient(assertEnv("SUPABASE_URL"), assertEnv("SUPABASE_SERVICE_ROLE"), {
-      auth: { persistSession: false },
-    });
-
-    let query = supabase
-      .from("members")
-      .select(
-        "id,legacy_barcode,first_name,last_name,email,phone,status,membership_issued_at,membership_expires_at,membership_valid_year,legacy,updated_at",
-        { count: "exact" }
-      )
-      .order("updated_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (status && status !== "all") query = query.eq("status", status);
-
-    if (q) {
-      const like = safeLike(q);
-      query = query.or(
-        `first_name.ilike.${like},last_name.ilike.${like},email.ilike.${like},phone.ilike.${like},legacy_barcode.ilike.${like}`
+    if (!admin.ok) {
+      return NextResponse.json(
+        { ok: false, error: "unauthorized" },
+        { status: admin.code }
       );
     }
 
-    const { data, error, count } = await query;
-    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    const { searchParams } = new URL(req.url);
+    const q = String(searchParams.get("q") || "").trim();
+    const status = String(searchParams.get("status") || "").trim();
+    const limit = clampInt(searchParams.get("limit"), 200, 1, 500);
+    const offset = clampInt(searchParams.get("offset"), 0, 0, 100000);
+
+    const supabase = createClient(
+      assertEnv("SUPABASE_URL"),
+      assertEnv("SUPABASE_SERVICE_ROLE"),
+      {
+        auth: { persistSession: false },
+      }
+    );
+
+    let baseQuery = supabase
+      .from("members")
+      .select(
+        "id, legacy_barcode, first_name, last_name, email, phone, status, membership_group, membership_issued_at, membership_expires_at, membership_valid_year, legacy, updated_at",
+        { count: "exact" }
+      )
+      .order("updated_at", { ascending: false });
+
+    if (status && status !== "all") {
+      baseQuery = baseQuery.eq("status", status);
+    }
+
+    if (q) {
+      const nq = q.toLowerCase().trim().replace(/\s+/g, " ");
+
+      const { data, error } = await baseQuery;
+
+      if (error) {
+        return NextResponse.json(
+          { ok: false, error: error.message },
+          { status: 500 }
+        );
+      }
+
+      const filtered = (data || []).filter((row: any) => {
+        const first = String(row.first_name || "").trim().toLowerCase();
+        const last = String(row.last_name || "").trim().toLowerCase();
+        const email = String(row.email || "").trim().toLowerCase();
+        const phone = String(row.phone || "").trim().toLowerCase();
+        const barcode = String(row.legacy_barcode || "").trim().toLowerCase();
+        const group = String(row.membership_group || "").trim().toLowerCase();
+
+        const haystack = [
+          first,
+          last,
+          `${first} ${last}`.trim(),
+          `${last} ${first}`.trim(),
+          email,
+          phone,
+          barcode,
+          group,
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        const terms = nq.split(" ").filter(Boolean);
+
+        return terms.every((term) => haystack.includes(term));
+      });
+
+      const sliced = filtered.slice(offset, offset + limit);
+
+      return NextResponse.json({
+        ok: true,
+        rows: sliced,
+        count: filtered.length,
+        limit,
+        offset,
+      });
+    }
+
+    const { data, error, count } = await baseQuery.range(
+      offset,
+      offset + limit - 1
+    );
+
+    if (error) {
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
@@ -73,6 +136,9 @@ export async function GET(req: Request) {
       offset,
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "server_error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "server_error" },
+      { status: 500 }
+    );
   }
 }
