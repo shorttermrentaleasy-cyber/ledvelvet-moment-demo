@@ -31,6 +31,7 @@ type ImportRow = {
   last_name?: string | null;
   full_name?: string | null;
   email?: string | null;
+  membership_group?: string | null;
   status?: string | null;
   raw?: any;
 };
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
         last_name: r.last_name ? String(r.last_name).trim() : null,
         full_name: r.full_name ? String(r.full_name).trim() : null,
         email: r.email ? String(r.email).trim() : null,
+        membership_group: r.membership_group ? String(r.membership_group).trim() : null,
         status: r.status ? String(r.status).trim() : null,
         raw: r.raw ?? {},
       }))

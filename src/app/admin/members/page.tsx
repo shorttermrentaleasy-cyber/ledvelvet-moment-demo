@@ -68,6 +68,13 @@ function mapWallyRow(obj: Record<string, string>) {
   const full = getBy(["nominativo", "nome e cognome", "full name", "fullname"]);
   const email = getBy(["email", "e-mail", "mail"]);
 
+  const membership_group = getBy([
+    "codicegruppo",
+    "codice gruppo",
+    "gruppo",
+    "membership group",
+  ]);
+
   const status = getBy([
     "anno validità tessera",
     "anno validita tessera",
@@ -85,6 +92,7 @@ function mapWallyRow(obj: Record<string, string>) {
     last_name: last ? last.trim() : null,
     full_name: full_name || null,
     email: email ? email.trim() : null,
+    membership_group: membership_group ? membership_group.trim() : null,
     status: status ? status.trim() : null,
     raw: obj,
   };
