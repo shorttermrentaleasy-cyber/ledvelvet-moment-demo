@@ -65,9 +65,54 @@ export async function GET(req: Request) {
 
     if (q) {
       const like = safeLike(q);
-      query = query.or(
-        `first_name.ilike.${like},last_name.ilike.${like},email.ilike.${like},phone.ilike.${like},codice_fiscale.ilike.${like},legacy_barcode.ilike.${like}`
-      );
+
+      const { data, error } = await supabase
+        .from("members")
+        .select(
+          "id, first_name, last_name, email, phone, codice_fiscale, legacy_barcode, status, membership_group, updated_at, created_at",
+          { count: "exact" }
+        )
+        .eq("legacy", true)
+        .order("updated_at", { ascending: true });
+
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
+
+      const nq = q.trim().toLowerCase().replace(/\s+/g, " ");
+
+      const filtered = (data || []).filter((row: any) => {
+        const first = String(row.first_name || "").trim().toLowerCase();
+        const last = String(row.last_name || "").trim().toLowerCase();
+        const full1 = `${first} ${last}`.trim();
+        const full2 = `${last} ${first}`.trim();
+
+        const email = String(row.email || "").trim().toLowerCase();
+        const phone = String(row.phone || "").trim().toLowerCase();
+        const cf = String(row.codice_fiscale || "").trim().toLowerCase();
+        const barcode = String(row.legacy_barcode || "").trim().toLowerCase();
+
+        return (
+          first.includes(nq) ||
+          last.includes(nq) ||
+          full1.includes(nq) ||
+          full2.includes(nq) ||
+          email.includes(nq) ||
+          phone.includes(nq) ||
+          cf.includes(nq) ||
+          barcode.includes(nq)
+        );
+      });
+
+      const sliced = filtered.slice(offset, offset + limit);
+
+      return NextResponse.json({
+        ok: true,
+        rows: sliced,
+        count: filtered.length,
+        limit,
+        offset,
+      });
     }
 
     query = query.range(offset, offset + limit - 1);

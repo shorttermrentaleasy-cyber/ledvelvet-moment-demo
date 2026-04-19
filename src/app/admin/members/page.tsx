@@ -347,7 +347,7 @@ export default function AdminMembersPage() {
   </div>
 
   <div style={styles.guideStep}>
-    2️⃣ Premi "Sync → members"
+    2️⃣ Premi &quot;Sync → members&quot;
   </div>
 
   <div style={styles.guideStep}>
