@@ -40,8 +40,8 @@ export async function POST(req: Request) {
       body = await req.json().catch(() => ({}));
     }
 
-    const limitRaw = Number(body?.limit ?? 5000);
-    const limit = Math.max(1, Math.min(20000, Number.isFinite(limitRaw) ? limitRaw : 5000));
+    const limitRaw = Number(body?.limit ?? 20000);
+    const limit = Math.max(1, Math.min(20000, Number.isFinite(limitRaw) ? limitRaw : 20000));
 
     const supabase = createClient(assertEnv("SUPABASE_URL"), assertEnv("SUPABASE_SERVICE_ROLE"), {
       auth: { persistSession: false, autoRefreshToken: false },

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -12,6 +13,8 @@ type WallyRow = {
   last_name: string | null;
   full_name: string | null;
   email: string | null;
+  phone: string | null;
+  membership_group: string | null;
   status: string | null;
   raw: any;
   updated_at: string;
@@ -92,6 +95,7 @@ function mapWallyRow(obj: Record<string, string>) {
     last_name: last ? last.trim() : null,
     full_name: full_name || null,
     email: email ? email.trim() : null,
+    phone: getBy(["telefono", "phone", "cellulare"]) || null,
     membership_group: membership_group ? membership_group.trim() : null,
     status: status ? status.trim() : null,
     raw: obj,
@@ -223,10 +227,11 @@ export default function AdminMembersPage() {
         last_name: m.last_name ?? null,
         full_name: [m.first_name, m.last_name].filter(Boolean).join(" ") || null,
         email: m.email ?? null,
+        phone: m.phone ?? null,
+        membership_group: m.membership_group ?? null,
         status: m.status ?? null,
         raw: {
           Telefono: m.phone ?? "",
-          // CF non è nella select della route: per ora vuoto
           "Codice fiscale": "",
         },
         updated_at: m.updated_at || m.created_at || "",
@@ -465,48 +470,54 @@ export default function AdminMembersPage() {
                   </div>
                 </div>
               ) : (
-                <div style={styles.tableWrap}>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr>
-                        <th style={styles.th}>Nome</th>
-                        <th style={styles.th}>Email</th>
-                        <th style={styles.th}>Telefono</th>
-                        <th style={styles.th}>Codice fiscale</th>
-                        <th style={styles.th}>Barcode</th>
-                        <th style={styles.th}>Validità</th>
-                        <th style={styles.th} />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((r) => {
-                        const tel = getRawField(r.raw, "Telefono");
-                        const cf = getRawField(r.raw, "Codice fiscale");
-                        return (
-                          <tr key={r.id}>
-                            <td style={styles.td}>
-                              {r.full_name || [r.first_name, r.last_name].filter(Boolean).join(" ") || "—"}
-                            </td>
-                            <td style={styles.td}>{r.email || "—"}</td>
-                            <td style={styles.td}>{tel || "—"}</td>
-                            <td style={styles.tdMono}>{cf || "—"}</td>
-                            <td style={styles.tdMono}>{r.barcode || "—"}</td>
-                            <td style={styles.td}>{r.status || "—"}</td>
-                            <td style={styles.tdRight}>
-                              {r.barcode ? (
-                                <button type="button" style={styles.qrBtn} onClick={() => openQr(r.barcode)}>
-                                  QR
-                                </button>
-                              ) : (
-                                <span style={{ opacity: 0.6 }}>—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+ 
+
+ <div style={styles.tableWrap}>
+  <table style={styles.table}>
+    <thead>
+      <tr>
+        <th style={styles.th}>Nome</th>
+        <th style={styles.th}>Email</th>
+        <th style={styles.th}>Telefono</th>
+        <th style={styles.th}>Gruppo</th>
+        <th style={styles.th}>Codice fiscale</th>
+        <th style={styles.th}>Barcode</th>
+        <th style={styles.th}>Validità</th>
+        <th style={styles.th} />
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((r) => {
+        const tel = r.phone || getRawField(r.raw, "Telefono");
+        const cf = getRawField(r.raw, "Codice fiscale");
+
+        return (
+          <tr key={r.id}>
+            <td style={styles.td}>
+              {r.full_name || [r.first_name, r.last_name].filter(Boolean).join(" ") || "—"}
+            </td>
+            <td style={styles.td}>{r.email || "—"}</td>
+            <td style={styles.td}>{tel || "—"}</td>
+            <td style={styles.td}>{r.membership_group || "—"}</td>
+            <td style={styles.tdMono}>{cf || "—"}</td>
+            <td style={styles.tdMono}>{r.barcode || "—"}</td>
+            <td style={styles.td}>{r.status || "—"}</td>
+            <td style={styles.tdRight}>
+              {r.barcode ? (
+                <button type="button" style={styles.qrBtn} onClick={() => openQr(r.barcode)}>
+                  QR
+                </button>
+              ) : (
+                <span style={{ opacity: 0.6 }}>—</span>
+              )}
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
+  </table>
+</div>
+                 
               )}
             </section>
           </>
