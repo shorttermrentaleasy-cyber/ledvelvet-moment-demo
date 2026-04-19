@@ -289,6 +289,8 @@ export default function DoorPage() {
   const [memberSearchLoading, setMemberSearchLoading] = useState(false);
   const [memberSearchResults, setMemberSearchResults] = useState<MemberSearchRow[]>([]);
   const [memberSearchError, setMemberSearchError] = useState<string | null>(null);
+  const [manualLinkSaving, setManualLinkSaving] = useState(false);
+  const [manualLinkMessage, setManualLinkMessage] = useState<string | null>(null);
 
   const theme = useMemo(() => getTheme(response?.result), [response?.result]);
 
@@ -805,6 +807,84 @@ await Promise.all([
     }
   }, []);
 
+  async function linkMemberToCurrentTicket(member: MemberSearchRow) {
+    const currentEventId = response?.event?.id?.trim() || selectedEventId.trim() || "";
+
+    const currentBookingId =
+      response?.ticket?.booking_id?.trim() ||
+      response?.ticket?.transaction_id?.trim() ||
+      null;
+
+    const currentTicketQrCode = response?.ticket?.qr_code?.trim() || "";
+    const currentTicketFullName = response?.ticket?.full_name?.trim() || personName || null;
+
+    const linkedMemberId = member.id?.trim() || "";
+    const linkedMemberName =
+      `${member.first_name || ""} ${member.last_name || ""}`.trim() || "—";
+
+    const linkedBy =
+      deviceContext.deviceLabel?.trim() ||
+      deviceContext.gateId?.trim() ||
+      "door-staff";
+
+    const gateId = deviceContext.gateId?.trim() || null;
+
+    if (!currentEventId) {
+      setManualLinkMessage("Event ID mancante");
+      return;
+    }
+
+    if (!currentTicketQrCode) {
+      setManualLinkMessage("QR ticket corrente mancante");
+      return;
+    }
+
+    if (!linkedMemberId) {
+      setManualLinkMessage("Member ID mancante");
+      return;
+    }
+
+    try {
+      setManualLinkSaving(true);
+      setManualLinkMessage(null);
+
+      const res = await fetch("/api/door/manual-member-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          event_id: currentEventId,
+          booking_id: currentBookingId,
+          ticket_qr_code: currentTicketQrCode,
+          ticket_full_name: currentTicketFullName,
+          linked_member_id: linkedMemberId,
+          linked_member_name: linkedMemberName,
+          linked_by: linkedBy,
+          gate_id: gateId,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Errore salvataggio link manuale");
+      }
+
+      setManualLinkMessage(
+        json?.created === true
+          ? "Socio collegato al ticket corrente"
+          : "Collegamento ticket aggiornato"
+      );
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : "Errore collegamento socio-ticket";
+      setManualLinkMessage(msg);
+    } finally {
+      setManualLinkSaving(false);
+    }
+  }
+
 
   async function startScanner() {
     if (!videoRef.current) return;
@@ -1266,12 +1346,19 @@ useEffect(() => {
                   ) : null}
 
                   <div className="mt-3 flex flex-wrap gap-2">
+                    
                     <button
                       type="button"
-                      onClick={() => setOpenMemberSearch(true)}
-                      className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"                    >
+                      onClick={() => {
+                        setManualLinkMessage(null);
+                        setOpenMemberSearch(true);
+                      }}
+                      className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
+                    >
                       Cerca socio
                     </button>
+
+
 
                     {wallyActionUrl ? (
                       <>
@@ -1355,13 +1442,18 @@ useEffect(() => {
                         </a>
                       ) : null}
 
+
                       <button
                         type="button"
-                        onClick={() => setOpenMemberSearch(true)}
+                        onClick={() => {
+                          setManualLinkMessage(null);
+                          setOpenMemberSearch(true);
+                        }}
                         className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
                       >
                         Cerca socio
                       </button>
+
 
                       {wallyActionUrl ? (
                         <button
@@ -1705,11 +1797,15 @@ useEffect(() => {
 
               <button
                 type="button"
-                onClick={() => setOpenMemberSearch(false)}
+                onClick={() => {
+                  setOpenMemberSearch(false);
+                  setManualLinkMessage(null);
+                }}
                 className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white transition hover:bg-white/10"
               >
                 Chiudi
               </button>
+
             </div>
 
             <input
@@ -1733,6 +1829,12 @@ useEffect(() => {
             {memberSearchError ? (
               <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-xs text-red-200">
                 {memberSearchError}
+              </div>
+            ) : null}
+
+            {manualLinkMessage ? (
+              <div className="mt-4 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-3 text-xs text-cyan-100">
+                {manualLinkMessage}
               </div>
             ) : null}
 
@@ -1779,7 +1881,8 @@ useEffect(() => {
                       </span>
                     </div>
 
-                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+  
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
                       <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
                           Gruppo
@@ -1789,6 +1892,7 @@ useEffect(() => {
                         </div>
                       </div>
 
+
                       <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
                           Scadenza
@@ -1797,6 +1901,19 @@ useEffect(() => {
                           {m.membership_expires_at || "—"}
                         </div>
                       </div>
+                    <button
+                      type="button"
+                      onClick={() => void linkMemberToCurrentTicket(m)}
+                      disabled={manualLinkSaving || !response?.ticket?.qr_code || !response?.event?.id}
+                      className="mt-3 w-full rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {manualLinkSaving
+                        ? "Salvataggio collegamento..."
+                        : "Collega questo socio al ticket corrente"}
+                    </button>
+
+
+
                     </div>
                   </div>
                 );
