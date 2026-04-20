@@ -35,7 +35,6 @@ export async function GET(req: Request) {
   try {
     const admin = await requireAdmin();
     if (!admin.ok) {
-      console.log("MEMBERS LIST ROUTE VERSION TEST 21APR unauthorized");
       return NextResponse.json(
         { ok: false, error: "unauthorized" },
         { status: admin.code }
@@ -44,16 +43,9 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const q = String(searchParams.get("q") || "").trim();
-    const status = String(searchParams.get("status") || "").trim();
+    const status = String(searchParams.get("status") || "all").trim();
     const limit = clampInt(searchParams.get("limit"), 200, 1, 500);
     const offset = clampInt(searchParams.get("offset"), 0, 0, 100000);
-
-    console.log("MEMBERS LIST ROUTE VERSION TEST 21APR", {
-      q,
-      status,
-      limit,
-      offset,
-    });
 
     const supabase = createClient(
       assertEnv("SUPABASE_URL"),
@@ -63,86 +55,12 @@ export async function GET(req: Request) {
       }
     );
 
-    let baseQuery = supabase
-      .from("members")
-      .select(
-        "id, legacy_barcode, first_name, last_name, email, phone, status, membership_group, membership_issued_at, membership_expires_at, membership_valid_year, legacy, updated_at",
-        { count: "exact" }
-      )
-      .eq("legacy", true)
-      .order("updated_at", { ascending: false });
-
-    if (status && status !== "all") {
-      baseQuery = baseQuery.eq("status", status);
-    }
-
-    if (q) {
-      const nq = q.toLowerCase().trim().replace(/\s+/g, " ");
-
-     const { data, error } = await baseQuery.range(0, 9999);
-
-
-      if (error) {
-        return NextResponse.json(
-          { ok: false, error: error.message },
-          { status: 500 }
-        );
-      }
-
-      const filtered = (data || []).filter((row: any) => {
-        const first = String(row.first_name || "").trim().toLowerCase();
-        const last = String(row.last_name || "").trim().toLowerCase();
-        const email = String(row.email || "").trim().toLowerCase();
-        const phone = String(row.phone || "").trim().toLowerCase();
-        const barcode = String(row.legacy_barcode || "").trim().toLowerCase();
-        const group = String(row.membership_group || "").trim().toLowerCase();
-
-        const haystack = [
-          first,
-          last,
-          `${first} ${last}`.trim(),
-          `${last} ${first}`.trim(),
-          email,
-          phone,
-          barcode,
-          group,
-        ]
-          .filter(Boolean)
-          .join(" ");
-
-        const terms = nq.split(" ").filter(Boolean);
-
-        return terms.every((term) => haystack.includes(term));
-      });
-
-      console.log("MEMBERS LIST SEARCH RESULT 21APR", {
-        q: nq,
-        totalLoaded: Array.isArray(data) ? data.length : 0,
-        filteredCount: filtered.length,
-        sample: filtered.slice(0, 5).map((row: any) => ({
-          first_name: row.first_name,
-          last_name: row.last_name,
-          email: row.email,
-          legacy_barcode: row.legacy_barcode,
-          membership_group: row.membership_group,
-        })),
-      });
-
-      const sliced = filtered.slice(offset, offset + limit);
-
-      return NextResponse.json({
-        ok: true,
-        rows: sliced,
-        count: filtered.length,
-        limit,
-        offset,
-      });
-    }
-
-    const { data, error, count } = await baseQuery.range(
-      offset,
-      offset + limit - 1
-    );
+    const { data, error } = await supabase.rpc("search_members_admin", {
+      p_q: q,
+      p_status: status || "all",
+      p_limit: limit,
+      p_offset: offset,
+    });
 
     if (error) {
       return NextResponse.json(
@@ -151,15 +69,17 @@ export async function GET(req: Request) {
       );
     }
 
+    const rows = Array.isArray(data) ? data : [];
+    const count = rows.length > 0 ? Number(rows[0].total_count || 0) : 0;
+
     return NextResponse.json({
       ok: true,
-      rows: data || [],
-      count: Number(count || 0),
+      rows,
+      count,
       limit,
       offset,
     });
   } catch (e: any) {
-    console.error("MEMBERS LIST ROUTE ERROR 21APR", e);
     return NextResponse.json(
       { ok: false, error: e?.message || "server_error" },
       { status: 500 }
