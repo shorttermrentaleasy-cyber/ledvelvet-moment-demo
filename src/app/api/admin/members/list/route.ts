@@ -35,7 +35,7 @@ export async function GET(req: Request) {
   try {
     const admin = await requireAdmin();
     if (!admin.ok) {
-console.log("MEMBERS LIST ROUTE VERSION TEST 21APR");
+      console.log("MEMBERS LIST ROUTE VERSION TEST 21APR unauthorized");
       return NextResponse.json(
         { ok: false, error: "unauthorized" },
         { status: admin.code }
@@ -47,6 +47,13 @@ console.log("MEMBERS LIST ROUTE VERSION TEST 21APR");
     const status = String(searchParams.get("status") || "").trim();
     const limit = clampInt(searchParams.get("limit"), 200, 1, 500);
     const offset = clampInt(searchParams.get("offset"), 0, 0, 100000);
+
+    console.log("MEMBERS LIST ROUTE VERSION TEST 21APR", {
+      q,
+      status,
+      limit,
+      offset,
+    });
 
     const supabase = createClient(
       assertEnv("SUPABASE_URL"),
@@ -107,6 +114,19 @@ console.log("MEMBERS LIST ROUTE VERSION TEST 21APR");
         return terms.every((term) => haystack.includes(term));
       });
 
+      console.log("MEMBERS LIST SEARCH RESULT 21APR", {
+        q: nq,
+        totalLoaded: Array.isArray(data) ? data.length : 0,
+        filteredCount: filtered.length,
+        sample: filtered.slice(0, 5).map((row: any) => ({
+          first_name: row.first_name,
+          last_name: row.last_name,
+          email: row.email,
+          legacy_barcode: row.legacy_barcode,
+          membership_group: row.membership_group,
+        })),
+      });
+
       const sliced = filtered.slice(offset, offset + limit);
 
       return NextResponse.json({
@@ -138,6 +158,7 @@ console.log("MEMBERS LIST ROUTE VERSION TEST 21APR");
       offset,
     });
   } catch (e: any) {
+    console.error("MEMBERS LIST ROUTE ERROR 21APR", e);
     return NextResponse.json(
       { ok: false, error: e?.message || "server_error" },
       { status: 500 }
