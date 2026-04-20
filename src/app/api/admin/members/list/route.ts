@@ -79,7 +79,8 @@ export async function GET(req: Request) {
     if (q) {
       const nq = q.toLowerCase().trim().replace(/\s+/g, " ");
 
-      const { data, error } = await baseQuery;
+     const { data, error } = await baseQuery.range(0, 9999);
+
 
       if (error) {
         return NextResponse.json(
