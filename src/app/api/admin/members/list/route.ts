@@ -61,6 +61,7 @@ export async function GET(req: Request) {
         "id, legacy_barcode, first_name, last_name, email, phone, status, membership_group, membership_issued_at, membership_expires_at, membership_valid_year, legacy, updated_at",
         { count: "exact" }
       )
+      .eq("legacy", true)
       .order("updated_at", { ascending: false });
 
     if (status && status !== "all") {
