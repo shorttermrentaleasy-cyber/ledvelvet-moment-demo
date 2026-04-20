@@ -35,6 +35,7 @@ export async function GET(req: Request) {
   try {
     const admin = await requireAdmin();
     if (!admin.ok) {
+console.log("MEMBERS LIST ROUTE VERSION TEST 21APR");
       return NextResponse.json(
         { ok: false, error: "unauthorized" },
         { status: admin.code }
