@@ -567,7 +567,7 @@ const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | nu
           evalUrl.searchParams.set("device_label", deviceContext.deviceLabel);
         }
 
-        const effectiveEventId = selectedEventId || response?.event?.id || "";
+        const effectiveEventId = selectedEventId || "";
 
         const res = await fetch(evalUrl.toString(), {
           method: "POST",
@@ -703,7 +703,7 @@ if (item.ticket_qr_code) {
       setSyncing(true);
       setUiError(null);
 
-      const localEventId = selectedEventId || response?.event?.id || null;
+      const localEventId = selectedEventId || null;
 
       if (!localEventId) {
         throw new Error("Seleziona un evento prima di eseguire il sync");
@@ -1008,11 +1008,19 @@ if (json?.unchanged === true) {
     void loadDoorEvents();
   }, [loadDoorEvents]);
 
+useEffect(() => {
+  if (!selectedEventId) return;
+  void loadLatestCheckedInResult(selectedEventId);
+}, [selectedEventId, loadLatestCheckedInResult]);
 
-
-  useEffect(() => {
-    setLastLiveTicketKey("");
-  }, [selectedEventId, deviceContext.gateId]);
+useEffect(() => {
+  setLastLiveTicketKey("");
+  setResponse(null);
+  setLastQr("");
+  setManualQr("");
+  setCopyMessage(null);
+  setManualWallyOpen(false);
+}, [selectedEventId, deviceContext.gateId]);
 
 useEffect(() => {
   if (!selectedEventId) {
