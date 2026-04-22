@@ -687,6 +687,18 @@ function dedupeRowsByEventAndQr(rows: XceedTicketRow[]) {
 
   return Array.from(map.values());
 }
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+
+  return chunks;
+}
+
+
 export async function GET(req: NextRequest) {
   console.log("=== DEBUG SUPABASE ===");
   console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
@@ -942,33 +954,38 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const { data: upsertedRows, error: upsertError } = await supabase
-      .from("xceed_tickets")
-      .upsert(rows, {
-        onConflict: "event_id,qr_code",
-      })
-      .select("id, event_id, qr_code, status, full_name, email, booking_date, transaction_id, raw");
+const rowChunks = chunkArray(rows, 200);
+let upsertedCount = 0;
 
-    const debugUpsertedRow = debugQr
-      ? (upsertedRows || []).find(
-          (r: any) => String(r.qr_code || "").trim() === debugQr
-        ) || null
-      : null;
+for (const chunk of rowChunks) {
+  const { error: upsertError } = await supabase
+    .from("xceed_tickets")
+    .upsert(chunk, {
+      onConflict: "event_id,qr_code",
+    });
 
-    if (upsertError) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Supabase upsert failed on xceed_tickets",
-          details: upsertError.message,
-          xceedEventRef: resolvedXceedEventRef || null,
-          xceedTicketsEventId,
-          localEventId,
-          source: "tickets+bookings_merge",
-        },
-        { status: 500 }
-      );
-    }
+  if (upsertError) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Supabase upsert failed on xceed_tickets",
+        details: upsertError.message,
+        xceedEventRef: resolvedXceedEventRef || null,
+        xceedTicketsEventId,
+        localEventId,
+        source: "tickets+bookings_merge",
+        failed_chunk_size: chunk.length,
+      },
+      { status: 500 }
+    );
+  }
+
+  upsertedCount += chunk.length;
+}
+
+const debugUpsertedRow = debugQr
+  ? rows.find((r) => String(r.qr_code || "").trim() === debugQr) || null
+  : null;
 
 const {
   liveEventsWritten,
@@ -1001,8 +1018,7 @@ const {
     }
 
     const preview =
-      upsertedRows?.slice(0, 5).map((r: any) => ({
-        id: r.id,
+      rows.slice(0, 5).map((r: any) => ({
         qr_code: r.qr_code,
         status: r.status,
         full_name: r.full_name,
@@ -1026,7 +1042,7 @@ const {
       merged_rows: mergedRows.length,
       deduped_rows: rows.length,
       duplicates_removed: mergedRows.length - rows.length,
-      upserted: upsertedRows?.length ?? 0,
+      upserted: upsertedCount,
       live_events_candidates: liveEventsCandidates,
       live_events_written: liveEventsWritten,
       live_events_debug: liveEventsDebug,
@@ -1034,6 +1050,8 @@ const {
       source: "tickets+bookings_merge",
       preview,
       debug_qr: debugQr || null,
+
+
       debug_trace: debugQr
         ? {
             api_ticket_match: debugTicketApiMatch
@@ -1076,7 +1094,6 @@ const {
               : null,
             upserted_row: debugUpsertedRow
               ? {
-                  id: debugUpsertedRow.id,
                   qr_code: debugUpsertedRow.qr_code,
                   status: debugUpsertedRow.status,
                   full_name: debugUpsertedRow.full_name,
@@ -1086,8 +1103,8 @@ const {
               : null,
           }
         : null,
-    });
-  } catch (error) {
+      });
+} catch (error) {
     return NextResponse.json(
       {
         ok: false,
