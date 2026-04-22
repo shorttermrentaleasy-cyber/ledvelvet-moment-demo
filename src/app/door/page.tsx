@@ -296,7 +296,7 @@ export default function DoorPage() {
   const lastSoundKeyRef = useRef<string>("");
   const audioContextRef = useRef<AudioContext | null>(null);
   const selectedEventIdRef = useRef("");
-
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [deviceContext, setDeviceContext] = useState<{
     gateId: string | null;
@@ -1129,17 +1129,17 @@ await loadLatestCheckedInResult(localEventId);
     void loadEventSummary(selectedEventId);
   }, [selectedEventId, loadEventSummary]);
 
-  useEffect(() => {
-    if (!selectedEventId) return;
+useEffect(() => {
+  if (!selectedEventId) return;
+  if (!autoRefreshEnabled) return;
 
-    const interval = setInterval(() => {
-      if (document.hidden) return;
-      void refreshDoorData();
-    }, 6000);
+  const interval = setInterval(() => {
+    if (document.hidden) return;
+    void refreshDoorData();
+  }, 6000);
 
-    return () => clearInterval(interval);
-  }, [selectedEventId, refreshDoorData]);
-
+  return () => clearInterval(interval);
+}, [selectedEventId, autoRefreshEnabled, refreshDoorData]);
 
 // 👇 QUI INCOLLI IL NUOVO BLOCCO
 useEffect(() => {
@@ -1270,12 +1270,16 @@ useEffect(() => {
     {syncing ? "Sync..." : "Aggiorna"}
   </button>
 
-  <button
-    onClick={resetAll}
-    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-[11px] font-medium text-white transition hover:bg-white/10"
-  >
-    Reset
-  </button>
+<button
+  onClick={() => setAutoRefreshEnabled((prev) => !prev)}
+  className={`rounded-2xl border px-3 py-2 text-[11px] font-medium transition ${
+    autoRefreshEnabled
+      ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-50 hover:bg-emerald-400/15"
+      : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+  }`}
+>
+  {autoRefreshEnabled ? "AUTO" : "MANUALE"}
+</button>
 
   <button
     onClick={async () => {
