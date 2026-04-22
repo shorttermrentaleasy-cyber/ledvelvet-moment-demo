@@ -790,9 +790,9 @@ if (selectedEventIdRef.current !== eventId) return;
 
 
 setResponse(payloadWithGate);
-        setLastLiveTicketKey(nextKey);
-        setCopyMessage(null);
-        void registerNonMemberAttempt(payload);
+setLastLiveTicketKey(nextKey);
+setCopyMessage(null);
+void registerNonMemberAttempt(payloadWithGate);
 
         if (item.ticket_qr_code) {
           setLastQr(item.ticket_qr_code);
@@ -1354,14 +1354,6 @@ useEffect(() => {
   </span>
 ) : null}
 
-
-
-{response?.gate_id ? (
-  <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-[10px] font-semibold text-slate-200">
-    gate: {response.gate_id}
-  </span>
-) : null}
-
                   </div>
 
                   <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -1401,6 +1393,7 @@ useEffect(() => {
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+
                         <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
                           <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Booking</div>
                           <div className="mt-1 text-xl font-bold text-white">
@@ -1443,10 +1436,10 @@ useEffect(() => {
     {(deviceContext.doorRole || "ordinary").toUpperCase()}
   </div>
   <div className="text-[11px] text-slate-300">
-    {deviceContext.gateId || "gate"}
+    {response?.gate_id || "—"}
   </div>
 </div>
-                      </div>
+                     </div>
 
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <button
