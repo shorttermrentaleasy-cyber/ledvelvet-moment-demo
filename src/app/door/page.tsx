@@ -744,30 +744,41 @@ void registerNonMemberAttempt(json);
         const payload = item.payload_json;
         if (!payload) return;
 
-        const result = payload?.result;
-        const memberRole = payload?.member?.door_role;
-        const doorRole = deviceContext.doorRole;
 
-        if (doorRole === "ordinary") {
-          const allowed =
-            result === "OK_MEMBER" ||
-            result === "DENY_WALLY" ||
-            result === "DENY_RENEWAL" ||
-            (result === "ALREADY_CHECKED_IN" &&
-              (memberRole === "ordinary" || memberRole == null));
 
-          if (!allowed) return;
-        }
+const result = payload?.result;
+const memberRole = payload?.member?.door_role;
+const doorRole = deviceContext.doorRole;
 
-        if (doorRole === "loyalty") {
-          const allowed =
-            result === "OK_PRIORITY" ||
-            (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
+if (doorRole === "ordinary") {
+  const allowed =
+    result === "OK_MEMBER" ||
+    result === "DENY_WALLY" ||
+    result === "DENY_RENEWAL" ||
+    (result === "ALREADY_CHECKED_IN" &&
+      (memberRole === "ordinary" || memberRole == null));
 
-          if (!allowed) return;
-        }
+  if (!allowed) return;
+}
 
-        if (selectedEventIdRef.current !== eventId) return;
+if (doorRole === "loyalty") {
+  const allowed =
+    result === "OK_PRIORITY" ||
+    (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
+
+  if (!allowed) return;
+}
+
+if (doorRole === "privileged") {
+  const allowed =
+    result === "OK_PRIVILEGED" ||
+    (result === "ALREADY_CHECKED_IN" && memberRole === "privileged");
+
+  if (!allowed) return;
+}
+
+if (selectedEventIdRef.current !== eventId) return;
+
 
         setResponse(payload);
         setLastLiveTicketKey(nextKey);
@@ -832,12 +843,12 @@ void registerNonMemberAttempt(json);
         );
       }
 
-      setLastSyncAt(Date.now());
+setLastSyncAt(Date.now());
 
-      await Promise.all([
-        loadLatestCheckedInResult(localEventId),
-        loadEventSummary(localEventId),
-      ]);
+await loadLatestCheckedInResult(localEventId);
+void loadEventSummary(localEventId);
+
+
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Errore refresh dati";
@@ -1125,10 +1136,38 @@ void registerNonMemberAttempt(json);
     const interval = setInterval(() => {
       if (document.hidden) return;
       void refreshDoorData();
-    }, 6000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [selectedEventId, refreshDoorData]);
+
+useEffect(() => {
+  if (!selectedEventId) return;
+
+  const interval = setInterval(() => {
+    if (document.hidden) return;
+    void refreshDoorData();
+  }, 3000);
+
+  return () => clearInterval(interval);
+}, [selectedEventId, refreshDoorData]);
+
+// 👇 QUI INCOLLI IL NUOVO BLOCCO
+useEffect(() => {
+  const onVisible = () => {
+    if (document.hidden) return;
+    if (!selectedEventId) return;
+    void refreshDoorData();
+  };
+
+  document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("focus", onVisible);
+
+  return () => {
+    document.removeEventListener("visibilitychange", onVisible);
+    window.removeEventListener("focus", onVisible);
+  };
+}, [selectedEventId, refreshDoorData]);
 
   useEffect(() => {
     const key =
