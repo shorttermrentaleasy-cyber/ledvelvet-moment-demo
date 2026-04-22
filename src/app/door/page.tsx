@@ -648,7 +648,7 @@ const doorRole = deviceContext.doorRole;
 
 if (doorRole === "ordinary") {
   const allowed =
-    result === "OK_MEMBER" ||
+    (result === "OK_MEMBER" && memberRole === "ordinary") ||
     result === "DENY_WALLY" ||
     result === "DENY_RENEWAL" ||
     (result === "ALREADY_CHECKED_IN" &&
@@ -752,7 +752,7 @@ const doorRole = deviceContext.doorRole;
 
 if (doorRole === "ordinary") {
   const allowed =
-    result === "OK_MEMBER" ||
+    (result === "OK_MEMBER" && memberRole === "ordinary") ||
     result === "DENY_WALLY" ||
     result === "DENY_RENEWAL" ||
     (result === "ALREADY_CHECKED_IN" &&
