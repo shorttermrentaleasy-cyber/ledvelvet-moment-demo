@@ -4,6 +4,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const WALLY_URL =
   process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL || "/wally";
+const GATE_MAP: Record<string, string> = {
+  "ledvelvetstaff@gmail.com": "gate_1",
+  "shorttermrentaleasy@gmail.com": "gate_2",
+};
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
   throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
@@ -636,8 +640,16 @@ async function saveDoorLiveEvent(params: {
   try {
     const resolvedEventId = payload.event?.id ?? ticket.event_id ?? null;
     const resolvedQrCode = ticket.qr_code ?? null;
-    const resolvedGateId = gateId || "default_gate";
+    const checkedInBy =
+  payload?.debug?.checkedInBy ?? null;
 
+const mappedGate =
+  checkedInBy && GATE_MAP[checkedInBy]
+    ? GATE_MAP[checkedInBy]
+    : null;
+
+const resolvedGateId =
+  mappedGate || gateId || "default_gate";
     const resolvedLiveKey =
       (resolvedEventId && resolvedQrCode
         ? `${resolvedEventId}__${resolvedQrCode}__checked_in`
