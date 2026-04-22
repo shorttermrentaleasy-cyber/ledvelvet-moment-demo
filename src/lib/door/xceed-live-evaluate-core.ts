@@ -189,6 +189,7 @@ function getDoorRole(member: MemberRow): DoorRole {
   const group = normalizeText(member.membership_group);
 
   if (group.includes("loyalty")) return "loyalty";
+  if (group.includes("ledvelvet")) return "privileged";
   if (group.includes("staff")) return "privileged";
   if (group.includes("ordinari")) return "ordinary";
 
