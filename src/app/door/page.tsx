@@ -871,12 +871,9 @@ await loadLatestCheckedInResult(localEventId);
   }, [
     syncing,
     selectedEventId,
-    response?.event?.id,
     deviceContext.gateId,
     deviceContext.doorRole,
     deviceContext.deviceLabel,
-    loadLatestCheckedInResult,
-    loadEventSummary,
     loadLatestCheckedInResult,
   ]);
 
@@ -1149,17 +1146,29 @@ useEffect(() => {
   const interval = setInterval(() => {
     if (document.hidden) return;
     void pollLiveOnly();
-  }, 3000);
-
+  }, 2000);
   return () => clearInterval(interval);
 }, [selectedEventId, autoRefreshEnabled, pollLiveOnly]);
+
+useEffect(() => {
+  if (!selectedEventId) return;
+  if (!autoRefreshEnabled) return;
+
+  const interval = setInterval(() => {
+    if (document.hidden) return;
+    void refreshDoorData();
+  }, 8000);
+
+  return () => clearInterval(interval);
+}, [selectedEventId, autoRefreshEnabled, refreshDoorData]);
+
 
 // 👇 QUI INCOLLI IL NUOVO BLOCCO
 
 useEffect(() => {
   const onVisible = () => {
     if (document.hidden) return;
-    if (!selectedEventId) return;
+    if (!selectedEventIdRef.current) return;
     if (!autoRefreshEnabled) return;
     void pollLiveOnly();
   };
@@ -1173,6 +1182,11 @@ useEffect(() => {
   };
 }, [autoRefreshEnabled, pollLiveOnly]);
 
+useEffect(() => {
+  if (!autoRefreshEnabled) return;
+  if (!selectedEventId) return;
+  void refreshDoorData();
+}, [autoRefreshEnabled, selectedEventId, refreshDoorData]);
 
   useEffect(() => {
     const key =
