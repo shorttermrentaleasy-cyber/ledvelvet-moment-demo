@@ -846,7 +846,6 @@ if (selectedEventIdRef.current !== eventId) return;
 setLastSyncAt(Date.now());
 
 await loadLatestCheckedInResult(localEventId);
-void loadEventSummary(localEventId);
 
 
     } catch (error) {
@@ -1136,7 +1135,7 @@ void loadEventSummary(localEventId);
     const interval = setInterval(() => {
       if (document.hidden) return;
       void refreshDoorData();
-    }, 3000);
+    }, 6000);
 
     return () => clearInterval(interval);
   }, [selectedEventId, refreshDoorData]);
@@ -1268,14 +1267,19 @@ useEffect(() => {
                     Reset
                   </button>
 
-                  <button
-                    onClick={async () => {
-                      await unlockAudio();
-                    }}
-                    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-[11px] font-medium text-white transition hover:bg-white/10"
-                  >
-                    {audioEnabled ? "Audio ok" : "Audio"}
-                  </button>
+<button
+  onClick={async () => {
+    await unlockAudio();
+    await refreshDoorData();
+    if (selectedEventId) {
+      void loadEventSummary(selectedEventId);
+    }
+  }}
+  disabled={syncing || loading}
+  className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-[11px] font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+>
+  {syncing ? "Sync..." : "Aggiorna"}
+</button>
                 </div>
               </div>
             </div>
