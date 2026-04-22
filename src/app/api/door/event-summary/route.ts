@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+
 export const dynamic = "force-dynamic";
+
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
 
 export async function GET(req: NextRequest) {
   try {
     const eventId = req.nextUrl.searchParams.get("eventId")?.trim();
+
+    console.log("EVENT SUMMARY DEBUG", {
+      eventId,
+      supabaseUrl: SUPABASE_URL,
+    });
 
     if (!eventId) {
       return NextResponse.json(
@@ -19,11 +26,10 @@ export async function GET(req: NextRequest) {
       auth: { persistSession: false },
     });
 
-const { count: totalTickets, error: totalError } = await supabase
-  .from("xceed_tickets")
-  .select("*", { count: "exact", head: true })
-  .eq("event_id", eventId)
-  .not("qr_code", "is", null);
+    const { count: totalTickets, error: totalError } = await supabase
+      .from("xceed_tickets")
+      .select("*", { count: "exact", head: true })
+      .eq("event_id", eventId);
 
     if (totalError) {
       return NextResponse.json(
@@ -48,6 +54,15 @@ const { count: totalTickets, error: totalError } = await supabase
     const total = Number(totalTickets || 0);
     const entered = Number(checkedInTickets || 0);
     const missing = Math.max(0, total - entered);
+
+    console.log("EVENT SUMMARY COUNTS", {
+      eventId,
+      totalTickets,
+      checkedInTickets,
+      total,
+      entered,
+      missing,
+    });
 
     return NextResponse.json({
       ok: true,
