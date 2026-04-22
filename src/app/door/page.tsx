@@ -79,10 +79,14 @@ type DoorApiResponse = {
     require_membership: boolean;
     require_active_membership: boolean;
   } | null;
+
   debug?: {
     matched_by?: "email" | "phone" | "name" | null;
     source?: "xceed_tickets" | "xceed_raw";
+    checkedInBy?: string | null;
   };
+  gate_id?: string | null;
+
   error?: string;
   live_key?: string | null;
 };
@@ -742,13 +746,17 @@ void registerNonMemberAttempt(json);
         if (!nextKey) return;
         if (nextKey === lastLiveTicketKey) return;
 
-        const payload = item.payload_json;
-        if (!payload) return;
+const payload = item.payload_json;
+if (!payload) return;
+
+const payloadWithGate: DoorApiResponse = {
+  ...payload,
+  gate_id: item.gate_id ?? null,
+};
 
 
-
-const result = payload?.result;
-const memberRole = payload?.member?.door_role;
+const result = payloadWithGate?.result;
+const memberRole = payloadWithGate?.member?.door_role;
 const doorRole = deviceContext.doorRole;
 
 if (doorRole === "ordinary") {
@@ -781,7 +789,7 @@ if (doorRole === "privileged") {
 if (selectedEventIdRef.current !== eventId) return;
 
 
-        setResponse(payload);
+setResponse(payloadWithGate);
         setLastLiveTicketKey(nextKey);
         setCopyMessage(null);
         void registerNonMemberAttempt(payload);
@@ -1340,6 +1348,20 @@ useEffect(() => {
                         sync {new Date(lastSyncAt).toLocaleTimeString()}
                       </span>
                     ) : null}
+{response?.gate_id ? (
+  <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-[10px] font-semibold text-slate-200">
+    gate: {response.gate_id}
+  </span>
+) : null}
+
+
+
+{response?.gate_id ? (
+  <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-[10px] font-semibold text-slate-200">
+    gate: {response.gate_id}
+  </span>
+) : null}
+
                   </div>
 
                   <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
