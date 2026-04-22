@@ -712,6 +712,7 @@ void registerNonMemberAttempt(json);
     ]
   );
 
+
   const loadLatestCheckedInResult = useCallback(
     async (eventId: string) => {
       try {
@@ -795,6 +796,18 @@ if (selectedEventIdRef.current !== eventId) return;
     },
     [lastLiveTicketKey, deviceContext.doorRole, registerNonMemberAttempt]
   );
+
+const pollLiveOnly = useCallback(async () => {
+  const localEventId = selectedEventIdRef.current?.trim();
+  if (!localEventId) return;
+
+  try {
+    await loadLatestCheckedInResult(localEventId);
+  } catch (error) {
+    console.error("Errore pollLiveOnly", error);
+  }
+}, [loadLatestCheckedInResult]);
+
 
   const refreshDoorData = useCallback(async () => {
     try {
@@ -1135,18 +1148,20 @@ useEffect(() => {
 
   const interval = setInterval(() => {
     if (document.hidden) return;
-    void refreshDoorData();
-  }, 6000);
+    void pollLiveOnly();
+  }, 3000);
 
   return () => clearInterval(interval);
-}, [selectedEventId, autoRefreshEnabled, refreshDoorData]);
+}, [selectedEventId, autoRefreshEnabled, pollLiveOnly]);
 
 // 👇 QUI INCOLLI IL NUOVO BLOCCO
+
 useEffect(() => {
   const onVisible = () => {
     if (document.hidden) return;
     if (!selectedEventId) return;
-    void refreshDoorData();
+    if (!autoRefreshEnabled) return;
+    void pollLiveOnly();
   };
 
   document.addEventListener("visibilitychange", onVisible);
@@ -1156,7 +1171,8 @@ useEffect(() => {
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("focus", onVisible);
   };
-}, [selectedEventId, refreshDoorData]);
+}, [autoRefreshEnabled, pollLiveOnly]);
+
 
   useEffect(() => {
     const key =
