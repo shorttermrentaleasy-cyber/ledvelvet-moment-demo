@@ -1141,16 +1141,6 @@ void loadEventSummary(localEventId);
     return () => clearInterval(interval);
   }, [selectedEventId, refreshDoorData]);
 
-useEffect(() => {
-  if (!selectedEventId) return;
-
-  const interval = setInterval(() => {
-    if (document.hidden) return;
-    void refreshDoorData();
-  }, 3000);
-
-  return () => clearInterval(interval);
-}, [selectedEventId, refreshDoorData]);
 
 // 👇 QUI INCOLLI IL NUOVO BLOCCO
 useEffect(() => {
@@ -1334,15 +1324,28 @@ useEffect(() => {
                         <div className="mt-1 text-3xl font-bold leading-[1.02] text-white sm:text-4xl md:text-5xl">
                           {personName}
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-200">
-                          <span>{personEmail}</span>
-                          {response?.person?.phone ? <span>• {response.person.phone}</span> : null}
-                          {response?.member?.membership_group ? (
-                            <span className={`font-semibold ${roleAppearance.soft}`}>
-                              • {response.member.membership_group}
-                            </span>
-                          ) : null}
-                        </div>
+
+<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-200">
+  <span>{personEmail}</span>
+  {response?.person?.phone ? <span>• {response.person.phone}</span> : null}
+</div>
+
+<div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] uppercase tracking-[0.12em]">
+  <span className="text-slate-400">
+    Ruolo persona:
+    <span className="ml-1 font-semibold text-white">
+      {response?.member?.door_role || "—"}
+    </span>
+  </span>
+
+  <span className="text-slate-400">
+    Gruppo:
+    <span className={`ml-1 font-semibold ${roleAppearance.soft}`}>
+      {response?.member?.membership_group || "—"}
+    </span>
+  </span>
+</div>
+
                         <div className={`mt-2 text-xs sm:text-sm ${theme.accent}`}>
                           {bigMessage}
                         </div>
@@ -1377,7 +1380,7 @@ useEffect(() => {
 
                         <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
                           <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Ticket</div>
-                          <div className="mt-1 text-base font-bold text-white">
+                         <div className="mt-1 text-base font-bold text-white">
                             {response?.ticket?.status || "—"}
                           </div>
                           <div className="text-[11px] text-slate-300">
@@ -1385,15 +1388,15 @@ useEffect(() => {
                           </div>
                         </div>
 
-                        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
-                          <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Role</div>
-                          <div className={`mt-1 text-base font-bold ${roleAppearance.soft}`}>
-                            {deviceContext.doorRole || "ordinary"}
-                          </div>
-                          <div className="text-[11px] text-slate-300">
-                            {deviceContext.gateId || "gate"}
-                          </div>
-                        </div>
+<div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+  <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Porta</div>
+  <div className={`mt-1 text-base font-bold ${roleAppearance.soft}`}>
+    {(deviceContext.doorRole || "ordinary").toUpperCase()}
+  </div>
+  <div className="text-[11px] text-slate-300">
+    {deviceContext.gateId || "gate"}
+  </div>
+</div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -1671,18 +1674,17 @@ useEffect(() => {
               )}
             </div>
 
-            <div className="grid gap-3 xl:grid-cols-2">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl">
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
-                  Dati socio
-                </div>
-                {row("Door role", response?.member?.door_role)}
-                {row("Gruppo", response?.member?.membership_group)}
-                {row("Status", response?.member?.status)}
-                {row("Scadenza", response?.member?.membership_expires_at)}
-                {row("Member ID", response?.member?.id)}
-              </div>
-
+<div className="grid gap-3 xl:grid-cols-2">
+<div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl">
+  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
+    Dati socio
+  </div>
+  {row("Ruolo persona", response?.member?.door_role)}
+  {row("Gruppo socio", response?.member?.membership_group)}
+  {row("Status", response?.member?.status)}
+  {row("Scadenza", response?.member?.membership_expires_at)}
+  {row("Member ID", response?.member?.id)}
+</div>
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl">
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Dati ticket
