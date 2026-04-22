@@ -250,7 +250,7 @@ export default function DoorPage() {
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const lastSoundKeyRef = useRef<string>("");
   const audioContextRef = useRef<AudioContext | null>(null);
-
+  const selectedEventIdRef = useRef("");
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [deviceContext, setDeviceContext] = useState<{
     gateId: string | null;
@@ -473,23 +473,30 @@ const loadEventSummary = useCallback(async (eventId: string) => {
       }
     );
 
-    const json = await res.json();
+ const json = await res.json();
 
-    if (!res.ok || !json?.ok) {
-      throw new Error(json?.error || "Errore caricamento contatore evento");
-    }
+if (!res.ok || !json?.ok) {
+  throw new Error(json?.error || "Errore caricamento contatore evento");
+}
 
-    setEventSummary({
-      total_tickets: Number(json.total_tickets || 0),
-      entered_tickets: Number(json.entered_tickets || 0),
-      missing_tickets: Number(json.missing_tickets || 0),
-    });
-  } catch (error) {
-    console.error("Errore loadEventSummary", error);
+if (selectedEventIdRef.current !== id) return;
+
+setEventSummary({
+  total_tickets: Number(json.total_tickets || 0),
+  entered_tickets: Number(json.entered_tickets || 0),
+  missing_tickets: Number(json.missing_tickets || 0),
+});
+} catch (error) {
+  console.error("Errore loadEventSummary", error);
+  if (selectedEventIdRef.current === id) {
     setEventSummary(null);
-  } finally {
+  }
+} finally {
+  if (selectedEventIdRef.current === id) {
     setLoadingSummary(false);
   }
+}
+
 }, []);
 
 const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | null) => {
@@ -626,12 +633,13 @@ const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | nu
           cache: "no-store",
         });
 
-        const json = (await res.json()) as {
-          ok: boolean;
-          item?: DoorLiveEventRow | null;
-        };
+const json = (await res.json()) as {
+  ok: boolean;
+  item?: DoorLiveEventRow | null;
+};
 
-        if (!res.ok || !json?.ok || !json?.item) return;
+if (selectedEventIdRef.current !== eventId) return;
+if (!res.ok || !json?.ok || !json?.item) return;
 
         const item = json.item;
         const nextKey = item.live_key || "";
@@ -675,7 +683,7 @@ const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | nu
           if (!allowed) return;
         }
 
-
+if (selectedEventIdRef.current !== eventId) return;
 
 setResponse(payload);
 setLastLiveTicketKey(nextKey);
@@ -1009,9 +1017,9 @@ if (json?.unchanged === true) {
   }, [loadDoorEvents]);
 
 useEffect(() => {
-  if (!selectedEventId) return;
-  void loadLatestCheckedInResult(selectedEventId);
-}, [selectedEventId, loadLatestCheckedInResult]);
+  selectedEventIdRef.current = selectedEventId;
+}, [selectedEventId]);
+
 
 useEffect(() => {
   setLastLiveTicketKey("");
@@ -1021,6 +1029,12 @@ useEffect(() => {
   setCopyMessage(null);
   setManualWallyOpen(false);
 }, [selectedEventId, deviceContext.gateId]);
+
+useEffect(() => {
+  if (!selectedEventId) return;
+  void loadLatestCheckedInResult(selectedEventId);
+}, [selectedEventId, loadLatestCheckedInResult]);
+
 
 useEffect(() => {
   if (!selectedEventId) {
