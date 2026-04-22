@@ -19,10 +19,11 @@ export async function GET(req: NextRequest) {
       auth: { persistSession: false },
     });
 
-    const { count: totalTickets, error: totalError } = await supabase
-      .from("xceed_tickets")
-      .select("*", { count: "exact", head: true })
-      .eq("event_id", eventId);
+const { count: totalTickets, error: totalError } = await supabase
+  .from("xceed_tickets")
+  .select("*", { count: "exact", head: true })
+  .eq("event_id", eventId)
+  .not("qr_code", "is", null);
 
     if (totalError) {
       return NextResponse.json(
