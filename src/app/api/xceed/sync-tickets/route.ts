@@ -84,6 +84,7 @@ type XceedTicketRowRaw = {
   source: "tickets" | "bookings_only" | "tickets+bookings_merge";
   xceed_event_ref: string;
   xceed_event_uuid: string | null;
+checkedInBy?: string | null;
   synced_at: string;
   offer: {
     type: string | null;
@@ -509,6 +510,11 @@ const status: XceedTicketRow["status"] =
     ? "checked_in"
     : "active";
 
+const checkedInBy =
+  (ticket as any).pass?.checkedInBy ??
+  (matchedPass as any)?.checkedInBy ??
+  (ticket as any).checkedInBy ??
+  null;
 
   return {
     event_id: localEventId,
@@ -524,7 +530,8 @@ const status: XceedTicketRow["status"] =
       source: matchedBooking ? "tickets+bookings_merge" : "tickets",
       xceed_event_ref: xceedEventRef,
       xceed_event_uuid: xceedEventUuid,
-      synced_at: nowIso,
+      synced_at: nowIso,    
+      checkedInBy,
       offer: {
         type: resolvedOfferType,
         name: resolvedOfferName,

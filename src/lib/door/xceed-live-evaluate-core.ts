@@ -111,10 +111,11 @@ export type DoorApiResponse = {
     require_membership: boolean;
     require_active_membership: boolean;
   } | null;
-  debug?: {
-    matched_by?: "email" | "phone" | "name" | null;
-    source?: "xceed_tickets" | "xceed_raw";
-  };
+debug?: {
+  matched_by?: "email" | "phone" | "name" | null;
+  source?: "xceed_tickets" | "xceed_raw";
+  checkedInBy?: string | null; // 👈 AGGIUNGI
+};
   error?: string;
   live_key?: string | null;
 };
@@ -729,7 +730,8 @@ function buildDenyWallyResponse(
   ticket: LocalXceedTicket,
   event: EventPolicy | null,
   matchedBy: "email" | "phone" | "name" | null,
-  source: "xceed_tickets" | "xceed_raw"
+  source: "xceed_tickets" | "xceed_raw",
+  checkedInBy: string | null
 ): DoorApiResponse {
   const split = splitFullName(ticket.full_name);
 
@@ -751,10 +753,11 @@ function buildDenyWallyResponse(
     member: null,
     ticket: mapTicketForResponse(ticket),
     event: mapEventForResponse(event),
-    debug: {
-      matched_by: matchedBy,
-      source,
-    },
+debug: {
+  matched_by: matchedBy,
+  source,
+  checkedInBy, // 👈
+},
     live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
     booking: null,
   };
@@ -765,7 +768,8 @@ function buildDenyRenewalResponse(
   ticket: LocalXceedTicket,
   event: EventPolicy | null,
   matchedBy: "email" | "phone" | "name" | null,
-  source: "xceed_tickets" | "xceed_raw"
+  source: "xceed_tickets" | "xceed_raw",
+  checkedInBy: string | null
 ): DoorApiResponse {
   return {
     ok: true,
@@ -785,10 +789,11 @@ function buildDenyRenewalResponse(
     member: mapMemberForResponse(member),
     ticket: mapTicketForResponse(ticket),
     event: mapEventForResponse(event),
-    debug: {
-      matched_by: matchedBy,
-      source,
-    },
+debug: {
+  matched_by: matchedBy,
+  source,
+  checkedInBy, // 👈
+},
     live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
     booking: null,
   };
@@ -799,7 +804,8 @@ function buildAlreadyCheckedInResponse(
   ticket: LocalXceedTicket,
   event: EventPolicy | null,
   matchedBy: "email" | "phone" | "name" | null,
-  source: "xceed_tickets" | "xceed_raw"
+  source: "xceed_tickets" | "xceed_raw",
+  checkedInBy: string | null
 ): DoorApiResponse {
   const split = splitFullName(ticket.full_name);
   const full =
@@ -830,10 +836,11 @@ function buildAlreadyCheckedInResponse(
     member: member ? mapMemberForResponse(member) : null,
     ticket: mapTicketForResponse(ticket),
     event: mapEventForResponse(event),
-    debug: {
-      matched_by: matchedBy,
-      source,
-    },
+debug: {
+  matched_by: matchedBy,
+  source,
+  checkedInBy, // 👈
+},
     live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
     booking: null,
   };
@@ -844,7 +851,8 @@ function buildOkResponse(
   ticket: LocalXceedTicket,
   event: EventPolicy | null,
   matchedBy: "email" | "phone" | "name" | null,
-  source: "xceed_tickets" | "xceed_raw"
+  source: "xceed_tickets" | "xceed_raw",
+  checkedInBy: string | null
 ): DoorApiResponse {
   let title = "SOCIO";
   let message = "OK PASSA";
@@ -878,11 +886,12 @@ function buildOkResponse(
     member: mapMemberForResponse(member),
     ticket: mapTicketForResponse(ticket),
     event: mapEventForResponse(event),
-    debug: {
-      matched_by: matchedBy,
-      source,
-    },
-    live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
+debug: {
+  matched_by: matchedBy,
+  source,
+  checkedInBy, // 👈
+},
+   live_key: ticket.id || ticket.transaction_id || ticket.qr_code || null,
     booking: null,
   };
 }
@@ -988,6 +997,10 @@ export async function evaluateDoorXceedLive(
     }
 
     const { member, matchedBy } = await matchMemberFromLocalTicket(ticket);
+const checkedInBy =
+  ticket.raw?.pass?.checkedInBy ??
+  ticket.raw?.checkedInBy ??
+  null;
     const bookingStats = await getBookingStats(ticket);
     const alreadyCheckedIn = isAlreadyCheckedInFromLocalTicket(ticket);
     const result = decideDoorResult(eventPolicy, member, alreadyCheckedIn);
@@ -997,7 +1010,8 @@ export async function evaluateDoorXceedLive(
         ticket,
         eventPolicy,
         matchedBy,
-        source
+        source,
+        checkedInBy
       );
       const finalPayload = attachBooking(payload, bookingStats);
       await saveDoorLiveEvent({
@@ -1016,7 +1030,8 @@ export async function evaluateDoorXceedLive(
         ticket,
         eventPolicy,
         matchedBy,
-        source
+        source,
+        checkedInBy
       );
       const finalPayload = attachBooking(payload, bookingStats);
       await saveDoorLiveEvent({
@@ -1035,7 +1050,8 @@ export async function evaluateDoorXceedLive(
         ticket,
         eventPolicy,
         matchedBy,
-        source
+        source,
+        checkedInBy
       );
       const finalPayload = attachBooking(payload, bookingStats);
       await saveDoorLiveEvent({
@@ -1054,7 +1070,8 @@ export async function evaluateDoorXceedLive(
       ticket,
       eventPolicy,
       matchedBy,
-      source
+      source,
+      checkedInBy // 👈
     );
 
     const finalPayload = attachBooking(payload, bookingStats);
