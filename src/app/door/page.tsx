@@ -1150,17 +1150,6 @@ useEffect(() => {
   return () => clearInterval(interval);
 }, [selectedEventId, autoRefreshEnabled, pollLiveOnly]);
 
-useEffect(() => {
-  if (!selectedEventId) return;
-  if (!autoRefreshEnabled) return;
-
-  const interval = setInterval(() => {
-    if (document.hidden) return;
-    void refreshDoorData();
-  }, 8000);
-
-  return () => clearInterval(interval);
-}, [selectedEventId, autoRefreshEnabled, refreshDoorData]);
 
 
 // 👇 QUI INCOLLI IL NUOVO BLOCCO
@@ -1181,12 +1170,6 @@ useEffect(() => {
     window.removeEventListener("focus", onVisible);
   };
 }, [autoRefreshEnabled, pollLiveOnly]);
-
-useEffect(() => {
-  if (!autoRefreshEnabled) return;
-  if (!selectedEventId) return;
-  void refreshDoorData();
-}, [autoRefreshEnabled, selectedEventId, refreshDoorData]);
 
   useEffect(() => {
     const key =
