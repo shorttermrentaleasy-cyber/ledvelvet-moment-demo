@@ -201,9 +201,9 @@ function getTheme(result?: DoorResult): UiTheme {
 
 function row(label: string, value?: React.ReactNode) {
   return (
-    <div className="grid grid-cols-[110px_1fr] gap-2 border-b border-white/8 py-1.5 last:border-b-0">
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className="text-xs text-white break-all">{value || "—"}</div>
+    <div className="grid grid-cols-[100px_1fr] gap-2 border-b border-white/8 py-1.5 last:border-b-0">
+      <div className="text-[11px] text-slate-400">{label}</div>
+      <div className="text-[11px] text-white break-all">{value || "—"}</div>
     </div>
   );
 }
@@ -244,6 +244,51 @@ function playDoorToneWithContext(ctx: AudioContext, kind?: DoorResult) {
   }
 }
 
+function getDoorRoleAppearance(role?: string | null) {
+  if (role === "loyalty") {
+    return {
+      label: "LOYALTY",
+      title: "PRIORITY ACCESS",
+      subtitle: "Fast lane / Loyalty",
+      panel:
+        "border-violet-300/30 bg-[linear-gradient(135deg,rgba(76,29,149,0.34),rgba(45,17,88,0.22))]",
+      chip: "border-violet-300/30 bg-violet-400/15 text-violet-100",
+      soft: "text-violet-100",
+      subtle: "text-violet-200/75",
+      button:
+        "border-violet-300/25 bg-violet-400/10 text-violet-50 hover:bg-violet-400/15",
+    };
+  }
+
+  if (role === "privileged") {
+    return {
+      label: "STAFF",
+      title: "STAFF / PRIVILEGED",
+      subtitle: "Guest / Staff / Special access",
+      panel:
+        "border-sky-300/30 bg-[linear-gradient(135deg,rgba(8,47,73,0.34),rgba(15,23,42,0.22))]",
+      chip: "border-sky-300/30 bg-sky-400/15 text-sky-100",
+      soft: "text-sky-100",
+      subtle: "text-sky-200/75",
+      button:
+        "border-sky-300/25 bg-sky-400/10 text-sky-50 hover:bg-sky-400/15",
+    };
+  }
+
+  return {
+    label: "STANDARD",
+    title: "INGRESSO STANDARD",
+    subtitle: "Soci ordinari / Nuovi ingressi",
+    panel:
+      "border-emerald-300/30 bg-[linear-gradient(135deg,rgba(6,78,59,0.34),rgba(15,23,42,0.20))]",
+    chip: "border-emerald-300/30 bg-emerald-400/15 text-emerald-100",
+    soft: "text-emerald-100",
+    subtle: "text-emerald-200/75",
+    button:
+      "border-emerald-300/25 bg-emerald-400/10 text-emerald-50 hover:bg-emerald-400/15",
+  };
+}
+
 export default function DoorPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
@@ -251,6 +296,7 @@ export default function DoorPage() {
   const lastSoundKeyRef = useRef<string>("");
   const audioContextRef = useRef<AudioContext | null>(null);
   const selectedEventIdRef = useRef("");
+
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [deviceContext, setDeviceContext] = useState<{
     gateId: string | null;
@@ -266,9 +312,9 @@ export default function DoorPage() {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [eventSummary, setEventSummary] = useState<{
-  total_tickets: number;
-  entered_tickets: number;
-  missing_tickets: number;
+    total_tickets: number;
+    entered_tickets: number;
+    missing_tickets: number;
   } | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
 
@@ -294,6 +340,10 @@ export default function DoorPage() {
   const [manualLinkType, setManualLinkType] = useState<"created" | "updated" | "unchanged" | null>(null);
 
   const theme = useMemo(() => getTheme(response?.result), [response?.result]);
+  const roleAppearance = useMemo(
+    () => getDoorRoleAppearance(deviceContext.doorRole),
+    [deviceContext.doorRole]
+  );
 
   const envManualWallyUrl = (process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL || "").trim();
 
@@ -335,6 +385,12 @@ export default function DoorPage() {
     response?.ticket?.email ||
     response?.ticket?.buyer_email ||
     "—";
+
+  const selectedEvent = useMemo(
+    () => events.find((e) => e.id === selectedEventId) || null,
+    [events, selectedEventId]
+  );
+
   const uiStatus = useMemo(() => {
     const result = response?.result;
     const memberRole = response?.member?.door_role;
@@ -408,8 +464,6 @@ export default function DoorPage() {
     };
   }, [response?.result, response?.member?.door_role]);
 
-
-
   const copyToClipboard = useCallback(async (value: string) => {
     if (!value) return;
 
@@ -455,94 +509,93 @@ export default function DoorPage() {
     }
   }, []);
 
-const loadEventSummary = useCallback(async (eventId: string) => {
-  const id = eventId.trim();
-  if (!id) {
-    setEventSummary(null);
-    return;
-  }
+  const loadEventSummary = useCallback(async (eventId: string) => {
+    const id = eventId.trim();
+    if (!id) {
+      setEventSummary(null);
+      return;
+    }
 
-  try {
-    setLoadingSummary(true);
+    try {
+      setLoadingSummary(true);
 
-    const res = await fetch(
-      `/api/door/event-summary?eventId=${encodeURIComponent(id)}`,
-      {
-        method: "GET",
-        cache: "no-store",
+      const res = await fetch(
+        `/api/door/event-summary?eventId=${encodeURIComponent(id)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      const json = await res.json();
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Errore caricamento contatore evento");
       }
-    );
 
- const json = await res.json();
+      if (selectedEventIdRef.current !== id) return;
 
-if (!res.ok || !json?.ok) {
-  throw new Error(json?.error || "Errore caricamento contatore evento");
-}
+      setEventSummary({
+        total_tickets: Number(json.total_tickets || 0),
+        entered_tickets: Number(json.entered_tickets || 0),
+        missing_tickets: Number(json.missing_tickets || 0),
+      });
+    } catch (error) {
+      console.error("Errore loadEventSummary", error);
+      if (selectedEventIdRef.current === id) {
+        setEventSummary(null);
+      }
+    } finally {
+      if (selectedEventIdRef.current === id) {
+        setLoadingSummary(false);
+      }
+    }
+  }, []);
 
-if (selectedEventIdRef.current !== id) return;
+  const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | null) => {
+    if (!result) return;
 
-setEventSummary({
-  total_tickets: Number(json.total_tickets || 0),
-  entered_tickets: Number(json.entered_tickets || 0),
-  missing_tickets: Number(json.missing_tickets || 0),
-});
-} catch (error) {
-  console.error("Errore loadEventSummary", error);
-  if (selectedEventIdRef.current === id) {
-    setEventSummary(null);
-  }
-} finally {
-  if (selectedEventIdRef.current === id) {
-    setLoadingSummary(false);
-  }
-}
+    const shouldTrack =
+      result.result === "DENY_WALLY" ||
+      (result.result === "ALREADY_CHECKED_IN" && !result.member);
 
-}, []);
+    if (!shouldTrack) return;
 
-const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | null) => {
-  if (!result) return;
+    const event_id = result.event?.id?.trim();
+    const ticket_qr_code = result.ticket?.qr_code?.trim();
 
-  const shouldTrack =
-    result.result === "DENY_WALLY" ||
-    (result.result === "ALREADY_CHECKED_IN" && !result.member);
+    if (!event_id || !ticket_qr_code) return;
 
-  if (!shouldTrack) return;
-
-  const event_id = result.event?.id?.trim();
-  const ticket_qr_code = result.ticket?.qr_code?.trim();
-
-  if (!event_id || !ticket_qr_code) return;
-
-  try {
-    await fetch("/api/door/non-member-attempt", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        event_id,
-        ticket_qr_code,
-        booking_id: result.ticket?.booking_id ?? null,
-        transaction_id: result.ticket?.transaction_id ?? null,
-        full_name:
-          result.person?.full_name ??
-          result.ticket?.full_name ??
-          null,
-        email:
-          result.person?.email ??
-          result.ticket?.email ??
-          result.ticket?.buyer_email ??
-          null,
-        phone:
-          result.person?.phone ??
-          result.ticket?.phone ??
-          null,
-      }),
-    });
-  } catch (error) {
-    console.error("registerNonMemberAttempt error", error);
-  }
-}, []);
+    try {
+      await fetch("/api/door/non-member-attempt", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          event_id,
+          ticket_qr_code,
+          booking_id: result.ticket?.booking_id ?? null,
+          transaction_id: result.ticket?.transaction_id ?? null,
+          full_name:
+            result.person?.full_name ??
+            result.ticket?.full_name ??
+            null,
+          email:
+            result.person?.email ??
+            result.ticket?.email ??
+            result.ticket?.buyer_email ??
+            null,
+          phone:
+            result.person?.phone ??
+            result.ticket?.phone ??
+            null,
+        }),
+      });
+    } catch (error) {
+      console.error("registerNonMemberAttempt error", error);
+    }
+  }, []);
 
   const evaluateQr = useCallback(
     async (qr: string, opts?: { silent?: boolean }) => {
@@ -633,13 +686,13 @@ const registerNonMemberAttempt = useCallback(async (result: DoorApiResponse | nu
           cache: "no-store",
         });
 
-const json = (await res.json()) as {
-  ok: boolean;
-  item?: DoorLiveEventRow | null;
-};
+        const json = (await res.json()) as {
+          ok: boolean;
+          item?: DoorLiveEventRow | null;
+        };
 
-if (selectedEventIdRef.current !== eventId) return;
-if (!res.ok || !json?.ok || !json?.item) return;
+        if (selectedEventIdRef.current !== eventId) return;
+        if (!res.ok || !json?.ok || !json?.item) return;
 
         const item = json.item;
         const nextKey = item.live_key || "";
@@ -653,16 +706,6 @@ if (!res.ok || !json?.ok || !json?.item) return;
         const result = payload?.result;
         const memberRole = payload?.member?.door_role;
         const doorRole = deviceContext.doorRole;
-
-        // CURRENT LIMIT:
-        // qui filtriamo solo per ruolo e tipo esito.
-        // Non sappiamo ancora da quale device/Xceed app è partito lo scan.
-        // Quindi questa logica NON rappresenta ancora la porta fisica reale del check-in.
-
-        // TEMP UI FILTER:
-        // la pagina standard / loyalty mostra eventi in base al ruolo atteso.
-        // Finché non avremo checked_in_by, questo filtro serve solo a rendere leggibile la UI,
-        // non a certificare da quale porta è stato fatto davvero il check-in.
 
         if (doorRole === "ordinary") {
           const allowed =
@@ -683,20 +726,17 @@ if (!res.ok || !json?.ok || !json?.item) return;
           if (!allowed) return;
         }
 
-if (selectedEventIdRef.current !== eventId) return;
+        if (selectedEventIdRef.current !== eventId) return;
 
-setResponse(payload);
-setLastLiveTicketKey(nextKey);
-setCopyMessage(null);
-void registerNonMemberAttempt(payload);
+        setResponse(payload);
+        setLastLiveTicketKey(nextKey);
+        setCopyMessage(null);
+        void registerNonMemberAttempt(payload);
 
-if (item.ticket_qr_code) {
-  setLastQr(item.ticket_qr_code);
-  setManualQr(item.ticket_qr_code);
-}
-
-
-
+        if (item.ticket_qr_code) {
+          setLastQr(item.ticket_qr_code);
+          setManualQr(item.ticket_qr_code);
+        }
       } catch (error) {
         console.error("Errore loadLatestCheckedInResult", error);
       }
@@ -751,15 +791,12 @@ if (item.ticket_qr_code) {
         );
       }
 
-setLastSyncAt(Date.now());
+      setLastSyncAt(Date.now());
 
-await Promise.all([
-  loadLatestCheckedInResult(localEventId),
-  loadEventSummary(localEventId),
-]);
-
-
-
+      await Promise.all([
+        loadLatestCheckedInResult(localEventId),
+        loadEventSummary(localEventId),
+      ]);
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Errore refresh dati";
@@ -880,18 +917,16 @@ await Promise.all([
         throw new Error(json?.error || "Errore salvataggio link manuale");
       }
 
-if (json?.unchanged === true) {
-  setManualLinkType("unchanged");
-  setManualLinkMessage("Questo socio è già collegato al ticket");
-} else if (json?.created === true) {
-  setManualLinkType("created");
-  setManualLinkMessage("Socio collegato al ticket corrente");
-} else {
-  setManualLinkType("updated");
-  setManualLinkMessage("Collegamento ticket aggiornato");
-}
-
-
+      if (json?.unchanged === true) {
+        setManualLinkType("unchanged");
+        setManualLinkMessage("Questo socio è già collegato al ticket");
+      } else if (json?.created === true) {
+        setManualLinkType("created");
+        setManualLinkMessage("Socio collegato al ticket corrente");
+      } else {
+        setManualLinkType("updated");
+        setManualLinkMessage("Collegamento ticket aggiornato");
+      }
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Errore collegamento socio-ticket";
@@ -900,7 +935,6 @@ if (json?.unchanged === true) {
       setManualLinkSaving(false);
     }
   }
-
 
   async function startScanner() {
     if (!videoRef.current) return;
@@ -946,6 +980,7 @@ if (json?.unchanged === true) {
       setScanActive(false);
     }
   }
+
   const unlockAudio = useCallback(async () => {
     try {
       const AudioCtx =
@@ -1016,35 +1051,32 @@ if (json?.unchanged === true) {
     void loadDoorEvents();
   }, [loadDoorEvents]);
 
-useEffect(() => {
-  selectedEventIdRef.current = selectedEventId;
-}, [selectedEventId]);
+  useEffect(() => {
+    selectedEventIdRef.current = selectedEventId;
+  }, [selectedEventId]);
 
+  useEffect(() => {
+    setLastLiveTicketKey("");
+    setResponse(null);
+    setLastQr("");
+    setManualQr("");
+    setCopyMessage(null);
+    setManualWallyOpen(false);
+  }, [selectedEventId, deviceContext.gateId]);
 
-useEffect(() => {
-  setLastLiveTicketKey("");
-  setResponse(null);
-  setLastQr("");
-  setManualQr("");
-  setCopyMessage(null);
-  setManualWallyOpen(false);
-}, [selectedEventId, deviceContext.gateId]);
+  useEffect(() => {
+    if (!selectedEventId) return;
+    void loadLatestCheckedInResult(selectedEventId);
+  }, [selectedEventId, loadLatestCheckedInResult]);
 
-useEffect(() => {
-  if (!selectedEventId) return;
-  void loadLatestCheckedInResult(selectedEventId);
-}, [selectedEventId, loadLatestCheckedInResult]);
+  useEffect(() => {
+    if (!selectedEventId) {
+      setEventSummary(null);
+      return;
+    }
 
-
-useEffect(() => {
-  if (!selectedEventId) {
-    setEventSummary(null);
-    return;
-  }
-
-  void loadEventSummary(selectedEventId);
-}, [selectedEventId, loadEventSummary]);
-
+    void loadEventSummary(selectedEventId);
+  }, [selectedEventId, loadEventSummary]);
 
   useEffect(() => {
     if (!selectedEventId) return;
@@ -1076,52 +1108,6 @@ useEffect(() => {
     playDoorToneWithContext(ctx, response?.result);
   }, [response]);
 
-  const gatePresentation = useMemo(() => {
-    const role = deviceContext.doorRole;
-
-    if (role === "loyalty") {
-      return {
-        title: "PRIORITY ACCESS",
-        subtitle: "Loyalty / Fast Lane",
-        box: "border-violet-300/30 bg-violet-500/15",
-        titleClass: "text-violet-100",
-        subtitleClass: "text-violet-200/80",
-        badgeClass: "border-violet-300/30 bg-violet-400/15 text-violet-100",
-      };
-    }
-
-    if (role === "privileged") {
-      return {
-        title: "ACCESSO STAFF / PRIVILEGED",
-        subtitle: "Staff / Guest / Special Access",
-        box: "border-sky-300/30 bg-sky-500/15",
-        titleClass: "text-sky-100",
-        subtitleClass: "text-sky-200/80",
-        badgeClass: "border-sky-300/30 bg-sky-400/15 text-sky-100",
-      };
-    }
-
-    if (role === "wally") {
-      return {
-        title: "DESK TESSERE / SUPPORTO",
-        subtitle: "Nuove tessere / Rinnovi / Assistenza",
-        box: "border-fuchsia-300/30 bg-fuchsia-500/15",
-        titleClass: "text-fuchsia-100",
-        subtitleClass: "text-fuchsia-200/80",
-        badgeClass: "border-fuchsia-300/30 bg-fuchsia-400/15 text-fuchsia-100",
-      };
-    }
-
-    return {
-      title: "INGRESSO STANDARD",
-      subtitle: "Soci ordinari / Nuovi ingressi",
-      box: "border-emerald-300/30 bg-emerald-500/15",
-      titleClass: "text-emerald-100",
-      subtitleClass: "text-emerald-200/80",
-      badgeClass: "border-emerald-300/30 bg-emerald-400/15 text-emerald-100",
-    };
-  }, [deviceContext.doorRole]);
-
   const showAutomaticWally = Boolean(response?.action === "OPEN_WALLY" && wallyActionUrl);
   const showManualWally = Boolean(manualWallyOpen && wallyActionUrl);
 
@@ -1131,22 +1117,27 @@ useEffect(() => {
 
   return (
     <div className={`min-h-screen text-white ${theme.shell}`}>
-      <div className="mx-auto max-w-7xl px-3 py-3 md:px-4">
-        <div className="relative overflow-hidden rounded-[26px] border border-white/10 bg-[linear-gradient(135deg,rgba(18,22,38,0.96),rgba(28,18,50,0.92),rgba(8,10,20,0.98))] p-3 shadow-[0_20px_80px_rgba(0,0,0,0.35)] md:p-4">
+      <div className="mx-auto max-w-7xl px-2 py-2 sm:px-3 sm:py-3 md:px-4">
+        <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,rgba(18,22,38,0.96),rgba(28,18,50,0.92),rgba(8,10,20,0.98))] p-2.5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] sm:p-3 md:p-4">
           <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${theme.spotlight}`} />
 
           <div className="relative z-10 space-y-3">
-            <div className="rounded-[22px] border border-emerald-300/25 bg-emerald-500/10 p-3">
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-100/80">
-                Evento attivo
-              </div>
+            <div className={`rounded-[20px] border p-2.5 sm:p-3 ${roleAppearance.panel}`}>
+              <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${roleAppearance.chip}`}>
+                      {roleAppearance.label}
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/65">
+                      Evento attivo
+                    </span>
+                  </div>
 
-              <div className="grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
-                <div>
                   <select
                     value={selectedEventId}
                     onChange={(e) => setSelectedEventId(e.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2.5 text-xs text-white outline-none"
+                    className="w-full rounded-2xl border border-white/10 bg-black/35 px-3 py-2.5 text-xs text-white outline-none"
                   >
                     <option value="" className="bg-slate-950 text-white">
                       {loadingEvents ? "Caricamento eventi..." : "Seleziona evento"}
@@ -1160,277 +1151,299 @@ useEffect(() => {
                     ))}
                   </select>
 
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-200/85">
+                    <span className={`font-semibold ${roleAppearance.soft}`}>{roleAppearance.title}</span>
+                    {selectedEvent?.city ? <span>{selectedEvent.city}</span> : null}
+                    {selectedEvent?.venue ? <span>{selectedEvent.venue}</span> : null}
+                  </div>
+
                   {uiError ? (
-                    <div className="mt-2 rounded-2xl border border-red-400/30 bg-red-500/10 p-2.5 text-xs text-red-200">
+                    <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-2.5 text-xs text-red-200">
                       {uiError}
                     </div>
                   ) : null}
                 </div>
 
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-6">
+                  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Tot</div>
+                    <div className="mt-1 text-base font-bold">{loadingSummary ? "..." : eventSummary?.total_tickets ?? 0}</div>
+                  </div>
 
-<div className="flex flex-wrap items-center gap-2 xl:justify-end">
-  <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white">
-    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
-      Totale
-    </div>
-    <div className="mt-1 text-sm font-semibold">
-      {loadingSummary ? "..." : eventSummary?.total_tickets ?? 0}
-    </div>
-  </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">In</div>
+                    <div className="mt-1 text-base font-bold">{loadingSummary ? "..." : eventSummary?.entered_tickets ?? 0}</div>
+                  </div>
 
-  <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white">
-    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
-      Entrati
-    </div>
-    <div className="mt-1 text-sm font-semibold">
-      {loadingSummary ? "..." : eventSummary?.entered_tickets ?? 0}
-    </div>
-  </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Out</div>
+                    <div className="mt-1 text-base font-bold">{loadingSummary ? "..." : eventSummary?.missing_tickets ?? 0}</div>
+                  </div>
 
-  <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white">
-    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
-      Mancano
-    </div>
-    <div className="mt-1 text-sm font-semibold">
-      {loadingSummary ? "..." : eventSummary?.missing_tickets ?? 0}
-    </div>
-  </div>
+                  <button
+                    onClick={async () => {
+                      await unlockAudio();
+                      void refreshDoorData();
+                    }}
+                    disabled={syncing || loading}
+                    className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-[11px] font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {syncing ? "Sync..." : "Aggiorna"}
+                  </button>
 
-  <button
-    onClick={async () => {
-      await unlockAudio();
-      void refreshDoorData();
-    }}
-    disabled={syncing || loading}
-    className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
-  >
-    {syncing ? "Aggiornamento..." : "Aggiorna dati"}
-  </button>
+                  <button
+                    onClick={resetAll}
+                    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-[11px] font-medium text-white transition hover:bg-white/10"
+                  >
+                    Reset
+                  </button>
 
-  <button
-    onClick={resetAll}
-    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10"
-  >
-    Reset
-  </button>
-
-  <button
-    onClick={async () => {
-      await unlockAudio();
-    }}
-    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10"
-  >
-    {audioEnabled ? "Audio attivo" : "Attiva audio"}
-  </button>
-</div>
-
-
+                  <button
+                    onClick={async () => {
+                      await unlockAudio();
+                    }}
+                    className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-[11px] font-medium text-white transition hover:bg-white/10"
+                  >
+                    {audioEnabled ? "Audio ok" : "Audio"}
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
-              <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-fuchsia-200/80">
-                  LedVelvet Door
-                </div>
-                <div className="mt-1 text-xl font-semibold tracking-tight md:text-2xl">
-                  Monitor Porta
-                </div>
-                <div className="mt-1 text-xs text-slate-300">
-                  Output in testa, operatività sotto. Vista ottimizzata per controllo rapido su tablet.
-                </div>
-              </div>
-
-              <div className={`rounded-[22px] border p-3 ${gatePresentation.box}`}>
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className={`text-[10px] font-bold uppercase tracking-[0.2em] ${gatePresentation.subtitleClass}`}>
-                      Configurazione Gate
-                    </div>
-                    <div className={`mt-1 text-xl font-semibold tracking-tight md:text-2xl ${gatePresentation.titleClass}`}>
-                      {gatePresentation.title}
-                    </div>
-                    <div className={`mt-1 text-xs ${gatePresentation.subtitleClass}`}>
-                      {gatePresentation.subtitle}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {deviceContext.gateId ? (
-                      <span className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${gatePresentation.badgeClass}`}>
-                        Gate: {deviceContext.gateId}
-                      </span>
-                    ) : null}
-
-                    {deviceContext.doorRole ? (
-                      <span className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${gatePresentation.badgeClass}`}>
-                        Role: {deviceContext.doorRole}
-                      </span>
-                    ) : null}
-
-                    {deviceContext.deviceLabel ? (
-                      <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
-                        Device: {deviceContext.deviceLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className={`overflow-hidden rounded-[24px] border ${theme.border} ${theme.card} ${theme.glow} p-3 md:p-4`}>
+            <div className={`rounded-[22px] border p-3 sm:p-4 ${theme.border} ${theme.card} ${theme.glow}`}>
               {!isNonMemberCase ? (
-                <>
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] ${theme.badge}`}>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] ${theme.badge}`}>
                       {response?.badge || "Door"}
                     </span>
 
-                    <span className={`rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] ${uiStatus.className}`}>
+                    <span className={`rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] ${uiStatus.className}`}>
                       {uiStatus.label}
                     </span>
 
+                    <span className={`rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] ${roleAppearance.chip}`}>
+                      {roleAppearance.label}
+                    </span>
+
                     {response?.debug?.source ? (
-                      <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-[11px] font-semibold text-cyan-100">
+                      <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-[10px] font-semibold text-cyan-100">
                         source: {response.debug.source}
                       </span>
                     ) : null}
 
                     {response?.debug?.matched_by ? (
-                      <span className="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1.5 text-[11px] font-semibold text-fuchsia-100">
+                      <span className="rounded-full border border-fuchsia-300/20 bg-fuchsia-400/10 px-3 py-1.5 text-[10px] font-semibold text-fuchsia-100">
                         match: {response.debug.matched_by}
                       </span>
                     ) : null}
 
-                    {syncing ? (
-                      <span className="rounded-full border border-yellow-300/20 bg-yellow-400/10 px-3 py-1.5 text-[11px] font-semibold text-yellow-100">
-                        syncing...
-                      </span>
-                    ) : null}
-
                     {lastSyncAt ? (
-                      <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-slate-200">
+                      <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-[10px] font-semibold text-slate-200">
                         sync {new Date(lastSyncAt).toLocaleTimeString()}
                       </span>
                     ) : null}
                   </div>
 
-                  {bookingSummary ? (
-                    <div className="mb-3 grid gap-2 lg:grid-cols-2">
-                      <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
-                        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                          Booking
+                  <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
+                    <div className="space-y-3">
+                      <div>
+                        <div className={`text-sm font-semibold uppercase tracking-[0.18em] ${roleAppearance.subtle}`}>
+                          {bigTitle}
                         </div>
-
-                      <div className="mt-1 text-lg font-semibold text-white">
-                        {bookingSummary.ticketCount}
-                      </div>
-
-                        <div className="text-xs text-slate-300">
-                          {bookingSummary.ticketCount === 1 ? "biglietto" : "biglietti"}
+                        <div className="mt-1 text-3xl font-bold leading-[1.02] text-white sm:text-4xl md:text-5xl">
+                          {personName}
                         </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
-                        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                          Progress ingresso
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-200">
+                          <span>{personEmail}</span>
+                          {response?.person?.phone ? <span>• {response.person.phone}</span> : null}
+                          {response?.member?.membership_group ? (
+                            <span className={`font-semibold ${roleAppearance.soft}`}>
+                              • {response.member.membership_group}
+                            </span>
+                          ) : null}
                         </div>
-
-                      <div className="mt-1 text-lg font-semibold text-white">
-                        {bookingSummary.progressLabel}
-                      </div>
-
-
-                        <div className="text-xs text-slate-300">
-                          Entrati: {bookingSummary.checkedInCount} su {bookingSummary.ticketCount}
+                        <div className={`mt-2 text-xs sm:text-sm ${theme.accent}`}>
+                          {bigMessage}
                         </div>
                       </div>
-                    </div>
-                  ) : null}
 
-<div className={`text-xl font-semibold tracking-tight md:text-2xl ${theme.title}`}>
-  {bigTitle}
-</div>
-  
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Booking</div>
+                          <div className="mt-1 text-xl font-bold text-white">
+                            {bookingSummary ? bookingSummary.ticketCount : "—"}
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            {bookingSummary
+                              ? bookingSummary.ticketCount === 1
+                                ? "biglietto"
+                                : "biglietti"
+                              : "n.d."}
+                          </div>
+                        </div>
 
-                  <div className={`mt-1 text-xs md:text-sm ${theme.accent}`}>
-                    {bigMessage}
-                  </div>
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Progress</div>
+                          <div className="mt-1 text-xl font-bold text-white">
+                            {bookingSummary ? bookingSummary.progressLabel : "—"}
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            {bookingSummary
+                              ? `Entrati: ${bookingSummary.checkedInCount} su ${bookingSummary.ticketCount}`
+                              : "n.d."}
+                          </div>
+                        </div>
 
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Ticket</div>
+                          <div className="mt-1 text-base font-bold text-white">
+                            {response?.ticket?.status || "—"}
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            {response?.ticket?.offer_type || response?.ticket?.offer_name || "n.d."}
+                          </div>
+                        </div>
 
-                  {response?.person?.full_name ? (
-                    <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
-                        Persona
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Role</div>
+                          <div className={`mt-1 text-base font-bold ${roleAppearance.soft}`}>
+                            {deviceContext.doorRole || "ordinary"}
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            {deviceContext.gateId || "gate"}
+                          </div>
+                        </div>
                       </div>
 
-
-<div className="mt-1 text-lg font-bold md:text-xl">
-  {response.person.full_name}
-</div>
-
-                      <div className="mt-1 text-xs text-slate-300">
-                        {response.person.email || "—"}
-                        {response.person.phone ? ` · ${response.person.phone}` : ""}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setManualLinkMessage(null);
-                        setOpenMemberSearch(true);
-                      }}
-                      className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
-                    >
-                      Cerca socio
-                    </button>
-
-
-
-                    {wallyActionUrl ? (
-                      <>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <button
                           type="button"
-                          onClick={() => setManualWallyOpen((prev) => !prev)}
-                          className="inline-flex rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
+                          onClick={() => {
+                            setManualLinkMessage(null);
+                            setOpenMemberSearch(true);
+                          }}
+                          className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-3 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
                         >
-                          {manualWallyOpen ? "Chiudi QR Wally" : "Apri QR Wally"}
+                          Cerca socio
                         </button>
 
-                        <a
-                          href={wallyActionUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex rounded-2xl border border-white/15 bg-white/8 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/12"
-                        >
-                          Apri Wally diretto
-                        </a>
+                        {wallyActionUrl ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setManualWallyOpen((prev) => !prev)}
+                              className="rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-3 text-xs font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
+                            >
+                              {manualWallyOpen ? "Chiudi QR" : "Apri QR"}
+                            </button>
 
-                        <button
-                          type="button"
-                          onClick={() => void copyToClipboard(wallyActionUrl)}
-                          className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/10"
-                        >
-                          Copia link Wally
-                        </button>
-                      </>
+                            <a
+                              href={wallyActionUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-center text-xs font-semibold text-white transition hover:bg-white/12"
+                            >
+                              Apri Wally
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => void copyToClipboard(wallyActionUrl)}
+                              className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-xs font-semibold text-white transition hover:bg-white/10"
+                            >
+                              Copia link
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center text-xs text-slate-400">
+                              QR n.d.
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center text-xs text-slate-400">
+                              Wally n.d.
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center text-xs text-slate-400">
+                              Link n.d.
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {(showAutomaticWally || showManualWally) && wallyActionUrl ? (
+                      <div className="rounded-3xl border border-white/10 bg-black/25 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-300">
+                            Accesso Wally
+                          </div>
+                          {showAutomaticWally ? (
+                            <span className="rounded-full border border-rose-300/25 bg-rose-400/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] text-rose-100">
+                              automatico
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-[140px_1fr] xl:grid-cols-1">
+                          <div className="mx-auto flex w-fit items-center justify-center rounded-3xl border border-white/10 bg-white p-3">
+                            <QRCode
+                              value={wallyActionUrl}
+                              size={140}
+                              bgColor="#FFFFFF"
+                              fgColor="#000000"
+                            />
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="text-lg font-semibold text-white">
+                              Tessera / rinnovo
+                            </div>
+                            <div className="text-xs text-slate-300">
+                              Scansiona il QR o apri il link diretto.
+                            </div>
+
+                            <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-slate-300 break-all">
+                              {wallyActionUrl}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <a
+                                href={wallyActionUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5 text-center text-xs font-semibold transition hover:bg-white/15"
+                              >
+                                Apri Wally
+                              </a>
+
+                              <button
+                                type="button"
+                                onClick={() => void copyToClipboard(wallyActionUrl)}
+                                className="rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold transition hover:bg-white/10"
+                              >
+                                Copia link
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     ) : null}
                   </div>
-                </>
+
+                  {copyMessage ? (
+                    <div className="text-xs text-slate-300">{copyMessage}</div>
+                  ) : null}
+                </div>
               ) : (
-                <div className="grid gap-2 xl:grid-cols-[1.25fr_0.75fr]">
-
-
-
-                  <div>
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] ${uiStatus.className}`}>
+                <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${uiStatus.className}`}>
                         {uiStatus.label}
                       </span>
-
+                      <span className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] ${roleAppearance.chip}`}>
+                        {roleAppearance.label}
+                      </span>
                       {lastSyncAt ? (
                         <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1 text-[10px] font-semibold text-slate-200">
                           sync {new Date(lastSyncAt).toLocaleTimeString()}
@@ -1438,40 +1451,57 @@ useEffect(() => {
                       ) : null}
                     </div>
 
-                   <div className="text-2xl font-bold tracking-tight text-rose-50 md:text-3xl">
-  NON SOCIO
-</div>
+                    <div>
+                      <div className="text-3xl font-bold tracking-tight text-rose-50 sm:text-4xl">
+                        NON SOCIO
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-rose-200">
+                        Tessera / rinnovo richiesto
+                      </div>
+                    </div>
 
- <div className="mt-1 text-xs font-medium text-rose-200 md:text-sm">
-  Tessera / rinnovo richiesto
-</div>
+                    <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100">
+                      Questo ospite non è socio, esibisce solo biglietto Xceed.
+                    </div>
 
-<div className="mt-2 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100">
-  Questo ospite non è socio, esibisce solo biglietto Xceed.
-</div>
-
-
-                    <div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3">
-                      <div className="text-xl font-bold text-white md:text-2xl">
-  {personName}
-</div>
+                    <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                      <div className="text-2xl font-bold text-white sm:text-3xl">
+                        {personName}
+                      </div>
                       <div className="mt-1 text-sm text-slate-200">
                         {personEmail}
                       </div>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    {bookingSummary ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Booking</div>
+                          <div className="mt-1 text-xl font-bold text-white">{bookingSummary.ticketCount}</div>
+                          <div className="text-[11px] text-slate-300">biglietti</div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Progress</div>
+                          <div className="mt-1 text-xl font-bold text-white">{bookingSummary.progressLabel}</div>
+                          <div className="text-[11px] text-slate-300">
+                            Entrati: {bookingSummary.checkedInCount} su {bookingSummary.ticketCount}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {wallyActionUrl ? (
                         <a
                           href={wallyActionUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex rounded-2xl border border-rose-300/30 bg-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-50 transition hover:bg-rose-500/30"
+                          className="rounded-2xl border border-rose-300/30 bg-rose-500/20 px-4 py-3 text-center text-xs font-semibold text-rose-50 transition hover:bg-rose-500/30"
                         >
                           Apri Wally
                         </a>
                       ) : null}
-
 
                       <button
                         type="button"
@@ -1480,33 +1510,24 @@ useEffect(() => {
                           setOpenMemberSearch(true);
                           setManualLinkType(null);
                         }}
-                        className="inline-flex rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
+                        className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-3 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15"
                       >
                         Cerca socio
                       </button>
-
 
                       {wallyActionUrl ? (
                         <button
                           type="button"
                           onClick={() => setManualWallyOpen((prev) => !prev)}
-                         className="inline-flex rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-2 text-xs font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
+                          className="rounded-2xl border border-fuchsia-300/25 bg-fuchsia-400/10 px-4 py-3 text-xs font-semibold text-fuchsia-50 transition hover:bg-fuchsia-400/15"
                         >
-                          {manualWallyOpen ? "Chiudi QR Wally" : "Apri QR Wally"}
+                          {manualWallyOpen ? "Chiudi QR" : "Apri QR"}
                         </button>
                       ) : null}
                     </div>
-
-                    {bookingSummary ? (
-                      <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-slate-200">
-                        <span className="font-semibold">Progress:</span> {bookingSummary.progressLabel}
-                        <span className="text-slate-400"> · </span>
-                        <span className="font-semibold">Booking:</span> {bookingSummary.ticketCount} biglietti
-                      </div>
-                    ) : null}
                   </div>
 
-                  <div className="rounded-3xl border border-white/10 bg-black/25 p-2.5">
+                  <div className="rounded-3xl border border-white/10 bg-black/25 p-3">
                     <div className="mb-2 flex items-center gap-2">
                       <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-300">
                         Accesso Wally
@@ -1529,24 +1550,24 @@ useEffect(() => {
                           />
                         </div>
 
-                       <div className="mt-2 text-base font-semibold text-white">
-  Fai tessera dal telefono.
-</div>
+                        <div className="mt-3 text-base font-semibold text-white">
+                          Fai tessera dal telefono
+                        </div>
 
-<div className="mt-1 text-xs text-slate-300">
-  Scansiona il QR o clicca Apri Wally ora.
-</div>
+                        <div className="mt-1 text-xs text-slate-300">
+                          Scansiona il QR o clicca Apri Wally ora.
+                        </div>
 
                         <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-slate-300 break-all">
                           {wallyActionUrl}
                         </div>
 
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <div className="mt-3 grid grid-cols-2 gap-2">
                           <a
                             href={wallyActionUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold transition hover:bg-white/15"
+                            className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-center text-xs font-semibold transition hover:bg-white/15"
                           >
                             Apri Wally
                           </a>
@@ -1554,7 +1575,7 @@ useEffect(() => {
                           <button
                             type="button"
                             onClick={() => void copyToClipboard(wallyActionUrl)}
-                            className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold transition hover:bg-white/10"
+                            className="rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold transition hover:bg-white/10"
                           >
                             Copia link
                           </button>
@@ -1568,80 +1589,11 @@ useEffect(() => {
                   </div>
                 </div>
               )}
-
-              {copyMessage ? (
-                <div className="mt-2 text-xs text-slate-300">{copyMessage}</div>
-              ) : null}
-
-              {!isNonMemberCase && (showAutomaticWally || showManualWally) && wallyActionUrl ? (
-                <div className="mt-4 rounded-3xl border border-white/10 bg-black/20 p-4">
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                      Accesso Wally
-                    </div>
-                    {showAutomaticWally ? (
-                      <span className="rounded-full border border-rose-300/25 bg-rose-400/10 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-rose-100">
-                        trigger automatico
-                      </span>
-                    ) : null}
-                    {showManualWally && !showAutomaticWally ? (
-                      <span className="rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-fuchsia-100">
-                        apertura manuale staff
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="grid gap-4 lg:grid-cols-[170px_1fr]">
-                    <div className="flex items-center justify-center rounded-3xl border border-white/10 bg-white p-3">
-                      <QRCode
-                        value={wallyActionUrl}
-                        size={150}
-                        bgColor="#FFFFFF"
-                        fgColor="#000000"
-                      />
-                    </div>
-
-                    <div className="flex flex-col justify-between">
-                      <div>
-                        <div className="text-base font-semibold text-white">
-                          Tessera / rinnovo dal telefono
-                        </div>
-                        <div className="mt-2 text-xs text-slate-300">
-                          Scansiona il QR oppure apri il link diretto.
-                        </div>
-
-                        <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-slate-300 break-all">
-                          {wallyActionUrl}
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <a
-                          href={wallyActionUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex rounded-2xl border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-semibold transition hover:bg-white/15"
-                        >
-                          Apri Wally
-                        </a>
-
-                        <button
-                          type="button"
-                          onClick={() => void copyToClipboard(wallyActionUrl)}
-                          className="inline-flex rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold transition hover:bg-white/10"
-                        >
-                          Copia link
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-2">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+            <div className="grid gap-3 xl:grid-cols-2">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Dati socio
                 </div>
                 {row("Door role", response?.member?.door_role)}
@@ -1651,62 +1603,59 @@ useEffect(() => {
                 {row("Member ID", response?.member?.id)}
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Dati ticket
                 </div>
                 {row("QR", response?.ticket?.qr_code)}
-                {row("Ticket source", response?.ticket?.source)}
-                {row("Stato ticket", response?.ticket?.status)}
+                {row("Source", response?.ticket?.source)}
+                {row("Status", response?.ticket?.status)}
                 {row("Checked in", String(response?.ticket?.checked_in ?? false))}
                 {row("Offer type", response?.ticket?.offer_type)}
                 {row("Offer name", response?.ticket?.offer_name)}
                 {row("Booking ID", response?.ticket?.booking_id)}
                 {row("Transaction", response?.ticket?.transaction_id)}
                 {row("Event ID", response?.ticket?.event_id)}
-                {row("Nome ticket", response?.ticket?.full_name)}
-                {row("Email ticket", response?.ticket?.email)}
-                {row("Buyer email", response?.ticket?.buyer_email)}
+                {row("Nome", response?.ticket?.full_name)}
+                {row("Email", response?.ticket?.email)}
+                {row("Buyer", response?.ticket?.buyer_email)}
               </div>
 
               {response?.booking ? (
-                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl xl:col-span-2">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl xl:col-span-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
                     Booking progress
                   </div>
                   {row("Booking ID", response.booking.booking_id)}
-                  {row("Totale ticket", String(response.booking.ticket_count))}
+                  {row("Totale", String(response.booking.ticket_count))}
                   {row("Entrati", String(response.booking.checked_in_count))}
                   {row("Progress", response.booking.progress_label)}
                 </div>
               ) : null}
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl xl:col-span-2">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl xl:col-span-2">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Policy evento
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
+
+                <div className="grid gap-2 sm:grid-cols-3">
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                      Require ticket
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-white">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Require ticket</div>
+                    <div className="mt-1 text-base font-semibold text-white">
                       {String(response?.event?.require_ticket ?? false)}
                     </div>
                   </div>
+
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                      Require membership
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-white">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Require membership</div>
+                    <div className="mt-1 text-base font-semibold text-white">
                       {String(response?.event?.require_membership ?? false)}
                     </div>
                   </div>
+
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                      Require active
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-white">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Require active</div>
+                    <div className="mt-1 text-base font-semibold text-white">
                       {String(response?.event?.require_active_membership ?? false)}
                     </div>
                   </div>
@@ -1720,19 +1669,19 @@ useEffect(() => {
               </div>
 
               {response?.error ? (
-                <div className="rounded-3xl border border-red-400/20 bg-red-500/10 p-4 text-xs text-red-200 xl:col-span-2">
+                <div className="rounded-3xl border border-red-400/20 bg-red-500/10 p-3 text-xs text-red-200 xl:col-span-2">
                   {response.error}
                 </div>
               ) : null}
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+            <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Scanner / input QR
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+                <div className="grid gap-3 lg:grid-cols-[190px_1fr]">
                   <div>
                     <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
                       <video
@@ -1743,32 +1692,32 @@ useEffect(() => {
                       />
                     </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-3 grid grid-cols-2 gap-2">
                       <button
                         onClick={async () => {
                           await unlockAudio();
                           void startScanner();
                         }}
-                        className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/15"
+                        className={`rounded-2xl border px-3 py-2 text-[11px] font-medium transition ${roleAppearance.button}`}
                       >
-                        {scanActive ? "Scanner test attivo" : "Avvia scanner test"}
+                        {scanActive ? "Scanner attivo" : "Avvia scanner"}
                       </button>
 
                       <button
                         onClick={stopScanner}
-                        className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+                        className="rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-[11px] font-medium text-white transition hover:bg-white/10"
                       >
                         Stop
                       </button>
                     </div>
 
                     <div className="mt-2 text-[11px] text-slate-400">
-                      Nel flusso reale la scansione ufficiale resta su Xceed app.
+                      La scansione ufficiale resta su Xceed app.
                     </div>
                   </div>
 
                   <div>
-                    <div className="mb-2 text-xs font-medium text-slate-300">
+                    <div className="mb-2 text-[11px] font-medium text-slate-300">
                       Input manuale QR
                     </div>
 
@@ -1776,7 +1725,7 @@ useEffect(() => {
                       value={manualQr}
                       onChange={(e) => setManualQr(e.target.value)}
                       placeholder="Incolla qui il QR code"
-                      className="min-h-[140px] w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-xs text-white outline-none placeholder:text-slate-500"
+                      className="min-h-[120px] w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-3 text-xs text-white outline-none placeholder:text-slate-500"
                     />
 
                     <button
@@ -1799,13 +1748,13 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
                   Nota operativa
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-slate-300">
-                  Il risultato principale è in alto. Sotto restano disponibili scanner, input manuale, dati ticket, policy evento e strumenti staff.
+                  Vista compatta orientata al controllo immediato. In alto: ruolo porta, esito, nome, progress e azioni. Sotto: dettagli e strumenti staff.
                 </div>
               </div>
             </div>
@@ -1815,7 +1764,7 @@ useEffect(() => {
 
       {openMemberSearch ? (
         <div className="fixed inset-0 z-50 bg-black/75 p-4 backdrop-blur-sm">
-          <div className="mx-auto mt-6 max-w-2xl rounded-[28px] border border-white/12 bg-[linear-gradient(135deg,rgba(18,22,38,0.98),rgba(28,18,50,0.96),rgba(8,10,20,0.99))] p-4 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
+          <div className="mx-auto mt-4 max-w-2xl rounded-[28px] border border-white/12 bg-[linear-gradient(135deg,rgba(18,22,38,0.98),rgba(28,18,50,0.96),rgba(8,10,20,0.99))] p-4 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-200/80">
@@ -1836,7 +1785,6 @@ useEffect(() => {
               >
                 Chiudi
               </button>
-
             </div>
 
             <input
@@ -1848,7 +1796,7 @@ useEffect(() => {
             />
 
             <div className="mt-3 text-[11px] text-slate-400">
-              Servizio rapido porta: verifica se il nome risulta socio e di che tipo.
+              Verifica rapida porta: nome, email o telefono.
             </div>
 
             {memberSearchLoading ? (
@@ -1863,23 +1811,22 @@ useEffect(() => {
               </div>
             ) : null}
 
-{manualLinkMessage ? (
-  <div
-    className={`mt-4 rounded-2xl p-3 text-xs
-      ${
-        manualLinkType === "created"
-          ? "border border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
-          : manualLinkType === "updated"
-          ? "border border-blue-300/20 bg-blue-400/10 text-blue-100"
-          : manualLinkType === "unchanged"
-          ? "border border-amber-300/20 bg-amber-400/10 text-amber-100"
-          : "border border-cyan-300/20 bg-cyan-400/10 text-cyan-100"
-      }
-    `}
-  >
-    {manualLinkMessage}
-  </div>
-) : null}
+            {manualLinkMessage ? (
+              <div
+                className={`mt-4 rounded-2xl p-3 text-xs ${
+                  manualLinkType === "created"
+                    ? "border border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+                    : manualLinkType === "updated"
+                    ? "border border-blue-300/20 bg-blue-400/10 text-blue-100"
+                    : manualLinkType === "unchanged"
+                    ? "border border-amber-300/20 bg-amber-400/10 text-amber-100"
+                    : "border border-cyan-300/20 bg-cyan-400/10 text-cyan-100"
+                }`}
+              >
+                {manualLinkMessage}
+              </div>
+            ) : null}
+
             <div className="mt-4 max-h-[55vh] space-y-2 overflow-y-auto pr-1">
               {!memberSearchLoading &&
               !memberSearchError &&
@@ -1923,8 +1870,7 @@ useEffect(() => {
                       </span>
                     </div>
 
-  
-                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
                       <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
                           Gruppo
@@ -1934,7 +1880,6 @@ useEffect(() => {
                         </div>
                       </div>
 
-
                       <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
                           Scadenza
@@ -1943,19 +1888,17 @@ useEffect(() => {
                           {m.membership_expires_at || "—"}
                         </div>
                       </div>
-                    <button
-                      type="button"
-                      onClick={() => void linkMemberToCurrentTicket(m)}
-                      disabled={manualLinkSaving || !response?.ticket?.qr_code || !response?.event?.id}
-                      className="mt-3 w-full rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {manualLinkSaving
-                        ? "Salvataggio collegamento..."
-                        : "Collega questo socio al ticket corrente"}
-                    </button>
 
-
-
+                      <button
+                        type="button"
+                        onClick={() => void linkMemberToCurrentTicket(m)}
+                        disabled={manualLinkSaving || !response?.ticket?.qr_code || !response?.event?.id}
+                        className="mt-1 w-full rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-40 md:col-span-2"
+                      >
+                        {manualLinkSaving
+                          ? "Salvataggio collegamento..."
+                          : "Collega questo socio al ticket corrente"}
+                      </button>
                     </div>
                   </div>
                 );
