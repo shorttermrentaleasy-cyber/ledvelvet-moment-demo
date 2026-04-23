@@ -22,39 +22,30 @@ export async function GET(req: NextRequest) {
       auth: { persistSession: false },
     });
 
-    const { count: totalTickets, error: totalError } = await supabase
+    const { data: rows, error } = await supabase
       .from("xceed_tickets")
-      .select("*", { count: "exact", head: true })
-      .eq("event_id", eventId);
-
-    if (totalError) {
-      return NextResponse.json(
-        { ok: false, error: totalError.message || "Errore conteggio totale" },
-        { status: 500 }
-      );
-    }
-
-    const { count: checkedInTickets, error: checkedError } = await supabase
-      .from("xceed_tickets")
-      .select("*", { count: "exact", head: true })
+      .select("id, qr_code, status, imported_at")
       .eq("event_id", eventId)
-      .eq("status", "checked_in");
+      .order("imported_at", { ascending: false });
 
-    if (checkedError) {
+    if (error) {
       return NextResponse.json(
-        { ok: false, error: checkedError.message || "Errore conteggio entrati" },
+        { ok: false, error: error.message || "Errore lettura xceed_tickets" },
         { status: 500 }
       );
     }
 
-    const total = Number(totalTickets || 0);
-    const entered = Number(checkedInTickets || 0);
+    const allRows = rows || [];
+    const activeRows = allRows.filter((r) => r.status === "active");
+    const checkedRows = allRows.filter((r) => r.status === "checked_in");
+    const nullQrRows = allRows.filter((r) => !r.qr_code);
+
+    const total = allRows.length;
+    const entered = checkedRows.length;
     const missing = Math.max(0, total - entered);
 
     console.log("EVENT SUMMARY COUNTS", {
       eventId,
-      totalTickets,
-      checkedInTickets,
       total,
       entered,
       missing,
@@ -71,25 +62,6 @@ export async function GET(req: NextRequest) {
         missing_tickets: missing,
       });
     }
-
-    const { data: rows, error: rowsError } = await supabase
-      .from("xceed_tickets")
-      .select("id, qr_code, status, imported_at")
-      .eq("event_id", eventId)
-      .order("imported_at", { ascending: false })
-      .limit(200);
-
-    if (rowsError) {
-      return NextResponse.json(
-        { ok: false, error: rowsError.message || "Errore debug rows" },
-        { status: 500 }
-      );
-    }
-
-    const allRows = rows || [];
-    const activeRows = allRows.filter((r) => r.status === "active");
-    const checkedRows = allRows.filter((r) => r.status === "checked_in");
-    const nullQrRows = allRows.filter((r) => !r.qr_code);
 
     return NextResponse.json({
       ok: true,
