@@ -51,6 +51,17 @@ export async function GET(req: NextRequest) {
     const entered = Number(checkedInTickets || 0);
     const missing = Math.max(0, total - entered);
 
+    console.log("EVENT SUMMARY COUNTS", {
+      eventId,
+      totalTickets,
+      checkedInTickets,
+      total,
+      entered,
+      missing,
+      supabaseUrl: SUPABASE_URL,
+      debug,
+    });
+
     if (!debug) {
       return NextResponse.json({
         ok: true,
