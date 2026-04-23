@@ -1,5 +1,3 @@
-
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -11,11 +9,7 @@ const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
 export async function GET(req: NextRequest) {
   try {
     const eventId = req.nextUrl.searchParams.get("eventId")?.trim();
-
-    console.log("EVENT SUMMARY DEBUG", {
-      eventId,
-      supabaseUrl: SUPABASE_URL,
-    });
+    const debug = req.nextUrl.searchParams.get("debug") === "1";
 
     if (!eventId) {
       return NextResponse.json(
@@ -57,25 +51,52 @@ export async function GET(req: NextRequest) {
     const entered = Number(checkedInTickets || 0);
     const missing = Math.max(0, total - entered);
 
-    console.log("EVENT SUMMARY COUNTS", {
-      eventId,
-      totalTickets,
-      checkedInTickets,
-      total,
-      entered,
-      missing,
-    });
+    if (!debug) {
+      return NextResponse.json({
+        ok: true,
+        event_id: eventId,
+        total_tickets: total,
+        entered_tickets: entered,
+        missing_tickets: missing,
+      });
+    }
+
+    const { data: rows, error: rowsError } = await supabase
+      .from("xceed_tickets")
+      .select("id, qr_code, status, imported_at")
+      .eq("event_id", eventId)
+      .order("imported_at", { ascending: false })
+      .limit(200);
+
+    if (rowsError) {
+      return NextResponse.json(
+        { ok: false, error: rowsError.message || "Errore debug rows" },
+        { status: 500 }
+      );
+    }
+
+    const allRows = rows || [];
+    const activeRows = allRows.filter((r) => r.status === "active");
+    const checkedRows = allRows.filter((r) => r.status === "checked_in");
+    const nullQrRows = allRows.filter((r) => !r.qr_code);
 
     return NextResponse.json({
       ok: true,
       event_id: eventId,
+      supabase_url: SUPABASE_URL,
       total_tickets: total,
       entered_tickets: entered,
       missing_tickets: missing,
+      debug: {
+        sampled_rows: allRows.length,
+        sampled_active: activeRows.length,
+        sampled_checked_in: checkedRows.length,
+        sampled_null_qr: nullQrRows.length,
+        checked_in_qr_sample: checkedRows.slice(0, 10).map((r) => r.qr_code),
+        active_qr_sample: activeRows.slice(0, 10).map((r) => r.qr_code),
+      },
     });
   } catch (error: any) {
-    console.error("door event-summary route error", error);
-
     return NextResponse.json(
       {
         ok: false,
