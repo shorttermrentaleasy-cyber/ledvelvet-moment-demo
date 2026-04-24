@@ -400,6 +400,11 @@ export default function DoorPage() {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [loadingEvents, setLoadingEvents] = useState(false);
 
+type EventTypeSummaryItem = {
+  total: number;
+  in: number;
+  out: number;
+};
 
 const [eventSummary, setEventSummary] = useState<{
   total_tickets: number;
@@ -410,7 +415,17 @@ const [eventSummary, setEventSummary] = useState<{
   guest_count: number;
   table_count: number;
   cancelled_count: number;
+  type_summary: {
+    ticket: EventTypeSummaryItem;
+    guest: EventTypeSummaryItem;
+    table: EventTypeSummaryItem;
+    drink: EventTypeSummaryItem;
+    cancelled: EventTypeSummaryItem;
+    unknown: EventTypeSummaryItem;
+  };
 } | null>(null);
+
+
 
   const [loadingSummary, setLoadingSummary] = useState(false);
 
@@ -645,6 +660,9 @@ const assignedGateEmail = useMemo(
 
       if (selectedEventIdRef.current !== id) return;
 
+
+const emptyType = { total: 0, in: 0, out: 0 };
+
 setEventSummary({
   total_tickets: Number(json.total_tickets || 0),
   entered_tickets: Number(json.entered_tickets || 0),
@@ -654,7 +672,16 @@ setEventSummary({
   guest_count: Number(json.guest_count || 0),
   table_count: Number(json.table_count || 0),
   cancelled_count: Number(json.cancelled_count || 0),
+  type_summary: {
+    ticket: json.type_summary?.ticket || emptyType,
+    guest: json.type_summary?.guest || emptyType,
+    table: json.type_summary?.table || emptyType,
+    drink: json.type_summary?.drink || emptyType,
+    cancelled: json.type_summary?.cancelled || emptyType,
+    unknown: json.type_summary?.unknown || emptyType,
+  },
 });
+
 
     } catch (error) {
       console.error("Errore loadEventSummary", error);
@@ -1489,45 +1516,53 @@ useEffect(() => {
     </div>
   </div>
 
-  {/* TICKET */}
-  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
-    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Ticket</div>
-    <div className="mt-1 text-base font-bold">
-      {loadingSummary ? "..." : eventSummary?.ticket_count ?? 0}
-    </div>
+{/* TICKET */}
+<div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+  <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Ticket</div>
+  <div className="mt-1 text-base font-bold">
+    {loadingSummary
+      ? "..."
+      : `${eventSummary?.type_summary.ticket.in ?? 0}/${eventSummary?.type_summary.ticket.total ?? 0}`}
   </div>
+</div>
 
-  {/* GUEST */}
-  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
-    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Guest</div>
-    <div className="mt-1 text-base font-bold">
-      {loadingSummary ? "..." : eventSummary?.guest_count ?? 0}
-    </div>
+{/* GUEST */}
+<div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+  <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Guest</div>
+  <div className="mt-1 text-base font-bold">
+    {loadingSummary
+      ? "..."
+      : `${eventSummary?.type_summary.guest.in ?? 0}/${eventSummary?.type_summary.guest.total ?? 0}`}
   </div>
+</div>
 
-  {/* TABLE */}
-  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
-    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Table</div>
-    <div className="mt-1 text-base font-bold">
-      {loadingSummary ? "..." : eventSummary?.table_count ?? 0}
-    </div>
+{/* TABLE */}
+<div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+  <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Table</div>
+  <div className="mt-1 text-base font-bold">
+    {loadingSummary
+      ? "..."
+      : `${eventSummary?.type_summary.table.in ?? 0}/${eventSummary?.type_summary.table.total ?? 0}`}
   </div>
+</div>
 
-  {/* CANCELLED */}
-  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
-    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Canc</div>
-    <div className="mt-1 text-base font-bold">
-      {loadingSummary ? "..." : eventSummary?.cancelled_count ?? 0}
-    </div>
+{/* CANCELLED */}
+<div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+  <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Canc</div>
+  <div className="mt-1 text-base font-bold">
+    {loadingSummary ? "..." : eventSummary?.type_summary.cancelled.total ?? 0}
   </div>
+</div>
 
-  {/* DRINK */}
-  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
-    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Drink</div>
-    <div className="mt-1 text-base font-bold">
-      {loadingSummary ? "..." : eventSummary?.drink_count ?? 0}
-    </div>
+{/* DRINK */}
+<div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+  <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Drink</div>
+  <div className="mt-1 text-base font-bold">
+    {loadingSummary
+      ? "..."
+      : `${eventSummary?.type_summary.drink.in ?? 0}/${eventSummary?.type_summary.drink.total ?? 0}`}
   </div>
+</div>
 
   <button
     onClick={async () => {
