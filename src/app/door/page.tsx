@@ -107,7 +107,19 @@ type MemberSearchRow = {
   membership_group: string | null;
   status: string | null;
   membership_expires_at: string | null;
+
+  already_entered?: boolean;
+  entered_at?: string | null;
+  entered_gate?: string | null;
+  entered_by?: string | null;
+  entered_match?: "phone" | "email" | "manual_link" | null;
+  entered_qr?: string | null;
+  entered_result?: string | null;
+  entered_ticket_name?: string | null;
+  entered_offer_name?: string | null;
+  entered_offer_type?: string | null;
 };
+
 
 type UiTheme = {
   shell: string;
@@ -300,23 +312,70 @@ function getDoorRoleAppearance(role?: string | null) {
   };
 }
 
-const GATE_EMAIL_MAP: Record<string, "ordinary" | "loyalty"> = {
-  "annafilippi003@gmail.com": "ordinary",
-  "shorttermrentaleasy@gmail.com": "ordinary",
-  "giulianassi00@gmail.com": "ordinary",
-  "ledvelvetstaff@gmail.com": "loyalty",
+
+
+
+// QUI INSERIRE I GATE E I RUOLI
+
+
+type GateEmailConfig = {
+  gate_id: string;
+  door_role: "ordinary" | "loyalty";
+};
+
+const GATE_EMAIL_MAP: Record<string, GateEmailConfig> = {
+  "ledvelvetstaff@gmail.com": {
+    gate_id: "gate_1",
+    door_role: "ordinary",
+  },
+  "annafilippi003@gmail.com": {
+    gate_id: "gate_2",
+    door_role: "ordinary",
+  },
+  "giulianassi00@gmail.com": {
+    gate_id: "gate_3",
+    door_role: "ordinary",
+  },
+  "eleonorabuti2@gmail.com": {
+    gate_id: "gate_4",
+    door_role: "loyalty",
+  },
+  "shorttermrentaleasy@gmail.com": {
+    gate_id: "gate_5",
+    door_role: "ordinary",
+  },
 };
 
 function normalizeEmail(value?: string | null) {
   return String(value || "").trim().toLowerCase();
 }
 
-function getGateRoleFromCheckedBy(
-  value?: string | null
-): "ordinary" | "loyalty" | null {
+function getGateConfigFromCheckedBy(value?: string | null): GateEmailConfig | null {
   const email = normalizeEmail(value);
   return GATE_EMAIL_MAP[email] || null;
 }
+
+function getGateRoleFromCheckedBy(
+  value?: string | null
+): "ordinary" | "loyalty" | null {
+  return getGateConfigFromCheckedBy(value)?.door_role || null;
+}
+
+function getGateIdFromCheckedBy(value?: string | null): string | null {
+  return getGateConfigFromCheckedBy(value)?.gate_id || null;
+}
+
+function getAssignedEmailFromGateId(gateId?: string | null): string | null {
+  if (!gateId) return null;
+
+  const found = Object.entries(GATE_EMAIL_MAP).find(
+    ([, config]) => config.gate_id === gateId
+  );
+
+  return found?.[0] || null;
+}
+
+
 
 export default function DoorPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -381,6 +440,11 @@ const [eventSummary, setEventSummary] = useState<{
     () => getDoorRoleAppearance(deviceContext.doorRole),
     [deviceContext.doorRole]
   );
+
+const assignedGateEmail = useMemo(
+  () => getAssignedEmailFromGateId(deviceContext.gateId),
+  [deviceContext.gateId]
+);
 
   const envManualWallyUrl = (process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL || "").trim();
 
@@ -822,20 +886,33 @@ void registerNonMemberAttempt(json);
         if (!nextKey) return;
         if (nextKey === lastLiveTicketKey) return;
 
+
+
 const currentGateId = deviceContext.gateId?.trim() || null;
-const itemGateId = item.gate_id?.trim() || null;
+const checkedInByForFilter = item.payload_json?.debug?.checkedInBy || null;
+const mappedGateIdForFilter = getGateIdFromCheckedBy(checkedInByForFilter);
+const itemGateId = mappedGateIdForFilter || item.gate_id?.trim() || null;
 
 if (currentGateId && itemGateId && currentGateId !== itemGateId) {
   return;
 }
 
+
+
 const payload = item.payload_json;
 if (!payload) return;
 
+
+
+const checkedInByForGate = payload?.debug?.checkedInBy || null;
+const mappedGateId = getGateIdFromCheckedBy(checkedInByForGate);
+
 const payloadWithGate: DoorApiResponse = {
   ...payload,
-  gate_id: item.gate_id ?? null,
+  gate_id: mappedGateId || item.gate_id || null,
 };
+
+
 
 const result = payloadWithGate?.result;
 const memberRole = payloadWithGate?.member?.door_role || null;
@@ -1013,13 +1090,17 @@ await loadLatestCheckedInResult(localEventId);
     try {
       setMemberSearchLoading(true);
 
-      const res = await fetch(
-        `/api/door/member-search?q=${encodeURIComponent(q.trim())}`,
-        {
-          method: "GET",
-          cache: "no-store",
-        }
-      );
+const params = new URLSearchParams();
+params.set("q", q.trim());
+
+if (selectedEventIdRef.current) {
+  params.set("eventId", selectedEventIdRef.current);
+}
+
+const res = await fetch(`/api/door/member-search?${params.toString()}`, {
+  method: "GET",
+  cache: "no-store",
+});
 
       const json = await res.json();
 
@@ -1359,6 +1440,13 @@ useEffect(() => {
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-200/85">
                     <span className={`font-semibold ${roleAppearance.soft}`}>{roleAppearance.title}</span>
+                     <span>
+                    Gate: {deviceContext.gateId || "—"}
+                   </span>
+                   <span>
+                   Mail Xceed: {assignedGateEmail || "—"}
+                   </span>
+
                     {selectedEvent?.city ? <span>{selectedEvent.city}</span> : null}
                     {selectedEvent?.venue ? <span>{selectedEvent.venue}</span> : null}
                   </div>
@@ -2184,6 +2272,77 @@ useEffect(() => {
                       </span>
                     </div>
 
+<div
+  className={`mt-3 rounded-2xl border p-3 ${
+    m.already_entered
+      ? "border-emerald-300/25 bg-emerald-400/10"
+      : "border-white/10 bg-black/20"
+  }`}
+>
+  <div
+    className={`text-[10px] font-bold uppercase tracking-[0.16em] ${
+      m.already_entered ? "text-emerald-100" : "text-slate-400"
+    }`}
+  >
+    {m.already_entered ? "Già entrato" : "Non ancora entrato"}
+  </div>
+
+  {m.already_entered ? (
+    <div className="mt-2 grid gap-1 text-[11px] text-slate-200">
+      <div>
+        Ora:{" "}
+        <span className="font-semibold text-white">
+          {m.entered_at ? new Date(m.entered_at).toLocaleString() : "—"}
+        </span>
+      </div>
+      <div>
+        Gate:{" "}
+        <span className="font-semibold text-white">
+          {m.entered_gate || "—"}
+        </span>
+      </div>
+      <div>
+        Operatore:{" "}
+        <span className="font-semibold text-white">
+          {m.entered_by || "—"}
+        </span>
+      </div>
+      <div>
+        Match:{" "}
+        <span className="font-semibold text-white">
+          {m.entered_match || "—"}
+        </span>
+      </div>
+      <div className="break-all">
+        QR:{" "}
+        <span className="font-semibold text-white">
+          {m.entered_qr || "—"}
+        </span>
+      </div>
+      <div>
+        Esito:{" "}
+        <span className="font-semibold text-white">
+          {m.entered_result || "—"}
+        </span>
+      </div>
+      <div>
+        Ticket:{" "}
+        <span className="font-semibold text-white">
+          {m.entered_ticket_name || "—"}
+        </span>
+      </div>
+    </div>
+  ) : (
+    <div className="mt-1 text-[11px] text-slate-400">
+      Nessun ingresso trovato per questo evento.
+    </div>
+  )}
+</div>
+
+
+
+
+
                     <div className="mt-3 grid gap-2 md:grid-cols-2">
                       <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
                         <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400">
@@ -2203,15 +2362,30 @@ useEffect(() => {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => void linkMemberToCurrentTicket(m)}
-                        disabled={manualLinkSaving || !response?.ticket?.qr_code || !response?.event?.id}
-                        className="mt-1 w-full rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-40 md:col-span-2"
+
+{m.already_entered ? (
+  <div className="text-[11px] text-amber-200">
+    ⚠️ Questo socio risulta già entrato all’evento
+  </div>
+) : null}
+
+<button
+  type="button"
+  onClick={() => void linkMemberToCurrentTicket(m)}
+  disabled={
+    manualLinkSaving ||
+    !response?.ticket?.qr_code ||
+    !response?.event?.id ||
+    m.already_entered === true
+  }
+className="mt-1 w-full rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-40 md:col-span-2"
                       >
-                        {manualLinkSaving
-                          ? "Salvataggio collegamento..."
-                          : "Collega questo socio al ticket corrente"}
+{manualLinkSaving
+  ? "Salvataggio collegamento..."
+  : m.already_entered
+  ? "Socio già entrato"
+  : "Collega questo socio al ticket corrente"}
+
                       </button>
                     </div>
                   </div>

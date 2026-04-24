@@ -11,6 +11,10 @@ function esc(value: string) {
   return value.replace(/[%(),]/g, " ").trim();
 }
 
+function normalize(value?: string | null) {
+  return String(value || "").trim().toLowerCase();
+}
+
 type MemberRow = {
   id: string;
   first_name: string | null;
@@ -22,12 +26,81 @@ type MemberRow = {
   membership_expires_at: string | null;
 };
 
-type CheckinRow = {
-  member_id: string | null;
-  created_at: string | null;
-  gate_id?: string | null;
-  checked_by?: string | null;
-};
+async function findLatestLiveEntry(eventId: string, member: MemberRow) {
+  const email = normalize(member.email);
+  const phone = normalize(member.phone);
+  const canMatchLive = Boolean(email || phone);
+
+  if (canMatchLive) {
+    const { data, error } = await supabase
+      .from("door_live_events")
+      .select("created_at, gate_id, payload_json, ticket_qr_code")
+      .eq("event_id", eventId)
+      .order("created_at", { ascending: false })
+      .limit(80);
+
+    if (error) throw error;
+
+    for (const row of data || []) {
+      const payload = row?.payload_json || {};
+      const person = payload?.person || {};
+      const ticket = payload?.ticket || {};
+
+      const liveEmail = normalize(
+        person.email || ticket.email || ticket.buyer_email
+      );
+      const livePhone = normalize(person.phone || ticket.phone);
+
+      const phoneMatch = phone && livePhone && phone === livePhone;
+      const emailMatch = email && liveEmail && email === liveEmail;
+
+      if (!phoneMatch && !emailMatch) continue;
+
+      return {
+        already_entered: true,
+        entered_at: row.created_at || null,
+        entered_gate: row.gate_id || payload?.gate_id || null,
+        entered_by: payload?.debug?.checkedInBy || null,
+        entered_match: phoneMatch ? "phone" : "email",
+        entered_qr: row.ticket_qr_code || ticket.qr_code || null,
+        entered_result: payload?.result || null,
+        entered_ticket_name: ticket.full_name || person.full_name || null,
+        entered_offer_name: ticket.offer_name || null,
+        entered_offer_type: ticket.offer_type || null,
+      };
+    }
+  }
+
+  const { data: manualLink, error: manualError } = await supabase
+    .from("door_manual_member_links")
+    .select(
+      "created_at, gate_id, ticket_qr_code, ticket_full_name, linked_by, booking_id"
+    )
+    .eq("event_id", eventId)
+    .eq("linked_member_id", member.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (manualError) throw manualError;
+
+  if (manualLink) {
+    return {
+      already_entered: true,
+      entered_at: manualLink.created_at || null,
+      entered_gate: manualLink.gate_id || null,
+      entered_by: manualLink.linked_by || null,
+      entered_match: "manual_link",
+      entered_qr: manualLink.ticket_qr_code || null,
+      entered_result: "MANUAL_MEMBER_LINK",
+      entered_ticket_name: manualLink.ticket_full_name || null,
+      entered_offer_name: null,
+      entered_offer_type: null,
+    };
+  }
+
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -92,71 +165,43 @@ export async function GET(req: NextRequest) {
           entered_at: null,
           entered_gate: null,
           entered_by: null,
+          entered_match: null,
+          entered_qr: null,
+          entered_result: null,
+          entered_ticket_name: null,
+          entered_offer_name: null,
+          entered_offer_type: null,
         })),
       });
     }
 
-    const memberIds = items.map((x) => x.id).filter(Boolean);
+    const enrichedItems = await Promise.all(
+      items.map(async (item) => {
+        const live = await findLatestLiveEntry(eventId, item);
 
-    if (memberIds.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        items: items.map((item) => ({
+        return {
           ...item,
-          already_entered: false,
-          entered_at: null,
-          entered_gate: null,
-          entered_by: null,
-        })),
-      });
-    }
-
-    const { data: checkins, error: checkinsError } = await supabase
-      .from("checkins")
-      .select("member_id, created_at, gate_id, checked_by")
-      .eq("event_id", eventId)
-      .in("member_id", memberIds)
-      .order("created_at", { ascending: false });
-
-    if (checkinsError) {
-      return NextResponse.json(
-        { ok: false, error: checkinsError.message },
-        { status: 500 }
-      );
-    }
-
-    const latestByMember = new Map<
-      string,
-      { entered_at: string | null; entered_gate: string | null; entered_by: string | null }
-    >();
-
-    for (const row of (checkins || []) as CheckinRow[]) {
-      if (!row?.member_id) continue;
-      if (!latestByMember.has(row.member_id)) {
-        latestByMember.set(row.member_id, {
-          entered_at: row.created_at || null,
-          entered_gate: row.gate_id || null,
-          entered_by: row.checked_by || null,
-        });
-      }
-    }
+          already_entered: !!live,
+          entered_at: live?.entered_at || null,
+          entered_gate: live?.entered_gate || null,
+          entered_by: live?.entered_by || null,
+          entered_match: live?.entered_match || null,
+          entered_qr: live?.entered_qr || null,
+          entered_result: live?.entered_result || null,
+          entered_ticket_name: live?.entered_ticket_name || null,
+          entered_offer_name: live?.entered_offer_name || null,
+          entered_offer_type: live?.entered_offer_type || null,
+        };
+      })
+    );
 
     return NextResponse.json({
       ok: true,
-      items: items.map((item) => {
-        const hit = latestByMember.get(item.id);
-        return {
-          ...item,
-          already_entered: !!hit?.entered_at,
-          entered_at: hit?.entered_at || null,
-          entered_gate: hit?.entered_gate || null,
-          entered_by: hit?.entered_by || null,
-        };
-      }),
+      items: enrichedItems,
     });
-  } catch (e) {
+  } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: "server_error" },
+      { ok: false, error: e?.message || "server_error" },
       { status: 500 }
     );
   }
