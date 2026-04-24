@@ -4,13 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type TicketType =
-  | "ticket"
-  | "guest"
-  | "table"
-  | "drink"
-  | "cancelled"
-  | "unknown";
+type TicketType = "ticket" | "guest" | "table" | "drink" | "cancelled" | "unknown";
 
 type TypeCounter = {
   total: number;
@@ -33,9 +27,26 @@ function getSupabase() {
     throw new Error("Missing env: SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE");
   }
 
-  return createClient(url, serviceRole, {
-    auth: { persistSession: false },
-  });
+return createClient(url, serviceRole, {
+  auth: { persistSession: false },
+  global: {
+    fetch: (input, init) => {
+      const headers = new Headers(init?.headers);
+
+      headers.set("Cache-Control", "no-store");
+      headers.set("Pragma", "no-cache");
+
+      return fetch(input, {
+        ...init,
+        cache: "no-store",
+        next: { revalidate: 0 },
+        headers,
+      });
+    },
+  },
+});
+
+
 }
 
 function norm(v: unknown): string {
@@ -117,9 +128,7 @@ function classifyTicket(row: any): TicketType {
     return "table";
   }
 
-  if (combined.includes("drink")) {
-    return "drink";
-  }
+  if (combined.includes("drink")) return "drink";
 
   if (
     combined.includes("ticket") ||
@@ -177,17 +186,6 @@ function classifyLivePayload(payload: any): TicketType {
   return "unknown";
 }
 
-function isRealDoorCheckin(row: any): boolean {
-  const liveKey = String(row?.live_key || "");
-  const payload = row?.payload_json || {};
-
-  return (
-    liveKey.includes("__checked_in") ||
-    payload?.ticket?.checked_in === true ||
-    norm(payload?.ticket?.status) === "checked_in"
-  );
-}
-
 function getLiveQr(row: any): string {
   const payload = row?.payload_json || {};
 
@@ -221,7 +219,7 @@ async function fetchAllRows(
 ) {
   const pageSize = 1000;
   let from = 0;
-  let allRows: any[] = [];
+  const allRows: any[] = [];
 
   while (true) {
     let query = supabase
@@ -235,23 +233,68 @@ async function fetchAllRows(
     }
 
     const { data, error } = await query;
-
     if (error) throw error;
 
     const rows = data || [];
-    allRows = allRows.concat(rows);
+    allRows.push(...rows);
 
     if (rows.length < pageSize) break;
-
     from += pageSize;
   }
 
   return allRows;
 }
 
+/**
+ * Lettura live events robusta:
+ * - prima per colonna event_id
+ * - poi anche per live_key prefissata con eventId
+ * - merge per id
+ *
+ * Questo evita il caso in cui PostgREST/Supabase non restituisce tutte le righe
+ * con il solo filtro event_id, pur essendo visibili in SQL.
+ */
+async function fetchAllLiveEventsForEvent(supabase: any, eventId: string) {
+  const select = "id,event_id,live_key,ticket_qr_code,payload_json,created_at";
+
+  const byEventId = await fetchAllRows(
+    supabase,
+    "door_live_events",
+    select,
+    eventId,
+    "created_at"
+  );
+
+  const { data: byLiveKey, error: liveKeyError } = await supabase
+    .from("door_live_events")
+    .select(select)
+    .ilike("live_key", `${eventId}__%`)
+    .order("created_at", { ascending: false })
+    .range(0, 9999);
+
+  if (liveKeyError) throw liveKeyError;
+
+  const merged = new Map<string, any>();
+
+  for (const row of byEventId || []) {
+    if (row?.id) merged.set(row.id, row);
+  }
+
+  for (const row of byLiveKey || []) {
+    if (row?.id) merged.set(row.id, row);
+  }
+
+  return Array.from(merged.values()).sort((a, b) => {
+    const da = new Date(a?.created_at || 0).getTime();
+    const db = new Date(b?.created_at || 0).getTime();
+    return db - da;
+  });
+}
+
 export async function GET(req: NextRequest) {
   try {
-    const eventId = req.nextUrl.searchParams.get("eventId");
+    const eventId = req.nextUrl.searchParams.get("eventId")?.trim();
+    const debugMode = true;
 
     if (!eventId) {
       return NextResponse.json(
@@ -262,35 +305,27 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabase();
 
- 
+    const tickets = await fetchAllRows(
+      supabase,
+      "xceed_tickets",
+      "id,event_id,qr_code,status,raw",
+      eventId
+    );
 
-const tickets = await fetchAllRows(
-  supabase,
-  "xceed_tickets",
-  "id,event_id,qr_code,status,raw",
-  eventId
-);
-
-const liveEvents = await fetchAllRows(
-  supabase,
-  "door_live_events",
-  "id,event_id,live_key,ticket_qr_code,payload_json,created_at",
-  eventId,
-  "created_at"
-);
-
-
-
-
-
+    const liveEvents = await fetchAllLiveEventsForEvent(supabase, eventId);
 
     const typeSummary = emptyTypeSummary();
     const qrToType = new Map<string, TicketType>();
 
     for (const ticket of tickets || []) {
-      const qr = normalizeQr(ticket?.qr_code || ticket?.raw?.qrCode || ticket?.raw?.ticket?.qrCode || ticket?.raw?.pass?.qrCode);
-      const type = classifyTicket(ticket);
+      const qr = normalizeQr(
+        ticket?.qr_code ||
+          ticket?.raw?.qrCode ||
+          ticket?.raw?.ticket?.qrCode ||
+          ticket?.raw?.pass?.qrCode
+      );
 
+      const type = classifyTicket(ticket);
       typeSummary[type].total += 1;
 
       if (qr) {
@@ -301,30 +336,24 @@ const liveEvents = await fetchAllRows(
     const enteredQr = new Set<string>();
 
     for (const live of liveEvents || []) {
-      if (!isRealDoorCheckin(live)) continue;
-
       const qr = getLiveQr(live);
       if (!qr) continue;
 
       enteredQr.add(qr);
     }
 
+    for (const qr of enteredQr) {
+      const matchedTicketType = qrToType.get(qr);
 
-for (const qr of enteredQr) {
-  const matchedTicketType = qrToType.get(qr);
+      if (matchedTicketType) {
+        typeSummary[matchedTicketType].in += 1;
+        continue;
+      }
 
-  if (matchedTicketType) {
-    typeSummary[matchedTicketType].in += 1;
-    continue;
-  }
-
-  const live = (liveEvents || []).find((row) => getLiveQr(row) === qr);
-  const fallbackType = classifyLivePayload(live?.payload_json || {});
-
-  typeSummary[fallbackType].in += 1;
-}
-
-
+      const live = (liveEvents || []).find((row) => getLiveQr(row) === qr);
+      const fallbackType = classifyLivePayload(live?.payload_json || {});
+      typeSummary[fallbackType].in += 1;
+    }
 
     for (const key of Object.keys(typeSummary) as TicketType[]) {
       if (key === "cancelled") {
@@ -341,7 +370,7 @@ for (const qr of enteredQr) {
     const enteredTickets = enteredQr.size;
     const missingTickets = Math.max(0, totalTickets - enteredTickets);
 
-    return NextResponse.json({
+    const response: any = {
       ok: true,
       event_id: eventId,
 
@@ -356,7 +385,31 @@ for (const qr of enteredQr) {
       drink_count: typeSummary.drink.total,
 
       type_summary: typeSummary,
-    });
+    };
+
+    if (debugMode) {
+      response.debug = {
+        supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        now: new Date().toISOString(),
+        live_events_rows: liveEvents.length,
+        entered_qr_size: enteredQr.size,
+        first_30_qr: (liveEvents || []).slice(0, 30).map((row: any) => ({
+          id: row.id,
+          event_id: row.event_id,
+          live_key: row.live_key,
+          ticket_qr_code: row.ticket_qr_code,
+          payload_event_id: row.payload_json?.event?.id || null,
+          payload_ticket_qr_code: row.payload_json?.ticket?.qr_code || null,
+          payload_ticket_qrCode: row.payload_json?.ticket?.qrCode || null,
+          payload_qr_code: row.payload_json?.qr_code || null,
+          payload_qrCode: row.payload_json?.qrCode || null,
+          extracted_qr: getLiveQr(row),
+          created_at: row.created_at,
+        })),
+      };
+    }
+
+    return NextResponse.json(response);
   } catch (err: any) {
     return NextResponse.json(
       {

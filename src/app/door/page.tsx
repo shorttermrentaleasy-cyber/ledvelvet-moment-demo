@@ -607,10 +607,11 @@ const assignedGateEmail = useMemo(
       setLoadingEvents(true);
       setUiError(null);
 
-      const res = await fetch("/api/public/door-events", {
-        method: "GET",
-        cache: "no-store",
-      });
+const res = await fetch("/api/public/door-events", {
+  method: "GET",
+  cache: "no-store",
+});
+
 
       if (!res.ok) {
         throw new Error(`Load eventi fallita (${res.status})`);
@@ -644,15 +645,24 @@ const assignedGateEmail = useMemo(
     try {
       setLoadingSummary(true);
 
-      const res = await fetch(
-        `/api/door/event-summary?eventId=${encodeURIComponent(id)}`,
-        {
-          method: "GET",
-          cache: "no-store",
-        }
-      );
-
+const res = await fetch(
+  `/api/door/event-summary?eventId=${encodeURIComponent(id)}&debug=1&t=${Date.now()}`,
+  {
+    method: "GET",
+    cache: "no-store",
+  }
+);
       const json = await res.json();
+
+
+console.log("EVENT SUMMARY RESPONSE", {
+  requested_id: id,
+  selected_ref: selectedEventIdRef.current,
+  json,
+});
+
+
+
 
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Errore caricamento contatore evento");
@@ -1030,7 +1040,7 @@ const pollLiveOnly = useCallback(async () => {
   if (!localEventId) return;
 
   try {
-    await loadLatestCheckedInResult(localEventId);
+await loadLatestCheckedInResult(localEventId);
   } catch (error) {
     console.error("Errore pollLiveOnly", error);
   }
@@ -1087,6 +1097,7 @@ const pollLiveOnly = useCallback(async () => {
 setLastSyncAt(Date.now());
 
 await loadLatestCheckedInResult(localEventId);
+await loadEventSummary(localEventId);
 
 
     } catch (error) {
@@ -1103,6 +1114,7 @@ await loadLatestCheckedInResult(localEventId);
     deviceContext.doorRole,
     deviceContext.deviceLabel,
     loadLatestCheckedInResult,
+    loadEventSummary,
   ]);
 
   const searchMembers = useCallback(async (q: string) => {
@@ -1566,12 +1578,10 @@ useEffect(() => {
 
   <button
     onClick={async () => {
-      await unlockAudio();
-      await refreshDoorData();
-      if (selectedEventId) {
-        void loadEventSummary(selectedEventId);
-      }
-    }}
+  await unlockAudio();
+  await refreshDoorData();
+}}
+
     disabled={syncing || loading}
     className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-[11px] font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
   >
