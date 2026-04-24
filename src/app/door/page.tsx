@@ -315,7 +315,7 @@ function getDoorRoleAppearance(role?: string | null) {
 
 
 
-// QUI INSERIRE I GATE E I RUOLI
+// QUI INSERIRE I GATE E I RUOLI INSERISCI QUI
 
 
 type GateEmailConfig = {
@@ -342,7 +342,7 @@ const GATE_EMAIL_MAP: Record<string, GateEmailConfig> = {
   },
   "shorttermrentaleasy@gmail.com": {
     gate_id: "gate_5",
-    door_role: "ordinary",
+    door_role: "loyalty",
   },
 };
 
