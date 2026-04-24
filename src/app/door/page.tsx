@@ -28,6 +28,13 @@ type DoorLiveEventRow = {
 };
 
 type DoorApiResponse = {
+  anomaly?: {
+    kind: "WRONG_GATE";
+    expected_role: "ordinary" | "loyalty" | "privileged" | null;
+    current_role: "ordinary" | "loyalty" | "privileged" | null;
+    scanned_by_role: "ordinary" | "loyalty" | null;
+    checked_in_by: string | null;
+  } | null;
   ok: boolean;
   result: DoorResult;
   title: string;
@@ -293,6 +300,24 @@ function getDoorRoleAppearance(role?: string | null) {
   };
 }
 
+const GATE_EMAIL_MAP: Record<string, "ordinary" | "loyalty"> = {
+  "annafilippi003@gmail.com": "ordinary",
+  "shorttermrentaleasy@gmail.com": "ordinary",
+  "giulianassi00@gmail.com": "ordinary",
+  "ledvelvetstaff@gmail.com": "loyalty",
+};
+
+function normalizeEmail(value?: string | null) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getGateRoleFromCheckedBy(
+  value?: string | null
+): "ordinary" | "loyalty" | null {
+  const email = normalizeEmail(value);
+  return GATE_EMAIL_MAP[email] || null;
+}
+
 export default function DoorPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
@@ -315,11 +340,19 @@ export default function DoorPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [loadingEvents, setLoadingEvents] = useState(false);
-  const [eventSummary, setEventSummary] = useState<{
-    total_tickets: number;
-    entered_tickets: number;
-    missing_tickets: number;
-  } | null>(null);
+
+
+const [eventSummary, setEventSummary] = useState<{
+  total_tickets: number;
+  entered_tickets: number;
+  missing_tickets: number;
+  ticket_count: number;
+  drink_count: number;
+  guest_count: number;
+  table_count: number;
+  cancelled_count: number;
+} | null>(null);
+
   const [loadingSummary, setLoadingSummary] = useState(false);
 
   const [lastLiveTicketKey, setLastLiveTicketKey] = useState("");
@@ -398,6 +431,15 @@ export default function DoorPage() {
   const uiStatus = useMemo(() => {
     const result = response?.result;
     const memberRole = response?.member?.door_role;
+
+  if (response?.anomaly?.kind === "WRONG_GATE") {
+    return {
+      label: "ANOMALIA PORTA",
+      className: "bg-orange-300 text-black",
+    };
+  }
+
+
 
     if (result === "DENY_WALLY") {
       return {
@@ -539,11 +581,17 @@ export default function DoorPage() {
 
       if (selectedEventIdRef.current !== id) return;
 
-      setEventSummary({
-        total_tickets: Number(json.total_tickets || 0),
-        entered_tickets: Number(json.entered_tickets || 0),
-        missing_tickets: Number(json.missing_tickets || 0),
-      });
+setEventSummary({
+  total_tickets: Number(json.total_tickets || 0),
+  entered_tickets: Number(json.entered_tickets || 0),
+  missing_tickets: Number(json.missing_tickets || 0),
+  ticket_count: Number(json.ticket_count || 0),
+  drink_count: Number(json.drink_count || 0),
+  guest_count: Number(json.guest_count || 0),
+  table_count: Number(json.table_count || 0),
+  cancelled_count: Number(json.cancelled_count || 0),
+});
+
     } catch (error) {
       console.error("Errore loadEventSummary", error);
       if (selectedEventIdRef.current === id) {
@@ -647,8 +695,35 @@ export default function DoorPage() {
 const json = (await res.json()) as DoorApiResponse;
 
 const result = json?.result;
-const memberRole = json?.member?.door_role;
-const doorRole = deviceContext.doorRole;
+const memberRole = json?.member?.door_role || null;
+const doorRole =
+  deviceContext.doorRole === "ordinary" ||
+  deviceContext.doorRole === "loyalty" ||
+  deviceContext.doorRole === "privileged"
+    ? deviceContext.doorRole
+    : null;
+
+const checkedInBy = json?.debug?.checkedInBy || null;
+const scannedByRole = getGateRoleFromCheckedBy(checkedInBy);
+
+const wrongGate =
+  !!memberRole &&
+  !!doorRole &&
+  memberRole !== doorRole &&
+  (result === "OK_MEMBER" ||
+    result === "OK_PRIORITY" ||
+    result === "OK_PRIVILEGED" ||
+    result === "ALREADY_CHECKED_IN");
+
+if (wrongGate) {
+  json.anomaly = {
+    kind: "WRONG_GATE",
+    expected_role: memberRole,
+    current_role: doorRole,
+    scanned_by_role: scannedByRole,
+    checked_in_by: checkedInBy,
+  };
+}
 
 if (doorRole === "ordinary") {
   const allowed =
@@ -658,10 +733,11 @@ if (doorRole === "ordinary") {
     (result === "ALREADY_CHECKED_IN" &&
       (memberRole === "ordinary" || memberRole == null));
 
-  if (!allowed) {
-    setLastQr(value);
-    return;
-  }
+if (!allowed && !json.anomaly) {
+  setLastQr(value);
+  return;
+}
+
 }
 
 if (doorRole === "loyalty") {
@@ -746,6 +822,13 @@ void registerNonMemberAttempt(json);
         if (!nextKey) return;
         if (nextKey === lastLiveTicketKey) return;
 
+const currentGateId = deviceContext.gateId?.trim() || null;
+const itemGateId = item.gate_id?.trim() || null;
+
+if (currentGateId && itemGateId && currentGateId !== itemGateId) {
+  return;
+}
+
 const payload = item.payload_json;
 if (!payload) return;
 
@@ -754,10 +837,38 @@ const payloadWithGate: DoorApiResponse = {
   gate_id: item.gate_id ?? null,
 };
 
-
 const result = payloadWithGate?.result;
-const memberRole = payloadWithGate?.member?.door_role;
-const doorRole = deviceContext.doorRole;
+const memberRole = payloadWithGate?.member?.door_role || null;
+const doorRole =
+  deviceContext.doorRole === "ordinary" ||
+  deviceContext.doorRole === "loyalty" ||
+  deviceContext.doorRole === "privileged"
+    ? deviceContext.doorRole
+    : null;
+
+const checkedInBy = payloadWithGate?.debug?.checkedInBy || null;
+const scannedByRole = getGateRoleFromCheckedBy(checkedInBy);
+
+const wrongGate =
+  !!memberRole &&
+  !!doorRole &&
+  memberRole !== doorRole &&
+  (result === "OK_MEMBER" ||
+    result === "OK_PRIORITY" ||
+    result === "OK_PRIVILEGED" ||
+    result === "ALREADY_CHECKED_IN");
+
+if (wrongGate) {
+  payloadWithGate.anomaly = {
+    kind: "WRONG_GATE",
+    expected_role: memberRole,
+    current_role: doorRole,
+    scanned_by_role: scannedByRole,
+    checked_in_by: checkedInBy,
+  };
+}
+
+
 
 if (doorRole === "ordinary") {
   const allowed =
@@ -767,7 +878,7 @@ if (doorRole === "ordinary") {
     (result === "ALREADY_CHECKED_IN" &&
       (memberRole === "ordinary" || memberRole == null));
 
-  if (!allowed) return;
+  if (!allowed && !payloadWithGate.anomaly) return;
 }
 
 if (doorRole === "loyalty") {
@@ -775,7 +886,7 @@ if (doorRole === "loyalty") {
     result === "OK_PRIORITY" ||
     (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
 
-  if (!allowed) return;
+  if (!allowed && !payloadWithGate.anomaly) return;
 }
 
 if (doorRole === "privileged") {
@@ -783,7 +894,7 @@ if (doorRole === "privileged") {
     result === "OK_PRIVILEGED" ||
     (result === "ALREADY_CHECKED_IN" && memberRole === "privileged");
 
-  if (!allowed) return;
+  if (!allowed && !payloadWithGate.anomaly) return;
 }
 
 if (selectedEventIdRef.current !== eventId) return;
@@ -802,7 +913,12 @@ void registerNonMemberAttempt(payloadWithGate);
         console.error("Errore loadLatestCheckedInResult", error);
       }
     },
-    [lastLiveTicketKey, deviceContext.doorRole, registerNonMemberAttempt]
+[
+  lastLiveTicketKey,
+  deviceContext.gateId,
+  deviceContext.doorRole,
+  registerNonMemberAttempt,
+]
   );
 
 const pollLiveOnly = useCallback(async () => {
@@ -1255,7 +1371,13 @@ useEffect(() => {
                 </div>
 
 
-<div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-6">
+
+
+
+
+<div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-8">
+
+  {/* TOTAL */}
   <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
     <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Tot</div>
     <div className="mt-1 text-base font-bold">
@@ -1263,6 +1385,7 @@ useEffect(() => {
     </div>
   </div>
 
+  {/* IN */}
   <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
     <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">In</div>
     <div className="mt-1 text-base font-bold">
@@ -1270,10 +1393,51 @@ useEffect(() => {
     </div>
   </div>
 
+  {/* OUT */}
   <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
     <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Out</div>
     <div className="mt-1 text-base font-bold">
       {loadingSummary ? "..." : eventSummary?.missing_tickets ?? 0}
+    </div>
+  </div>
+
+  {/* TICKET */}
+  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Ticket</div>
+    <div className="mt-1 text-base font-bold">
+      {loadingSummary ? "..." : eventSummary?.ticket_count ?? 0}
+    </div>
+  </div>
+
+  {/* GUEST */}
+  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Guest</div>
+    <div className="mt-1 text-base font-bold">
+      {loadingSummary ? "..." : eventSummary?.guest_count ?? 0}
+    </div>
+  </div>
+
+  {/* TABLE */}
+  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Table</div>
+    <div className="mt-1 text-base font-bold">
+      {loadingSummary ? "..." : eventSummary?.table_count ?? 0}
+    </div>
+  </div>
+
+  {/* CANCELLED */}
+  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Canc</div>
+    <div className="mt-1 text-base font-bold">
+      {loadingSummary ? "..." : eventSummary?.cancelled_count ?? 0}
+    </div>
+  </div>
+
+  {/* DRINK */}
+  <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+    <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Drink</div>
+    <div className="mt-1 text-base font-bold">
+      {loadingSummary ? "..." : eventSummary?.drink_count ?? 0}
     </div>
   </div>
 
@@ -1353,6 +1517,32 @@ useEffect(() => {
     gate: {response.gate_id}
   </span>
 ) : null}
+
+{response?.anomaly?.kind === "WRONG_GATE" ? (
+  <div className="w-full rounded-2xl border border-orange-300/30 bg-orange-400/10 p-3 text-sm text-orange-100">
+    <div className="font-bold uppercase tracking-[0.14em]">
+      ANOMALIA PORTA
+    </div>
+    <div className="mt-1">
+      Socio{" "}
+      <span className="font-semibold">
+        {response?.member?.door_role || "—"}
+      </span>{" "}
+      presentato su porta{" "}
+      <span className="font-semibold">
+        {deviceContext.doorRole || "—"}
+      </span>.
+    </div>
+    <div className="mt-1 text-xs text-orange-200/90">
+      Scanner Xceed: {response?.anomaly?.checked_in_by || "—"}
+      {response?.anomaly?.scanned_by_role
+        ? ` · gate scanner: ${response.anomaly.scanned_by_role}`
+        : ""}
+    </div>
+  </div>
+) : null}
+
+
 
                   </div>
 

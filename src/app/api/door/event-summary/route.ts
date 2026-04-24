@@ -6,38 +6,78 @@ export const dynamic = "force-dynamic";
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
 
-async function countAllRows(
-  supabase: any,
-  eventId: string,
-  status?: "active" | "checked_in" | "cancelled"
-) {
+async function fetchAllTickets(supabase: any, eventId: string) {
   const pageSize = 1000;
   let from = 0;
-  let total = 0;
+  const allRows: any[] = [];
 
   while (true) {
-    let query = supabase
+    const { data, error } = await supabase
       .from("xceed_tickets")
-      .select("id", { head: false })
+      .select("id, qr_code, status, raw, imported_at")
       .eq("event_id", eventId)
       .range(from, from + pageSize - 1);
-
-    if (status) {
-      query = query.eq("status", status);
-    }
-
-    const { data, error } = await query;
 
     if (error) throw error;
 
     const batch = data || [];
-    total += batch.length;
+    allRows.push(...batch);
 
     if (batch.length < pageSize) break;
     from += pageSize;
   }
 
-  return total;
+  return allRows;
+}
+
+async function countEnteredFromLiveEvents(supabase: any, eventId: string) {
+  const { data, error } = await supabase
+    .from("door_live_events")
+    .select("ticket_qr_code, payload_json")
+    .eq("event_id", eventId);
+
+  if (error) throw error;
+
+  const enteredQr = new Set<string>();
+
+  for (const row of data || []) {
+    const payload = row?.payload_json || {};
+    const qr = row?.ticket_qr_code || payload?.ticket?.qr_code || null;
+    if (!qr) continue;
+
+    const result = payload?.result;
+    const checkedIn = payload?.ticket?.checked_in === true;
+    const checkedBy = payload?.debug?.checkedInBy;
+
+    if (
+      checkedIn ||
+      checkedBy ||
+      result === "ALREADY_CHECKED_IN" ||
+      result === "OK_MEMBER" ||
+      result === "OK_PRIORITY" ||
+      result === "OK_PRIVILEGED"
+    ) {
+      enteredQr.add(String(qr));
+    }
+  }
+
+  return enteredQr.size;
+}
+
+function classifyTicket(row: any) {
+  const status = String(row?.status || "").toLowerCase();
+
+  const offerType = String(
+    row?.raw?.offer?.type ||
+      row?.raw?.ticket?.offer?.type ||
+      ""
+  ).toLowerCase();
+
+  if (status === "cancelled") return "cancelled";
+  if (offerType === "guest-list") return "guest";
+  if (offerType === "bottle-service") return "table";
+
+  return "ticket";
 }
 
 export async function GET(req: NextRequest) {
@@ -56,62 +96,85 @@ export async function GET(req: NextRequest) {
       auth: { persistSession: false },
     });
 
-    const total = await countAllRows(supabase, eventId);
-    const entered = await countAllRows(supabase, eventId, "checked_in");
-    const missing = Math.max(0, total - entered);
+    const allRows = await fetchAllTickets(supabase, eventId);
 
-    console.log("EVENT SUMMARY COUNTS", {
-      eventId,
-      total,
-      entered,
-      missing,
-      supabaseUrl: SUPABASE_URL,
-      debug,
-    });
+    const totalTickets = allRows.length;
+    const enteredTickets = await countEnteredFromLiveEvents(supabase, eventId);
+    const cancelledCount = allRows.filter(
+      (r) => String(r.status || "").toLowerCase() === "cancelled"
+    ).length;
+
+    let ticketCount = 0;
+    let drinkCount = 0;
+    let guestCount = 0;
+    let tableCount = 0;
+
+    for (const row of allRows) {
+      const kind = classifyTicket(row);
+
+      if (kind === "cancelled") continue;
+      if (kind === "guest") guestCount++;
+      else if (kind === "table") tableCount++;
+      else ticketCount++;
+    }
+
+    const missingTickets = Math.max(0, totalTickets - enteredTickets);
 
     if (!debug) {
       return NextResponse.json({
         ok: true,
         event_id: eventId,
-        total_tickets: total,
-        entered_tickets: entered,
-        missing_tickets: missing,
+        total_tickets: totalTickets,
+        entered_tickets: enteredTickets,
+        missing_tickets: missingTickets,
+        ticket_count: ticketCount,
+        drink_count: drinkCount,
+        guest_count: guestCount,
+        table_count: tableCount,
+        cancelled_count: cancelledCount,
       });
     }
 
-    const { data: sampleRows, error: sampleError } = await supabase
-      .from("xceed_tickets")
-      .select("id, qr_code, status, imported_at")
-      .eq("event_id", eventId)
-      .order("imported_at", { ascending: false })
-      .limit(50);
+    const sampleRows = allRows
+      .slice()
+      .sort((a, b) => {
+        const da = new Date(a.imported_at || 0).getTime();
+        const db = new Date(b.imported_at || 0).getTime();
+        return db - da;
+      })
+      .slice(0, 50);
 
-    if (sampleError) {
-      return NextResponse.json(
-        { ok: false, error: sampleError.message || "Errore debug rows" },
-        { status: 500 }
-      );
-    }
-
-    const allRows = sampleRows || [];
-    const activeRows = allRows.filter((r) => r.status === "active");
-    const checkedRows = allRows.filter((r) => r.status === "checked_in");
-    const nullQrRows = allRows.filter((r) => !r.qr_code);
+    const activeRows = sampleRows.filter(
+      (r) => String(r.status || "").toLowerCase() === "active"
+    );
+    const nullQrRows = sampleRows.filter((r) => !r.qr_code);
 
     return NextResponse.json({
       ok: true,
       event_id: eventId,
       supabase_url: SUPABASE_URL,
-      total_tickets: total,
-      entered_tickets: entered,
-      missing_tickets: missing,
+      total_tickets: totalTickets,
+      entered_tickets: enteredTickets,
+      missing_tickets: missingTickets,
+      ticket_count: ticketCount,
+      drink_count: drinkCount,
+      guest_count: guestCount,
+      table_count: tableCount,
+      cancelled_count: cancelledCount,
       debug: {
-        sample_size: allRows.length,
+        sample_size: sampleRows.length,
         sample_active: activeRows.length,
-        sample_checked_in: checkedRows.length,
         sample_null_qr: nullQrRows.length,
-        checked_in_qr_sample: checkedRows.slice(0, 10).map((r) => r.qr_code),
-        active_qr_sample: activeRows.slice(0, 10).map((r) => r.qr_code),
+        entered_source: "door_live_events",
+        classified_sample: sampleRows.slice(0, 20).map((r) => ({
+          qr_code: r.qr_code,
+          status: r.status,
+          kind: classifyTicket(r),
+          offer_type:
+            r?.raw?.offer?.type || r?.raw?.ticket?.offer?.type || null,
+          offer_name:
+            r?.raw?.offer?.name || r?.raw?.ticket?.offer?.name || null,
+        })),
       },
     });
   } catch (error: any) {
