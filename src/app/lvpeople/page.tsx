@@ -17,6 +17,10 @@ type MemberRow = {
   legacy: boolean;
   language: string | null;
   created_at: string;
+  membership_group: string | null;
+  status: string | null;
+  membership_expires_at: string | null;
+  legacy_barcode: string | null;
 };
 
 type MemberCardRow = {
@@ -67,7 +71,7 @@ export default async function LVPeopleHomePage() {
 
   const { data: member, error: memberErr } = await supabase
     .from("members")
-    .select("id, first_name, last_name, email, phone, legacy, language, created_at")
+    .select("id, first_name, last_name, email, phone, legacy, language, created_at, membership_group, status, membership_expires_at, legacy_barcode")
     .ilike("email", email)
     .maybeSingle<MemberRow>();
 
@@ -163,19 +167,40 @@ export default async function LVPeopleHomePage() {
         <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
           <h2 className="text-lg font-semibold">La mia tessera</h2>
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-              <div className="text-sm text-white/60">Socio</div>
-              <div className="mt-1 text-base font-semibold">
-                {member.first_name} {member.last_name}
-              </div>
-              <div className="mt-2 text-sm text-white/70 break-words">
-                <span className="text-white/50">Email:</span> {member.email || "—"}
-              </div>
-              <div className="mt-1 text-sm text-white/70 break-words">
-                <span className="text-white/50">Telefono:</span> {member.phone || "—"}
-              </div>
-            </div>
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+    <div className="text-sm text-white/60">Socio</div>
+
+    <div className="mt-1 text-base font-semibold">
+      {member.first_name} {member.last_name}
+    </div>
+
+    <div className="mt-2 text-sm text-white/70 break-words">
+      <span className="text-white/50">Email:</span> {member.email || "—"}
+    </div>
+
+    <div className="mt-1 text-sm text-white/70 break-words">
+      <span className="text-white/50">Telefono:</span> {member.phone || "—"}
+    </div>
+
+    {/* 👇 NUOVI CAMPI */}
+
+    <div className="mt-1 text-sm text-white/70 break-words">
+      <span className="text-white/50">Gruppo:</span> {member.membership_group || "—"}
+    </div>
+
+    <div className="mt-1 text-sm text-white/70 break-words">
+      <span className="text-white/50">Stato:</span> {member.status || "—"}
+    </div>
+
+    <div className="mt-1 text-sm text-white/70 break-words">
+      <span className="text-white/50">Scadenza:</span> {member.membership_expires_at || "—"}
+    </div>
+
+    <div className="mt-1 text-sm text-white/70 break-words">
+      <span className="text-white/50">Barcode:</span> {member.legacy_barcode || "—"}
+    </div>
+  </div>
 
             <div className="rounded-xl border border-white/10 bg-black/20 p-4">
               <div className="text-sm text-white/60">Tessera</div>
