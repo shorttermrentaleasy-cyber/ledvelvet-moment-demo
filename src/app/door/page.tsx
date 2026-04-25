@@ -98,6 +98,7 @@ type DoorApiResponse = {
   live_key?: string | null;
 };
 
+
 type MemberSearchRow = {
   id: string;
   first_name: string | null;
@@ -118,7 +119,20 @@ type MemberSearchRow = {
   entered_ticket_name?: string | null;
   entered_offer_name?: string | null;
   entered_offer_type?: string | null;
+
+  entries?: Array<{
+    entered_at: string | null;
+    entered_gate: string | null;
+    entered_by: string | null;
+    entered_match: "phone" | "email" | "manual_link" | null;
+    entered_qr: string | null;
+    entered_result: string | null;
+    entered_ticket_name: string | null;
+    entered_offer_name: string | null;
+    entered_offer_type: string | null;
+  }>;
 };
+
 
 
 type UiTheme = {
@@ -384,7 +398,7 @@ export default function DoorPage() {
   const lastSoundKeyRef = useRef<string>("");
   const audioContextRef = useRef<AudioContext | null>(null);
   const selectedEventIdRef = useRef("");
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [autoSyncing, setAutoSyncing] = useState(false);
   const [deviceContext, setDeviceContext] = useState<{
@@ -1496,11 +1510,10 @@ useEffect(() => {
   const showAutomaticWally = Boolean(response?.action === "OPEN_WALLY" && wallyActionUrl);
   const showManualWally = Boolean(manualWallyOpen && wallyActionUrl);
 
-  const bigTitle = response?.title || "DOOR CHECK";
-  const bigMessage =
-    response?.message || "Monitor porta: Xceed scansiona, qui controlli l’esito";
+const bigTitle = response?.title || "DOOR CHECK";
+const bigMessage = response?.message || "Monitor porta: Xceed scansiona, qui controlli l’esito";
 
-  return (
+return (
     <div className={`min-h-screen text-white ${theme.shell}`}>
       <div className="mx-auto max-w-7xl px-2 py-2 sm:px-3 sm:py-3 md:px-4">
         <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,rgba(18,22,38,0.96),rgba(28,18,50,0.92),rgba(8,10,20,0.98))] p-2.5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] sm:p-3 md:p-4">
@@ -2391,57 +2404,94 @@ useEffect(() => {
     {m.already_entered ? "Già entrato" : "Non ancora entrato"}
   </div>
 
-  {m.already_entered ? (
-    <div className="mt-2 grid gap-1 text-[11px] text-slate-200">
-      <div>
-        Ora:{" "}
-        <span className="font-semibold text-white">
-          {m.entered_at ? new Date(m.entered_at).toLocaleString() : "—"}
-        </span>
-      </div>
-      <div>
-        Gate:{" "}
-        <span className="font-semibold text-white">
-          {m.entered_gate || "—"}
-        </span>
-      </div>
-      <div>
-        Operatore:{" "}
-        <span className="font-semibold text-white">
-          {m.entered_by || "—"}
-        </span>
-      </div>
-      <div>
-        Match:{" "}
-        <span className="font-semibold text-white">
-          {m.entered_match || "—"}
-        </span>
-      </div>
-      <div className="break-all">
-        QR:{" "}
-        <span className="font-semibold text-white">
-          {m.entered_qr || "—"}
-        </span>
-      </div>
-      <div>
-        Esito:{" "}
-        <span className="font-semibold text-white">
-          {m.entered_result || "—"}
-        </span>
-      </div>
-      <div>
-        Ticket:{" "}
-        <span className="font-semibold text-white">
-          {m.entered_ticket_name || "—"}
-        </span>
-      </div>
+{m.already_entered ? (
+  <div className="mt-2 space-y-2 text-[11px] text-slate-200">
+    <div className="font-semibold text-emerald-100">
+      Storico ingressi ({m.entries?.length || 1})
     </div>
-  ) : (
-    <div className="mt-1 text-[11px] text-slate-400">
-      Nessun ingresso trovato per questo evento.
-    </div>
-  )}
-</div>
+
+    {(m.entries && m.entries.length > 0
+      ? m.entries
+      : [
+          {
+            entered_at: m.entered_at,
+            entered_gate: m.entered_gate,
+            entered_by: m.entered_by,
+            entered_match: m.entered_match,
+            entered_qr: m.entered_qr,
+            entered_result: m.entered_result,
+            entered_ticket_name: m.entered_ticket_name,
+            entered_offer_name: m.entered_offer_name,
+            entered_offer_type: m.entered_offer_type,
+          },
+        ]
+    ).map((entry, index) => (
+      <div
+        key={`${entry.entered_qr || index}-${entry.entered_at || index}`}
+        className="rounded-xl border border-white/10 bg-black/20 p-2"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-semibold text-white">
+            #{index + 1}
+          </span>
+          <span className="text-slate-300">
+            {entry.entered_at
+              ? new Date(entry.entered_at).toLocaleString()
+              : "—"}
+          </span>
+        </div>
+
+        <div className="mt-1 grid gap-1">
+          <div>
+            Gate:{" "}
+            <span className="font-semibold text-white">
+              {entry.entered_gate || "—"}
+            </span>
+          </div>
+
+          <div>
+            Operatore:{" "}
+            <span className="font-semibold text-white">
+              {entry.entered_by || "—"}
+            </span>
+          </div>
+
+          <div>
+            Match:{" "}
+            <span className="font-semibold text-white">
+              {entry.entered_match || "—"}
+            </span>
+          </div>
+
+          <div>
+            Esito:{" "}
+            <span className="font-semibold text-white">
+              {entry.entered_result || "—"}
+            </span>
+          </div>
+
+          <div>
+            Ticket:{" "}
+            <span className="font-semibold text-white">
+              {entry.entered_ticket_name || "—"}
+            </span>
+          </div>
+
+          <div className="break-all">
+            QR:{" "}
+            <span className="font-semibold text-white">
+              {entry.entered_qr || "—"}
+            </span>
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+) : (
+  <div className="mt-1 text-[11px] text-slate-400">
+    Nessun ingresso trovato per questo evento.
+  </div>
+)}
 
 
 
@@ -2493,6 +2543,7 @@ className="mt-1 w-full rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4
                       </button>
                     </div>
                   </div>
+                </div>
                 );
               })}
             </div>
