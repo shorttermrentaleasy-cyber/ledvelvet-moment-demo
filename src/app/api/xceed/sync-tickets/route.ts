@@ -900,6 +900,31 @@ if (mode === "live") {
 
   const checkedInRows = ticketRows.filter((row) => row.status === "checked_in");
 
+if (checkedInRows.length > 0) {
+  const checkedInChunks = chunkArray(checkedInRows, 200);
+
+  for (const chunk of checkedInChunks) {
+    const { error: checkedInUpsertError } = await supabase
+      .from("xceed_tickets")
+      .upsert(chunk, {
+        onConflict: "event_id,qr_code",
+      });
+
+    if (checkedInUpsertError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          mode: "live",
+          error: "Supabase mini upsert failed on checked_in xceed_tickets",
+          details: checkedInUpsertError.message,
+          localEventId,
+        },
+        { status: 500 }
+      );
+    }
+  }
+}
+
   const liveKeys = checkedInRows.map((row) =>
     buildDoorLiveKey(row.event_id, row.qr_code)
   );

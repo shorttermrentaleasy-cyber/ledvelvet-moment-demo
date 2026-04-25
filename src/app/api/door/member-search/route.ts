@@ -55,7 +55,11 @@ async function findLatestLiveEntry(eventId: string, member: MemberRow) {
       const emailMatch = email && liveEmail && email === liveEmail;
 
       if (!phoneMatch && !emailMatch) continue;
-
+console.log("MEMBER SEARCH ENTERED DEBUG", {
+  gate: row.gate_id,
+  payload_gate: payload?.gate_id,
+  checkedInBy: payload?.debug?.checkedInBy,
+});
       return {
         already_entered: true,
         entered_at: row.created_at || null,
