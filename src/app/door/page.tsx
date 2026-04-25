@@ -431,6 +431,10 @@ const [eventSummary, setEventSummary] = useState<{
   guest_count: number;
   table_count: number;
   cancelled_count: number;
+people_total: number;
+people_in: number;
+people_missing: number;
+non_people_scans: number;
   type_summary: {
     ticket: EventTypeSummaryItem;
     guest: EventTypeSummaryItem;
@@ -700,6 +704,10 @@ setEventSummary({
   guest_count: Number(json.guest_count || 0),
   table_count: Number(json.table_count || 0),
   cancelled_count: Number(json.cancelled_count || 0),
+people_total: Number(json.people_total || 0),
+people_in: Number(json.people_in || 0),
+people_missing: Number(json.people_missing || 0),
+non_people_scans: Number(json.non_people_scans || 0),
   type_summary: {
     ticket: json.type_summary?.ticket || emptyType,
     guest: json.type_summary?.guest || emptyType,
@@ -1600,6 +1608,20 @@ return (
       {loadingSummary ? "..." : eventSummary?.missing_tickets ?? 0}
     </div>
   </div>
+{/* PEOPLE */}
+<div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-center">
+  <div className="text-[10px] uppercase tracking-[0.16em] text-emerald-200">
+    Persone
+  </div>
+  <div className="mt-1 text-base font-bold text-white">
+    {loadingSummary
+      ? "..."
+      : `${eventSummary?.people_in ?? 0}/${eventSummary?.people_total ?? 0}`}
+  </div>
+  <div className="text-[10px] text-emerald-100/70">
+    out {eventSummary?.people_missing ?? 0}
+  </div>
+</div>
 
 {/* TICKET */}
 <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-center">

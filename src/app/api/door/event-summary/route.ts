@@ -4,7 +4,14 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type TicketType = "ticket" | "guest" | "table" | "drink" | "cancelled" | "unknown";
+type TicketType =
+  | "ticket"
+  | "guest"
+  | "table"
+  | "drink"
+  | "penalty"
+  | "cancelled"
+  | "unknown";
 
 type TypeCounter = {
   total: number;
@@ -27,33 +34,26 @@ function getSupabase() {
     throw new Error("Missing env: SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE");
   }
 
-return createClient(url, serviceRole, {
-  auth: { persistSession: false },
-  global: {
-    fetch: (input, init) => {
-      const headers = new Headers(init?.headers);
+  return createClient(url, serviceRole, {
+    auth: { persistSession: false },
+    global: {
+      fetch: (input, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set("Cache-Control", "no-store");
+        headers.set("Pragma", "no-cache");
 
-      headers.set("Cache-Control", "no-store");
-      headers.set("Pragma", "no-cache");
-
-      return fetch(input, {
-        ...init,
-        cache: "no-store",
-        headers,
-      });
+        return fetch(input, {
+          ...init,
+          cache: "no-store",
+          headers,
+        });
+      },
     },
-  },
-});
-
-
+  });
 }
 
 function norm(v: unknown): string {
   return String(v || "").trim().toLowerCase();
-}
-
-function normalizeQr(v: unknown): string {
-  return String(v || "").trim();
 }
 
 function readOfferType(raw: any): string {
@@ -102,12 +102,13 @@ function isCancelledTicket(row: any): boolean {
 }
 
 function classifyTicket(row: any): TicketType {
-  if (isCancelledTicket(row)) return "cancelled";
-
   const raw = row?.raw || {};
   const offerType = readOfferType(raw);
   const offerName = readOfferName(raw);
   const combined = `${offerType} ${offerName}`;
+
+  if (combined.includes("penale")) return "penalty";
+  if (isCancelledTicket(row)) return "cancelled";
 
   if (
     combined.includes("guest") ||
@@ -143,67 +144,13 @@ function classifyTicket(row: any): TicketType {
   return "unknown";
 }
 
-function classifyLivePayload(payload: any): TicketType {
-  const offerType = norm(payload?.ticket?.offer_type);
-  const offerName = norm(payload?.ticket?.offer_name);
-  const status = norm(payload?.ticket?.status);
-  const combined = `${offerType} ${offerName}`;
-
-  if (status === "cancelled" || status === "canceled") return "cancelled";
-
-  if (
-    combined.includes("guest") ||
-    combined.includes("guest-list") ||
-    combined.includes("guest list") ||
-    combined.includes("guestlist")
-  ) {
-    return "guest";
-  }
-
-  if (
-    combined.includes("table") ||
-    combined.includes("bottle") ||
-    combined.includes("bottle-service") ||
-    combined.includes("bottle service")
-  ) {
-    return "table";
-  }
-
-  if (combined.includes("drink")) return "drink";
-
-  if (
-    combined.includes("ticket") ||
-    combined.includes("general") ||
-    combined.includes("early") ||
-    combined.includes("entry") ||
-    combined.includes("ingresso") ||
-    combined.trim() === ""
-  ) {
-    return "ticket";
-  }
-
-  return "unknown";
-}
-
-function getLiveQr(row: any): string {
-  const payload = row?.payload_json || {};
-
-  return normalizeQr(
-    row?.ticket_qr_code ||
-      payload?.ticket?.qr_code ||
-      payload?.ticket?.qrCode ||
-      payload?.qr_code ||
-      payload?.qrCode ||
-      ""
-  );
-}
-
 function emptyTypeSummary(): Record<TicketType, TypeCounter> {
   return {
     ticket: { total: 0, in: 0, out: 0 },
     guest: { total: 0, in: 0, out: 0 },
     table: { total: 0, in: 0, out: 0 },
     drink: { total: 0, in: 0, out: 0 },
+    penalty: { total: 0, in: 0, out: 0 },
     cancelled: { total: 0, in: 0, out: 0 },
     unknown: { total: 0, in: 0, out: 0 },
   };
@@ -244,52 +191,6 @@ async function fetchAllRows(
   return allRows;
 }
 
-/**
- * Lettura live events robusta:
- * - prima per colonna event_id
- * - poi anche per live_key prefissata con eventId
- * - merge per id
- *
- * Questo evita il caso in cui PostgREST/Supabase non restituisce tutte le righe
- * con il solo filtro event_id, pur essendo visibili in SQL.
- */
-async function fetchAllLiveEventsForEvent(supabase: any, eventId: string) {
-  const select = "id,event_id,live_key,ticket_qr_code,payload_json,created_at";
-
-  const byEventId = await fetchAllRows(
-    supabase,
-    "door_live_events",
-    select,
-    eventId,
-    "created_at"
-  );
-
-  const { data: byLiveKey, error: liveKeyError } = await supabase
-    .from("door_live_events")
-    .select(select)
-    .ilike("live_key", `${eventId}__%`)
-    .order("created_at", { ascending: false })
-    .range(0, 9999);
-
-  if (liveKeyError) throw liveKeyError;
-
-  const merged = new Map<string, any>();
-
-  for (const row of byEventId || []) {
-    if (row?.id) merged.set(row.id, row);
-  }
-
-  for (const row of byLiveKey || []) {
-    if (row?.id) merged.set(row.id, row);
-  }
-
-  return Array.from(merged.values()).sort((a, b) => {
-    const da = new Date(a?.created_at || 0).getTime();
-    const db = new Date(b?.created_at || 0).getTime();
-    return db - da;
-  });
-}
-
 export async function GET(req: NextRequest) {
   try {
     const eventId = req.nextUrl.searchParams.get("eventId")?.trim();
@@ -320,34 +221,40 @@ export async function GET(req: NextRequest) {
 
       typeSummary[type].total += 1;
 
-      if (isEntered && type !== "cancelled") {
+      if (isEntered) {
         typeSummary[type].in += 1;
       }
     }
 
-
     for (const key of Object.keys(typeSummary) as TicketType[]) {
-      if (key === "cancelled") {
-        typeSummary[key].out = 0;
-      } else {
-        typeSummary[key].out = Math.max(
-          0,
-          typeSummary[key].total - typeSummary[key].in
-        );
-      }
+      typeSummary[key].out = Math.max(
+        0,
+        typeSummary[key].total - typeSummary[key].in
+      );
     }
 
+    const totalTickets = tickets.length;
 
-    const totalTickets = (tickets || []).length;
     const enteredTickets =
       typeSummary.ticket.in +
       typeSummary.guest.in +
       typeSummary.table.in +
       typeSummary.drink.in +
+      typeSummary.penalty.in +
+      typeSummary.cancelled.in +
       typeSummary.unknown.in;
 
     const missingTickets = Math.max(0, totalTickets - enteredTickets);
+const peopleTotal = typeSummary.ticket.total + typeSummary.guest.total;
+const peopleIn = typeSummary.ticket.in + typeSummary.guest.in;
+const peopleMissing = Math.max(0, peopleTotal - peopleIn);
 
+const nonPeopleScans =
+  typeSummary.table.in +
+  typeSummary.drink.in +
+  typeSummary.penalty.in +
+  typeSummary.cancelled.in +
+  typeSummary.unknown.in;
 
     const response: any = {
       ok: true,
@@ -356,26 +263,35 @@ export async function GET(req: NextRequest) {
       total_tickets: totalTickets,
       entered_tickets: enteredTickets,
       missing_tickets: missingTickets,
-
+people_total: peopleTotal,
+people_in: peopleIn,
+people_missing: peopleMissing,
+non_people_scans: nonPeopleScans,
       ticket_count: typeSummary.ticket.total,
       guest_count: typeSummary.guest.total,
       table_count: typeSummary.table.total,
       cancelled_count: typeSummary.cancelled.total,
       drink_count: typeSummary.drink.total,
+      penalty_count: typeSummary.penalty.total,
 
       type_summary: typeSummary,
     };
 
-if (debugMode) {
-  response.debug = {
-    supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    now: new Date().toISOString(),
-    counted_from: "xceed_tickets.status",
-    tickets_rows: tickets.length,
-    status_checked_in: enteredTickets,
-  };
-}
-
+    if (debugMode) {
+      response.debug = {
+        supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        now: new Date().toISOString(),
+        counted_from: "xceed_tickets.status",
+        tickets_rows: tickets.length,
+        status_checked_in: enteredTickets,
+        penalty_total: typeSummary.penalty.total,
+        penalty_in: typeSummary.penalty.in,
+people_total: peopleTotal,
+people_in: peopleIn,
+people_missing: peopleMissing,
+non_people_scans: nonPeopleScans,
+      };
+    }
 
     return NextResponse.json(response);
   } catch (err: any) {
