@@ -1463,7 +1463,7 @@ useEffect(() => {
   const interval = setInterval(() => {
     if (document.hidden) return;
     void pollLiveOnly();
-  }, 2000);
+  }, 1000);
   return () => clearInterval(interval);
 }, [selectedEventId, autoRefreshEnabled, pollLiveOnly]);
 
