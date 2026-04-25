@@ -39,7 +39,6 @@ return createClient(url, serviceRole, {
       return fetch(input, {
         ...init,
         cache: "no-store",
-        next: { revalidate: 0 },
         headers,
       });
     },

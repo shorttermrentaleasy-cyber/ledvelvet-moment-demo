@@ -26,18 +26,18 @@ type MemberRow = {
   membership_expires_at: string | null;
 };
 
-async function findLatestLiveEntry(eventId: string, member: MemberRow) {
+async function findMemberLiveEntries(eventId: string, member: MemberRow) {
   const email = normalize(member.email);
   const phone = normalize(member.phone);
-  const canMatchLive = Boolean(email || phone);
+  const entries: any[] = [];
 
-  if (canMatchLive) {
+  if (email || phone) {
     const { data, error } = await supabase
       .from("door_live_events")
       .select("created_at, gate_id, payload_json, ticket_qr_code")
       .eq("event_id", eventId)
       .order("created_at", { ascending: false })
-      .limit(80);
+      .limit(200);
 
     if (error) throw error;
 
@@ -55,13 +55,8 @@ async function findLatestLiveEntry(eventId: string, member: MemberRow) {
       const emailMatch = email && liveEmail && email === liveEmail;
 
       if (!phoneMatch && !emailMatch) continue;
-console.log("MEMBER SEARCH ENTERED DEBUG", {
-  gate: row.gate_id,
-  payload_gate: payload?.gate_id,
-  checkedInBy: payload?.debug?.checkedInBy,
-});
-      return {
-        already_entered: true,
+
+      entries.push({
         entered_at: row.created_at || null,
         entered_gate: row.gate_id || payload?.gate_id || null,
         entered_by: payload?.debug?.checkedInBy || null,
@@ -71,11 +66,11 @@ console.log("MEMBER SEARCH ENTERED DEBUG", {
         entered_ticket_name: ticket.full_name || person.full_name || null,
         entered_offer_name: ticket.offer_name || null,
         entered_offer_type: ticket.offer_type || null,
-      };
+      });
     }
   }
 
-  const { data: manualLink, error: manualError } = await supabase
+  const { data: manualLinks, error: manualError } = await supabase
     .from("door_manual_member_links")
     .select(
       "created_at, gate_id, ticket_qr_code, ticket_full_name, linked_by, booking_id"
@@ -83,14 +78,12 @@ console.log("MEMBER SEARCH ENTERED DEBUG", {
     .eq("event_id", eventId)
     .eq("linked_member_id", member.id)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(50);
 
   if (manualError) throw manualError;
 
-  if (manualLink) {
-    return {
-      already_entered: true,
+  for (const manualLink of manualLinks || []) {
+    entries.push({
       entered_at: manualLink.created_at || null,
       entered_gate: manualLink.gate_id || null,
       entered_by: manualLink.linked_by || null,
@@ -100,10 +93,16 @@ console.log("MEMBER SEARCH ENTERED DEBUG", {
       entered_ticket_name: manualLink.ticket_full_name || null,
       entered_offer_name: null,
       entered_offer_type: null,
-    };
+    });
   }
 
-  return null;
+  entries.sort((a, b) => {
+    const da = a.entered_at ? new Date(a.entered_at).getTime() : 0;
+    const db = b.entered_at ? new Date(b.entered_at).getTime() : 0;
+    return db - da;
+  });
+
+  return entries;
 }
 
 export async function GET(req: NextRequest) {
@@ -175,26 +174,29 @@ export async function GET(req: NextRequest) {
           entered_ticket_name: null,
           entered_offer_name: null,
           entered_offer_type: null,
+          entries: [],
         })),
       });
     }
 
     const enrichedItems = await Promise.all(
       items.map(async (item) => {
-        const live = await findLatestLiveEntry(eventId, item);
+        const entries = await findMemberLiveEntries(eventId, item);
+        const latest = entries[0] || null;
 
         return {
           ...item,
-          already_entered: !!live,
-          entered_at: live?.entered_at || null,
-          entered_gate: live?.entered_gate || null,
-          entered_by: live?.entered_by || null,
-          entered_match: live?.entered_match || null,
-          entered_qr: live?.entered_qr || null,
-          entered_result: live?.entered_result || null,
-          entered_ticket_name: live?.entered_ticket_name || null,
-          entered_offer_name: live?.entered_offer_name || null,
-          entered_offer_type: live?.entered_offer_type || null,
+          already_entered: entries.length > 0,
+          entered_at: latest?.entered_at || null,
+          entered_gate: latest?.entered_gate || null,
+          entered_by: latest?.entered_by || null,
+          entered_match: latest?.entered_match || null,
+          entered_qr: latest?.entered_qr || null,
+          entered_result: latest?.entered_result || null,
+          entered_ticket_name: latest?.entered_ticket_name || null,
+          entered_offer_name: latest?.entered_offer_name || null,
+          entered_offer_type: latest?.entered_offer_type || null,
+          entries,
         };
       })
     );

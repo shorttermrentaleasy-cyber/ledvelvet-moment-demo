@@ -849,9 +849,12 @@ if (!allowed && !json.anomaly) {
 if (doorRole === "loyalty") {
   const allowed =
     result === "OK_PRIORITY" ||
-    (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
+    result === "DENY_WALLY" ||
+    result === "DENY_RENEWAL" ||
+    (result === "ALREADY_CHECKED_IN" &&
+      (memberRole === "loyalty" || memberRole == null));
 
-  if (!allowed) {
+  if (!allowed && !json.anomaly) {
     setLastQr(value);
     return;
   }
@@ -1003,7 +1006,10 @@ if (doorRole === "ordinary") {
 if (doorRole === "loyalty") {
   const allowed =
     result === "OK_PRIORITY" ||
-    (result === "ALREADY_CHECKED_IN" && memberRole === "loyalty");
+    result === "DENY_WALLY" ||
+    result === "DENY_RENEWAL" ||
+    (result === "ALREADY_CHECKED_IN" &&
+      (memberRole === "loyalty" || memberRole == null));
 
   if (!allowed && !payloadWithGate.anomaly) return;
 }
