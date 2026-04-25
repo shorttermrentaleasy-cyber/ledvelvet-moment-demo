@@ -311,48 +311,20 @@ export async function GET(req: NextRequest) {
       eventId
     );
 
-    const liveEvents = await fetchAllLiveEventsForEvent(supabase, eventId);
-
     const typeSummary = emptyTypeSummary();
-    const qrToType = new Map<string, TicketType>();
 
     for (const ticket of tickets || []) {
-      const qr = normalizeQr(
-        ticket?.qr_code ||
-          ticket?.raw?.qrCode ||
-          ticket?.raw?.ticket?.qrCode ||
-          ticket?.raw?.pass?.qrCode
-      );
-
       const type = classifyTicket(ticket);
+      const status = norm(ticket?.status);
+      const isEntered = status === "checked_in";
+
       typeSummary[type].total += 1;
 
-      if (qr) {
-        qrToType.set(qr, type);
+      if (isEntered && type !== "cancelled") {
+        typeSummary[type].in += 1;
       }
     }
 
-    const enteredQr = new Set<string>();
-
-    for (const live of liveEvents || []) {
-      const qr = getLiveQr(live);
-      if (!qr) continue;
-
-      enteredQr.add(qr);
-    }
-
-    for (const qr of enteredQr) {
-      const matchedTicketType = qrToType.get(qr);
-
-      if (matchedTicketType) {
-        typeSummary[matchedTicketType].in += 1;
-        continue;
-      }
-
-      const live = (liveEvents || []).find((row) => getLiveQr(row) === qr);
-      const fallbackType = classifyLivePayload(live?.payload_json || {});
-      typeSummary[fallbackType].in += 1;
-    }
 
     for (const key of Object.keys(typeSummary) as TicketType[]) {
       if (key === "cancelled") {
@@ -365,9 +337,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
+
     const totalTickets = (tickets || []).length;
-    const enteredTickets = enteredQr.size;
+    const enteredTickets =
+      typeSummary.ticket.in +
+      typeSummary.guest.in +
+      typeSummary.table.in +
+      typeSummary.drink.in +
+      typeSummary.unknown.in;
+
     const missingTickets = Math.max(0, totalTickets - enteredTickets);
+
 
     const response: any = {
       ok: true,
@@ -386,27 +366,16 @@ export async function GET(req: NextRequest) {
       type_summary: typeSummary,
     };
 
-    if (debugMode) {
-      response.debug = {
-        supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-        now: new Date().toISOString(),
-        live_events_rows: liveEvents.length,
-        entered_qr_size: enteredQr.size,
-        first_30_qr: (liveEvents || []).slice(0, 30).map((row: any) => ({
-          id: row.id,
-          event_id: row.event_id,
-          live_key: row.live_key,
-          ticket_qr_code: row.ticket_qr_code,
-          payload_event_id: row.payload_json?.event?.id || null,
-          payload_ticket_qr_code: row.payload_json?.ticket?.qr_code || null,
-          payload_ticket_qrCode: row.payload_json?.ticket?.qrCode || null,
-          payload_qr_code: row.payload_json?.qr_code || null,
-          payload_qrCode: row.payload_json?.qrCode || null,
-          extracted_qr: getLiveQr(row),
-          created_at: row.created_at,
-        })),
-      };
-    }
+if (debugMode) {
+  response.debug = {
+    supabase_url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    now: new Date().toISOString(),
+    counted_from: "xceed_tickets.status",
+    tickets_rows: tickets.length,
+    status_checked_in: enteredTickets,
+  };
+}
+
 
     return NextResponse.json(response);
   } catch (err: any) {
