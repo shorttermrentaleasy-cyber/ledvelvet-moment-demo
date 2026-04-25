@@ -386,6 +386,7 @@ export default function DoorPage() {
   const selectedEventIdRef = useRef("");
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [autoSyncing, setAutoSyncing] = useState(false);
   const [deviceContext, setDeviceContext] = useState<{
     gateId: string | null;
     doorRole: string | null;
@@ -635,7 +636,7 @@ const res = await fetch("/api/public/door-events", {
     }
   }, []);
 
-  const loadEventSummary = useCallback(async (eventId: string) => {
+const loadEventSummary = useCallback(async (eventId: string, opts?: { silent?: boolean }) => {
     const id = eventId.trim();
     if (!id) {
       setEventSummary(null);
@@ -643,7 +644,9 @@ const res = await fetch("/api/public/door-events", {
     }
 
     try {
-      setLoadingSummary(true);
+      if (!opts?.silent) {
+  setLoadingSummary(true);
+}
 
 const res = await fetch(
   `/api/door/event-summary?eventId=${encodeURIComponent(id)}&debug=1&t=${Date.now()}`,
@@ -700,7 +703,9 @@ setEventSummary({
       }
     } finally {
       if (selectedEventIdRef.current === id) {
-        setLoadingSummary(false);
+        if (!opts?.silent) {
+  setLoadingSummary(false);
+}
       }
     }
   }, []);
@@ -1038,13 +1043,61 @@ void registerNonMemberAttempt(payloadWithGate);
 const pollLiveOnly = useCallback(async () => {
   const localEventId = selectedEventIdRef.current?.trim();
   if (!localEventId) return;
+  if (autoSyncing) return;
+
+  setAutoSyncing(true);
 
   try {
-await loadLatestCheckedInResult(localEventId);
+    const syncUrl = new URL(
+      "/api/xceed/sync-tickets",
+      window.location.origin
+    );
+
+    syncUrl.searchParams.set("localEventId", localEventId);
+    syncUrl.searchParams.set("mode", "live");
+
+    if (deviceContext.gateId) {
+      syncUrl.searchParams.set("gate_id", deviceContext.gateId);
+    }
+
+    if (deviceContext.doorRole) {
+      syncUrl.searchParams.set("door_role", deviceContext.doorRole);
+    }
+
+    if (deviceContext.deviceLabel) {
+      syncUrl.searchParams.set("device_label", deviceContext.deviceLabel);
+    }
+
+    const syncRes = await fetch(syncUrl.toString(), {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    const syncJson = await syncRes.json().catch(() => null);
+
+    if (!syncRes.ok || !syncJson?.ok) {
+      console.error("Errore sync live AUTO", syncJson);
+      return;
+    }
+
+    setLastSyncAt(Date.now());
+
+    await loadLatestCheckedInResult(localEventId);
+    await loadEventSummary(localEventId, { silent: true });
   } catch (error) {
     console.error("Errore pollLiveOnly", error);
+  } finally {
+    setAutoSyncing(false);
   }
-}, [loadLatestCheckedInResult]);
+}, [
+  autoSyncing,
+  deviceContext.gateId,
+  deviceContext.doorRole,
+  deviceContext.deviceLabel,
+  loadLatestCheckedInResult,
+  loadEventSummary,
+]);
+
 
 
   const refreshDoorData = useCallback(async () => {
@@ -1097,7 +1150,7 @@ await loadLatestCheckedInResult(localEventId);
 setLastSyncAt(Date.now());
 
 await loadLatestCheckedInResult(localEventId);
-await loadEventSummary(localEventId);
+await loadEventSummary(localEventId, { silent: true });
 
 
     } catch (error) {
@@ -1596,7 +1649,7 @@ useEffect(() => {
       : "border-white/15 bg-white/5 text-white hover:bg-white/10"
   }`}
 >
-  {autoRefreshEnabled ? "AUTO" : "MANUALE"}
+  {autoSyncing ? "Sync..." : autoRefreshEnabled ? "AUTO OK" : "MANUALE"}
 </button>
 
   <button

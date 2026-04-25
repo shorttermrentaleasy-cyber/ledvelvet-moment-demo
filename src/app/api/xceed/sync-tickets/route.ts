@@ -131,7 +131,27 @@ function buildDoorLiveKey(eventId: string, qrCode: string) {
   return `${eventId}__${qrCode}__checked_in`;
 }
 
+type GateEmailConfig = {
+  gate_id: string;
+  door_role: "ordinary" | "loyalty";
+};
 
+const GATE_EMAIL_MAP: Record<string, GateEmailConfig> = {
+  "ledvelvetstaff@gmail.com": { gate_id: "gate_1", door_role: "ordinary" },
+  "annafilippi003@gmail.com": { gate_id: "gate_2", door_role: "ordinary" },
+  "giulianassi00@gmail.com": { gate_id: "gate_3", door_role: "ordinary" },
+  "eleonorabuti2@gmail.com": { gate_id: "gate_4", door_role: "loyalty" },
+  "shorttermrentaleasy@gmail.com": { gate_id: "gate_5", door_role: "loyalty" },
+};
+
+function normalizeGateEmail(value?: string | null) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getGateConfigFromCheckedBy(value?: string | null): GateEmailConfig | null {
+  const email = normalizeGateEmail(value);
+  return GATE_EMAIL_MAP[email] || null;
+}
 
 
 async function insertDoorLiveEvents(params: {
@@ -209,11 +229,27 @@ new URL(req.url);
       continue;
     }
 
-    
+const checkedInBy = row?.raw?.checkedInBy || null;
+const gateConfig = getGateConfigFromCheckedBy(checkedInBy);
+
+if (!gateConfig) {
+  liveEventsDebug.push({
+    qr_code: qrCode,
+    event_id: eventId,
+    live_key: liveKey,
+    step: "payload_failed",
+    details: `missing checkedInBy gate mapping: ${checkedInBy || "null"}`,
+  });
+  continue;
+}
+
 const payload = await evaluateDoorXceedLive({
   qrCode,
   eventId,
-});
+  gateId: gateConfig.gate_id,
+  doorRole: gateConfig.door_role,
+});   
+
 
     if (!payload?.ok) {
       liveEventsDebug.push({
@@ -741,7 +777,7 @@ export async function GET(req: NextRequest) {
   const includeCancelledTickets =
     searchParams.get("includeCancelledTickets") || "true";
   const debugQr = String(searchParams.get("qr") || "").trim();
-
+  const mode = String(searchParams.get("mode") || "").trim().toLowerCase( );
   if (!xceedEventRef && !localEventIdFromQuery) {
     return NextResponse.json(
       { ok: false, error: "Missing required query param: eventId or localEventId" },
@@ -824,6 +860,116 @@ export async function GET(req: NextRequest) {
       xceedEventUuid || resolvedXceedEventRef || xceedEventRef;
 
     const nowIso = new Date().toISOString();
+
+if (mode === "live") {
+  const ticketsFetch = await fetchAllTicketPages(
+    baseUrl,
+    apiKey,
+    xceedTicketsEventId,
+    includeCancelledTickets,
+    100
+  );
+
+  if (!ticketsFetch.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        mode: "live",
+        xceedStatus: ticketsFetch.status,
+        error: ticketsFetch.error || "Xceed tickets request failed",
+        xceedEventRef: resolvedXceedEventRef || null,
+        xceedTicketsEventId,
+        localEventId,
+      },
+      { status: ticketsFetch.status || 502 }
+    );
+  }
+
+  const ticketRows: XceedTicketRow[] = ticketsFetch.items
+    .map((ticket) =>
+      buildRowFromTicket({
+        localEventId,
+        xceedEventRef: resolvedXceedEventRef,
+        xceedEventUuid,
+        nowIso,
+        ticket,
+        bookingPassMatch: null,
+      })
+    )
+    .filter((row): row is XceedTicketRow => !!row);
+
+  const checkedInRows = ticketRows.filter((row) => row.status === "checked_in");
+
+  const liveKeys = checkedInRows.map((row) =>
+    buildDoorLiveKey(row.event_id, row.qr_code)
+  );
+
+  let existingLiveKeys = new Set<string>();
+
+  if (liveKeys.length > 0) {
+    const { data: existingRows, error: existingError } = await supabase
+      .from("door_live_events")
+      .select("live_key")
+      .eq("event_id", localEventId)
+      .in("live_key", liveKeys);
+
+    if (existingError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          mode: "live",
+          error: "Failed to check existing door_live_events",
+          details: existingError.message,
+          localEventId,
+        },
+        { status: 500 }
+      );
+    }
+
+    existingLiveKeys = new Set(
+      (existingRows || [])
+        .map((r: any) => String(r.live_key || "").trim())
+        .filter(Boolean)
+    );
+  }
+
+  const newCheckedInRows = checkedInRows.filter((row) => {
+    const liveKey = buildDoorLiveKey(row.event_id, row.qr_code);
+    return !existingLiveKeys.has(liveKey);
+  });
+
+  const {
+    liveEventsWritten,
+    liveEventsCandidates,
+    liveEventsDebug,
+  } = await insertDoorLiveEvents({
+    supabase,
+    req,
+    rows: newCheckedInRows,
+  });
+
+  return NextResponse.json({
+    ok: true,
+    mode: "live",
+    xceedStatus: ticketsFetch.status,
+    xceedEventRef: resolvedXceedEventRef || null,
+    xceedTicketsEventId,
+    localEventId,
+    localEventName: eventRow.name ?? null,
+    fetched_tickets: ticketsFetch.items.length,
+    checked_in_candidates: checkedInRows.length,
+    already_existing: existingLiveKeys.size,
+    new_checked_in_candidates: newCheckedInRows.length,
+    live_events_candidates: liveEventsCandidates,
+    live_events_written: liveEventsWritten,
+    live_events_debug: liveEventsDebug,
+    source: "tickets_live_only",
+  });
+}
+
+
+
+
 
     const [ticketsFetch, bookingsFetch] = await Promise.all([
       fetchAllTicketPages(
