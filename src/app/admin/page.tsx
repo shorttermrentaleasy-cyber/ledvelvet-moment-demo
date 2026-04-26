@@ -45,6 +45,11 @@ export default async function AdminHomePage() {
             desc="Import biglietti e presenze da Xceed"
             href="/admin/xceed-import"
           />
+<Card
+  title="Analytics Eventi"
+  desc="KPI, ricavi, ingressi, gate e report evento"
+  href="/admin/analytics"
+/>
 
           <Card title="DeepDive" desc="Experience / contenuti evento" href="/admin/deepdive" />
           <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
