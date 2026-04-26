@@ -435,14 +435,18 @@ people_total: number;
 people_in: number;
 people_missing: number;
 non_people_scans: number;
-  type_summary: {
-    ticket: EventTypeSummaryItem;
-    guest: EventTypeSummaryItem;
-    table: EventTypeSummaryItem;
-    drink: EventTypeSummaryItem;
-    cancelled: EventTypeSummaryItem;
-    unknown: EventTypeSummaryItem;
-  };
+type_summary: {
+  ticket: EventTypeSummaryItem;
+  guest: EventTypeSummaryItem;
+  table: EventTypeSummaryItem;
+  drink: EventTypeSummaryItem;
+  penalty: EventTypeSummaryItem;
+  cancelled: EventTypeSummaryItem;
+  unknown: EventTypeSummaryItem;
+};
+
+
+
 } | null>(null);
 
 
@@ -708,14 +712,15 @@ people_total: Number(json.people_total || 0),
 people_in: Number(json.people_in || 0),
 people_missing: Number(json.people_missing || 0),
 non_people_scans: Number(json.non_people_scans || 0),
-  type_summary: {
-    ticket: json.type_summary?.ticket || emptyType,
-    guest: json.type_summary?.guest || emptyType,
-    table: json.type_summary?.table || emptyType,
-    drink: json.type_summary?.drink || emptyType,
-    cancelled: json.type_summary?.cancelled || emptyType,
-    unknown: json.type_summary?.unknown || emptyType,
-  },
+type_summary: {
+  ticket: json.type_summary?.ticket || emptyType,
+  guest: json.type_summary?.guest || emptyType,
+  table: json.type_summary?.table || emptyType,
+  drink: json.type_summary?.drink || emptyType,
+  penalty: json.type_summary?.penalty || emptyType,
+  cancelled: json.type_summary?.cancelled || emptyType,
+  unknown: json.type_summary?.unknown || emptyType,
+},
 });
 
 
@@ -1668,6 +1673,16 @@ return (
     {loadingSummary
       ? "..."
       : `${eventSummary?.type_summary.drink.in ?? 0}/${eventSummary?.type_summary.drink.total ?? 0}`}
+  </div>
+</div>
+
+{/* PENALE */}
+<div className="rounded-2xl border border-red-300/20 bg-red-500/10 px-3 py-2 text-center">
+  <div className="text-[10px] uppercase tracking-[0.16em] text-red-200">Penale</div>
+  <div className="mt-1 text-base font-bold text-red-100">
+    {loadingSummary
+      ? "..."
+      : `${eventSummary?.type_summary.penalty.in ?? 0}/${eventSummary?.type_summary.penalty.total ?? 0}`}
   </div>
 </div>
 
