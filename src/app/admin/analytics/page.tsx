@@ -183,7 +183,7 @@ const typeLabels: Record<string, string> = {
               </div>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <Panel title="Breakdown per tipo ticket">
                 <div className="w-full overflow-x-auto rounded-2xl border border-white/10">
                   <table className="min-w-[620px] w-full text-sm">
@@ -239,7 +239,7 @@ const typeLabels: Record<string, string> = {
     return (
       <BarRow
         key={k}
-        label={`${typeLabels[k]} - ${euro(parseFloat(v.revenue_eur))}`}
+        label={typeLabels[k]}
         value={Number(v.revenue_eur || 0)}
         max={Number(data.totals.revenue_eur || 1)}
         money
@@ -374,8 +374,8 @@ function BarRow({
 
   return (
     <div>
-      <div className="mb-1 flex justify-between text-xs text-white/60">
-        <span>{label}</span>
+      <div className="mb-1 flex justify-between gap-3 text-xs text-white/60">
+        <span className="min-w-0 truncate">{label}</span>
         <span>{money ? euro(Number(value)) : intNum(value)}</span>
       </div>
       <div className="h-3 overflow-hidden rounded-full bg-white/10">
