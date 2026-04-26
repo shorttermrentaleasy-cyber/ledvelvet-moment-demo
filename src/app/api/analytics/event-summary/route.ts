@@ -52,27 +52,73 @@ function getAmountFromQr(qr: string | null): number | null {
 function normalizeTicketType(t: any): string {
   const raw = t.raw || {};
 
-  const value =
+  const offerType = String(
     raw?.offer?.type ||
-    raw?.ticket?.offer?.type ||
-    raw?.["Booking type"] ||
-    raw?.["Offer title"] ||
+      raw?.ticket?.offer?.type ||
+      raw?.booking?.offer?.type ||
+      raw?.["Booking type"] ||
+      ""
+  ).toLowerCase();
+
+  const offerName = String(
     raw?.offer?.name ||
-    raw?.ticket?.offer?.name ||
-    raw?.source ||
-    "unknown";
+      raw?.ticket?.offer?.name ||
+      raw?.booking?.offer?.name ||
+      raw?.["Offer title"] ||
+      ""
+  ).toLowerCase();
 
-  const s = String(value).toLowerCase();
+  const source = String(raw?.source || "").toLowerCase();
 
-  if (s.includes("drink")) return "drink";
-  if (s.includes("penalty")) return "penalty";
-  if (s.includes("guest")) return "guest-list";
-  if (s.includes("bottle") || s.includes("table")) return "bottle-service";
-  if (s.includes("cancel")) return "cancelled";
-  if (s.includes("ticket") || s.includes("entry") || s.includes("access")) return "ticket";
+  const combined = `${offerType} ${offerName} ${source}`;
 
-  return s;
+  if (
+    combined.includes("penale") ||
+    combined.includes("penalty") ||
+    combined.includes("late") ||
+    combined.includes("after") ||
+    combined.includes("fee")
+  ) {
+    return "penalty";
+  }
+
+  if (combined.includes("drink")) return "drink";
+
+  if (
+    combined.includes("guest") ||
+    combined.includes("guest-list") ||
+    combined.includes("guest list") ||
+    combined.includes("guestlist")
+  ) {
+    return "guest-list";
+  }
+
+  if (
+    combined.includes("bottle") ||
+    combined.includes("table") ||
+    combined.includes("bottle-service") ||
+    combined.includes("bottle service")
+  ) {
+    return "bottle-service";
+  }
+
+  if (combined.includes("cancel")) return "cancelled";
+
+  if (
+    combined.includes("ticket") ||
+    combined.includes("general") ||
+    combined.includes("early") ||
+    combined.includes("entry") ||
+    combined.includes("ingresso") ||
+    combined.includes("access") ||
+    combined.trim() === ""
+  ) {
+    return "ticket";
+  }
+
+  return "unknown";
 }
+
 
 function getTicketAmountCents(t: any): number | null {
   const raw = t.raw || {};

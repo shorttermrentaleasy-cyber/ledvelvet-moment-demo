@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type EventItem = {
   id: string;
@@ -11,17 +12,36 @@ type EventItem = {
 };
 
 function euro(value: any) {
-  return `€${Number(value || 0).toLocaleString("it-IT", {
+  const n = Number(value || 0);
+
+  const formatted = new Intl.NumberFormat("it-IT", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+    useGrouping: true,
+  }).format(n);
+
+  return `${formatted} €`;
+}
+
+function intNum(value: any) {
+  return Number(value || 0).toLocaleString("it-IT");
 }
 
 export default function AnalyticsPage() {
+  const router = useRouter();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [eventId, setEventId] = useState("");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+const typeOrder = ["ticket", "drink", "bottle-service", "guest-list", "penalty"];
+
+const typeLabels: Record<string, string> = {
+  ticket: "Ticket",
+  drink: "Drink",
+  "bottle-service": "Tavoli",
+  "guest-list": "Guest List",
+  penalty: "Penali Ritardo",
+};
 
   const selectedEvent = useMemo(
     () => events.find((e) => e.id === eventId),
@@ -61,6 +81,25 @@ export default function AnalyticsPage() {
         <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#18172b] via-[#141324] to-[#08080c] p-6 shadow-2xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
+
+<button
+  onClick={() => router.push("/admin")}
+  className="
+    mb-4 inline-flex items-center gap-2
+    rounded-full px-4 py-2
+    text-xs uppercase tracking-[0.2em]
+    border border-cyan-400/40
+    bg-cyan-400/10
+    text-cyan-200
+    hover:bg-cyan-400/20
+    hover:border-cyan-300
+    transition-all
+    shadow-[0_0_20px_rgba(0,255,209,0.15)]
+  "
+>
+  ← Back
+</button>
+
               <div className="text-xs uppercase tracking-[0.35em] text-cyan-300">
                 LedVelvet Admin
               </div>
@@ -120,13 +159,16 @@ export default function AnalyticsPage() {
             
 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
   <Card title="Ricavi" value={euro(data.totals.revenue_eur)} highlight />
-  <Card title="Tickets" value={data.totals.tickets} />
-  <Card title="Xceed IN" value={data.totals.checked_in_xceed} />
-  <Card title="Door IN" value={data.totals.checked_in_door} />
-  <Card title="Gap" value={data.totals.gap_door_vs_xceed} danger />
+
+  <Card title="Tickets" value={intNum(data.totals.tickets)} />
+  <Card title="Xceed IN" value={intNum(data.totals.checked_in_xceed)} />
+  <Card title="Door IN" value={intNum(data.totals.checked_in_door)} />
+
+  <Card title="Gap" value={intNum(data.totals.gap_door_vs_xceed)} danger />
   <Card title="Conversione" value={`${conversion}%`} />
-  <Card title="No Show" value={data.totals.not_arrived} />
-  <Card title="Senza importo" value={data.totals.missing_amount_tickets} />
+
+  <Card title="No Show" value={intNum(data.totals.not_arrived)} />
+  <Card title="Senza importo" value={intNum(data.totals.missing_amount_tickets)} />
 </div>
 
 
@@ -155,28 +197,33 @@ export default function AnalyticsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {Object.entries(data.by_type || {}).map(
-                        ([key, val]: any) => (
-                          <tr
-                            key={key}
-                            className="border-t border-white/10 bg-black/20"
-                          >
-                            <td className="px-4 py-3">{key}</td>
-                            <td className="px-4 py-3 text-right">
-                              {val.total}
-                            </td>
-                            <td className="px-4 py-3 text-right text-green-300">
-                              {val.in}
-                            </td>
-                            <td className="px-4 py-3 text-right text-red-300">
-                              {val.out}
-                            </td>
-                            <td className="px-4 py-3 text-right text-cyan-200">
-                              {euro(val.revenue_eur)}
-                            </td>
-                          </tr>
-                        )
-                      )}
+
+{typeOrder
+  .filter((k) => data.by_type?.[k])
+  .map((key) => {
+    const val = data.by_type[key];
+
+    return (
+      <tr key={key} className="border-t border-white/10 bg-black/20">
+        <td className="px-4 py-3">{typeLabels[key] || key}</td>
+
+        <td className="px-4 py-3 text-right">{intNum(val.total)}</td>
+
+        <td className="px-4 py-3 text-right text-green-300">
+          {intNum(val.in)}
+        </td>
+
+        <td className="px-4 py-3 text-right text-red-300">
+          {intNum(val.out)}
+        </td>
+
+        <td className="px-4 py-3 text-right text-cyan-200">
+          {euro(Number(val.revenue_eur))}
+        </td>
+      </tr>
+    );
+  })}
+
                     </tbody>
                   </table>
                 </div>
@@ -184,15 +231,22 @@ export default function AnalyticsPage() {
 
               <Panel title="Ricavi per tipo">
                 <div className="space-y-4">
-                  {Object.entries(data.by_type || {}).map(([k, v]: any) => (
-                    <BarRow
-                      key={k}
-                      label={`${k} - ${euro(v.revenue_eur)}`}
-                      value={Number(v.revenue_eur || 0)}
-                      max={Number(data.totals.revenue_eur || 1)}
-                      money
-                    />
-                  ))}
+{typeOrder
+  .filter((k) => data.by_type?.[k])
+  .map((k) => {
+    const v = data.by_type[k];
+
+    return (
+      <BarRow
+        key={k}
+        label={`${typeLabels[k]} - ${euro(parseFloat(v.revenue_eur))}`}
+        value={Number(v.revenue_eur || 0)}
+        max={Number(data.totals.revenue_eur || 1)}
+        money
+      />
+    );
+  })}
+
                 </div>
               </Panel>
             </div>
@@ -322,7 +376,7 @@ function BarRow({
     <div>
       <div className="mb-1 flex justify-between text-xs text-white/60">
         <span>{label}</span>
-        <span>{money ? euro(value) : value}</span>
+        <span>{money ? euro(Number(value)) : intNum(value)}</span>
       </div>
       <div className="h-3 overflow-hidden rounded-full bg-white/10">
         <div
