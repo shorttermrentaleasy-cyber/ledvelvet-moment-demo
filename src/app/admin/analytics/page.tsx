@@ -76,7 +76,7 @@ const typeLabels: Record<string, string> = {
     : "0.0";
 
   return (
-    <div className="min-h-screen bg-[#09090d] text-white p-4 md:p-8">
+    <div className="min-h-screen w-full overflow-x-hidden bg-[#09090d] text-white p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#18172b] via-[#141324] to-[#08080c] p-6 shadow-2xl">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -185,15 +185,15 @@ const typeLabels: Record<string, string> = {
 
             <div className="grid gap-6 lg:grid-cols-2">
               <Panel title="Breakdown per tipo ticket">
-                <div className="overflow-hidden rounded-2xl border border-white/10">
-                  <table className="w-full text-sm">
+                <div className="w-full overflow-x-auto rounded-2xl border border-white/10">
+                  <table className="min-w-[620px] w-full text-sm">
                     <thead className="bg-white/10 text-white/50">
                       <tr>
-                        <th className="px-4 py-3 text-left">Tipo</th>
-                        <th className="px-4 py-3 text-right">Tot</th>
-                        <th className="px-4 py-3 text-right">Entrati</th>
-                        <th className="px-4 py-3 text-right">Out</th>
-                        <th className="px-4 py-3 text-right">Ricavi</th>
+                        <th className="px-3 py-3 md:px-4 text-left">Tipo</th>
+                        <th className="px-3 py-3 md:px-4 text-right">Tot</th>
+                        <th className="px-3 py-3 md:px-4 text-right">Entrati</th>
+                        <th className="px-3 py-3 md:px-4 text-right">Out</th>
+                        <th className="px-3 py-3 md:px-4 text-right">Ricavi</th>
                       </tr>
                     </thead>
                     <tbody>
