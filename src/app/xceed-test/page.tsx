@@ -10,7 +10,12 @@ export default function XceedTestPage() {
     firstName: "Lamberto",
     lastName: "Test",
     email: "test@ledvelvet.it",
+    idNumber: "LVTEST001",
   };
+
+  async function copy(value: string) {
+    await navigator.clipboard.writeText(value);
+  }
 
   return (
     <main className="min-h-screen bg-[#050506] text-white">
@@ -33,34 +38,50 @@ export default function XceedTestPage() {
             </p>
 
             <h1 className="text-4xl font-semibold tracking-tight md:text-6xl">
-              Xceed Prefill Test
+              Xceed Ticket Test
             </h1>
 
             <p className="mt-4 max-w-2xl text-base text-white/65 md:text-lg">
-              Prova tecnica con dati socio finti per verificare se Xceed accetta
-              la precompilazione dei campi.
+              Copia i dati socio e inseriscili nel form Xceed quando richiesti.
             </p>
           </div>
 
           <div className="mb-6 rounded-[24px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur">
-            <p className="mb-3 text-xs uppercase tracking-[0.25em] text-white/40">
-              Dati test inviati al widget
+            <p className="mb-4 text-xs uppercase tracking-[0.25em] text-white/40">
+              Dati socio da usare su Xceed
             </p>
 
-            <div className="grid gap-2 text-sm text-white/75 md:grid-cols-2">
-              <div>Nome: {testMember.firstName}</div>
-              <div>Cognome: {testMember.lastName}</div>
-              <div>Email: {testMember.email}</div>
+            <div className="grid gap-3">
+              {[
+                ["Nome", testMember.firstName],
+                ["Cognome", testMember.lastName],
+                ["Email", testMember.email],
+                ["ID NUMBER", testMember.idNumber],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs uppercase tracking-[0.2em] text-white/35">
+                      {label}
+                    </div>
+                    <div className="truncate text-sm text-white/85">{value}</div>
+                  </div>
+
+                  <button
+                    onClick={() => copy(value)}
+                    className="shrink-0 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs text-white transition hover:bg-white/20"
+                  >
+                    Copia
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 
           <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-4 shadow-2xl backdrop-blur md:p-6">
-            <div
-              id="xceed-widget"
-              data-first-name={testMember.firstName}
-              data-last-name={testMember.lastName}
-              data-email={testMember.email}
-            />
+            <div id="xceed-widget" />
           </div>
         </div>
       </section>
