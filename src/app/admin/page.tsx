@@ -36,40 +36,50 @@ export default async function AdminHomePage() {
           </div>
         </header>
 
-        <div style={styles.grid}>
-          <Card title="Hero" desc="Titolo, sottotitolo e stato Hero" href="/admin/hero" />
-          <Card title="Events" desc="Crea e modifica eventi" href="/admin/events" />
 
-          <Card
-            title="Xceed Import"
-            desc="Import biglietti e presenze da Xceed"
-            href="/admin/xceed-import"
-          />
-<Card
-  title="Analytics Eventi"
-  desc="KPI, ricavi, ingressi, gate e report evento"
-  href="/admin/analytics"
-/>
+<div style={styles.grid}>
+  <Card title="Hero" desc="Titolo, sottotitolo e stato Hero" href="/admin/hero" />
+  <Card title="Events" desc="Crea e modifica eventi" href="/admin/events" />
 
-          <Card title="DeepDive" desc="Experience / contenuti evento" href="/admin/deepdive" />
-          <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
-          <Card title="DoorCheck" desc="Scanner accessi staff" href="/doorcheck" />
-          <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" />
+  <Card
+    title="Xceed Import"
+    desc="Import biglietti e presenze da Xceed"
+    href="/admin/xceed-import"
+  />
 
-          <ExternalCard
-            title="Ambient Playlist (Hero)"
-            desc="Gestione musica ambient Hero (Airtable)"
-            href="https://airtable.com/appkpUBdMSN1oY4TI/pagCqw9rn03EsYAfo"
-          />
+  <Card
+    title="Analytics Eventi"
+    desc="KPI, ricavi, ingressi, gate e report evento"
+    href="/admin/analytics"
+  />
 
-          <Card
-            title="Door API Key"
-            desc="Gestione chiave DoorCheck (admin)"
-            href="/admin/settings/door-api"
-          />
+  <Card title="DeepDive" desc="Experience / contenuti evento" href="/admin/deepdive" />
+  <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
 
-          <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
-        </div>
+  <Card title="DoorCheck" desc="Scanner accessi staff" href="/doorcheck" />
+
+  <Card
+    title="Door Gates"
+    desc="Configurazione gate, email Xceed e ruoli ingresso"
+    href="/admin/door-gates"
+  />
+
+  <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" />
+
+  <ExternalCard
+    title="Ambient Playlist (Hero)"
+    desc="Gestione musica ambient Hero (Airtable)"
+    href="https://airtable.com/appkpUBdMSN1oY4TI/pagCqw9rn03EsYAfo"
+  />
+
+  <Card
+    title="Door API Key"
+    desc="Gestione chiave DoorCheck (admin)"
+    href="/admin/settings/door-api"
+  />
+
+  <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
+</div>
 
         <p style={styles.note}>
           Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.
