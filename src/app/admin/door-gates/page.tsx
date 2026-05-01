@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type Gate = {
   id: string;
@@ -26,13 +26,15 @@ function roleLabel(role: string) {
   return "Ordinary";
 }
 
-export default function DoorGatesPage() {
+function DoorGatesContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [gates, setGates] = useState<Gate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
-  const router = useRouter();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -133,30 +135,34 @@ export default function DoorGatesPage() {
 
   useEffect(() => {
     load();
-  }, []);
+
+    const email = searchParams.get("email");
+    if (email) {
+      setForm((prev) => ({
+        ...prev,
+        xceed_email: email,
+      }));
+    }
+  }, [searchParams]);
 
   return (
     <main className="min-h-screen bg-[#050507] text-white">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(215,38,255,0.22),transparent_35%),radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.18),transparent_35%)]" />
 
       <div className="relative mx-auto max-w-6xl px-4 py-8 md:px-8">
+        <div className="mb-8 rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-2xl backdrop-blur">
+          <div className="mb-4">
+            <button
+              onClick={() => router.back()}
+              className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
+            >
+              ← Torna indietro
+            </button>
+          </div>
 
-
-<div className="mb-8 rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-2xl backdrop-blur">
-
-  <div className="mb-4">
-    <button
-      onClick={() => router.back()}
-      className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
-    >
-      ← Torna indietro
-    </button>
-  </div>
-
-  <p className="mb-2 text-xs uppercase tracking-[0.35em] text-fuchsia-300/80">
-    LedVelvet DoorCheck
-  </p>
-
+          <p className="mb-2 text-xs uppercase tracking-[0.35em] text-fuchsia-300/80">
+            LedVelvet DoorCheck
+          </p>
 
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
@@ -418,5 +424,13 @@ export default function DoorGatesPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function DoorGatesPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-white">Caricamento...</div>}>
+      <DoorGatesContent />
+    </Suspense>
   );
 }

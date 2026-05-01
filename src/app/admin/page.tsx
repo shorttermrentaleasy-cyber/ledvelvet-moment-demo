@@ -64,6 +64,12 @@ export default async function AdminHomePage() {
     href="/admin/door-gates"
   />
 
+  <Card
+    title="Email Xceed non mappate"
+    desc="Email scanner rilevate ma non ancora associate a un gate"
+    href="/admin/door-unmapped"
+  />
+
   <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" />
 
   <ExternalCard
@@ -80,6 +86,8 @@ export default async function AdminHomePage() {
 
   <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
 </div>
+
+
 
         <p style={styles.note}>
           Nota: le sezioni disabilitate le attiviamo dopo, una alla volta.
