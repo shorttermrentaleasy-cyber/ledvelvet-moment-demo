@@ -68,57 +68,6 @@ if (lines[0].includes("\t")) {
 }
 
 
-function parseWallyDate(value: unknown): string | null {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-
-  const normalized = raw.replace(/\./g, "/").replace(/-/g, "/");
-  const parts = normalized.split("/").map((part) => part.trim());
-
-  if (parts.length === 3) {
-    let year: number;
-    let month: number;
-    let day: number;
-
-    if (parts[0].length === 4) {
-      year = Number(parts[0]);
-      month = Number(parts[1]);
-      day = Number(parts[2]);
-    } else {
-      day = Number(parts[0]);
-      month = Number(parts[1]);
-      year = Number(parts[2]);
-    }
-
-    if (
-      Number.isInteger(year) &&
-      Number.isInteger(month) &&
-      Number.isInteger(day) &&
-      year >= 2000 &&
-      year <= 2100 &&
-      month >= 1 &&
-      month <= 12 &&
-      day >= 1 &&
-      day <= 31
-    ) {
-      const yyyy = String(year).padStart(4, "0");
-      const mm = String(month).padStart(2, "0");
-      const dd = String(day).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    }
-  }
-
-  return null;
-}
-
-function todayIsoDate(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function normalizeBarcode(value: unknown): string {
   return String(value || "")
     .trim()
@@ -126,6 +75,58 @@ function normalizeBarcode(value: unknown): string {
     .replace(/"$/, "")
     .replace(/^'/, "")
     .trim();
+}
+
+function parseWallyDate(value: unknown): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const normalized = raw.replace(/\./g, "/").replace(/-/g, "/");
+  const parts = normalized.split("/").map((part) => part.trim());
+
+  if (parts.length !== 3) return null;
+
+  let year: number;
+  let month: number;
+  let day: number;
+
+  if (parts[0].length === 4) {
+    year = Number(parts[0]);
+    month = Number(parts[1]);
+    day = Number(parts[2]);
+  } else {
+    day = Number(parts[0]);
+    month = Number(parts[1]);
+    year = Number(parts[2]);
+  }
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    year < 2000 ||
+    year > 2100 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null;
+  }
+
+  const yyyy = String(year).padStart(4, "0");
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function todayIsoDate(): string {
+  const now = new Date();
+  const yyyy = String(now.getFullYear()).padStart(4, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function mapWallyRow(obj: Record<string, string>) {
@@ -480,6 +481,8 @@ export default function AdminMembersPage() {
   async function onImportCsv(file: File | null) {
     if (!file) return;
 
+    const BATCH_SIZE = 500;
+
     setImporting(true);
     setImportMsg(null);
     setSyncMsg(null);
@@ -488,22 +491,54 @@ export default function AdminMembersPage() {
     try {
       const text = await file.text();
       const parsed = parseCsv(text);
-      if (!parsed.headers.length) throw new Error("File non valido (header mancante).");
 
-      const mapped = parsed.rows.map(mapWallyRow).filter((r) => r.barcode);
-      if (mapped.length === 0) throw new Error("Nessuna riga valida: manca la colonna Barcode (o valori vuoti).");
+      if (!parsed.headers.length) {
+        throw new Error("File non valido: intestazioni mancanti.");
+      }
 
-      const json = await fetchJsonSafe("/api/admin/wallyfor/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: mapped }),
-      });
+      const mapped = parsed.rows
+        .map(mapWallyRow)
+        .filter((row) => row.barcode);
 
-      if (!json?.ok) throw new Error(json?.error || "import_failed");
-      setImportMsg(`Import OK: ${json.imported} righe.`);
+      if (mapped.length === 0) {
+        throw new Error(
+          "Nessuna riga valida: colonna Barcode mancante o senza valori."
+        );
+      }
+
+      let importedTotal = 0;
+      const batchCount = Math.ceil(mapped.length / BATCH_SIZE);
+
+      for (let start = 0; start < mapped.length; start += BATCH_SIZE) {
+        const batch = mapped.slice(start, start + BATCH_SIZE);
+        const currentBatch = Math.floor(start / BATCH_SIZE) + 1;
+
+        setImportMsg(
+          `Import in corso: blocco ${currentBatch} di ${batchCount} — ${importedTotal}/${mapped.length} righe.`
+        );
+
+        const json = await fetchJsonSafe("/api/admin/wallyfor/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: batch }),
+        });
+
+        if (!json?.ok) {
+          throw new Error(
+            json?.error || `Import fallito al blocco ${currentBatch}.`
+          );
+        }
+
+        importedTotal += Number(json.imported || batch.length);
+      }
+
+      setImportMsg(
+        `Import completato: ${importedTotal} righe elaborate in ${batchCount} blocchi.`
+      );
+
       await loadWallyfor();
     } catch (e: any) {
-      setErr(e?.message || "import_failed");
+      setErr(readableError(e));
     } finally {
       setImporting(false);
     }
