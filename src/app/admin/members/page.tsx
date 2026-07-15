@@ -64,6 +64,15 @@ if (lines[0].includes("\t")) {
   return { headers, rows };
 }
 
+function normalizeBarcode(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .replace(/^="/, "")
+    .replace(/"$/, "")
+    .replace(/^'/, "")
+    .trim();
+}
+
 function mapWallyRow(obj: Record<string, string>) {
   const keys = Object.keys(obj);
   const getBy = (cands: string[]) => {
@@ -96,7 +105,7 @@ function mapWallyRow(obj: Record<string, string>) {
   const full_name = full || [first, last].filter(Boolean).join(" ").trim();
 
   return {
-    barcode: (barcode || "").trim(),
+    barcode: normalizeBarcode(barcode),
     first_name: first ? first.trim() : null,
     last_name: last ? last.trim() : null,
     full_name: full_name || null,
