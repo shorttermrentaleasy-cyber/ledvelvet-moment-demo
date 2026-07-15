@@ -114,6 +114,39 @@ function getRawField(raw: any, label: string) {
   return v ? String(v).trim() : "";
 }
 
+
+function readableError(value: unknown): string {
+  if (!value) return "Errore sconosciuto";
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value instanceof Error) {
+    return value.message;
+  }
+
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+
+    if (typeof obj.message === "string") {
+      return obj.message;
+    }
+
+    if (typeof obj.error === "string") {
+      return obj.error;
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "Errore non leggibile";
+    }
+  }
+
+  return String(value);
+}
+
 async function fetchJsonSafe(input: RequestInfo, init?: RequestInit) {
   const res = await fetch(input, {
     ...init,
@@ -125,16 +158,31 @@ async function fetchJsonSafe(input: RequestInfo, init?: RequestInit) {
   });
 
   const ct = res.headers.get("content-type") || "";
+
   if (!ct.toLowerCase().includes("application/json")) {
     const txt = await res.text().catch(() => "");
-    const preview = (txt || "").slice(0, 180).replace(/\s+/g, " ").trim();
-    throw new Error(`Non-JSON response (${res.status}). Preview: ${preview || "—"}`);
+    const preview = (txt || "")
+      .slice(0, 300)
+      .replace(/\s+/g, " ")
+      .trim();
+
+    throw new Error(
+      `Risposta non JSON (${res.status}): ${preview || "nessun dettaglio"}`
+    );
   }
 
   const json = await res.json();
-  if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+
+  if (!res.ok || json?.ok === false) {
+    throw new Error(
+      readableError(json?.error || json?.message || `HTTP ${res.status}`)
+    );
+  }
+
   return json;
 }
+
+
 
 export default function AdminMembersPage() {
   const [tab, setTab] = useState<TabKey>("wallyfor");
@@ -255,7 +303,7 @@ export default function AdminMembersPage() {
     }
   }
 
-  async function runSyncToMembers(limit = 5000) {
+  async function runSyncToMembers(limit = 10000) {
     setSyncing(true);
     setSyncMsg(null);
     setErr(null);
@@ -305,7 +353,7 @@ export default function AdminMembersPage() {
     try {
       const text = await file.text();
       const parsed = parseCsv(text);
-      if (!parsed.headers.length) throw new Error("CSV non valido (header mancante).");
+      if (!parsed.headers.length) throw new Error("File non valido (header mancante).");
 
       const mapped = parsed.rows.map(mapWallyRow).filter((r) => r.barcode);
       if (mapped.length === 0) throw new Error("Nessuna riga valida: manca la colonna Barcode (o valori vuoti).");
@@ -349,7 +397,7 @@ export default function AdminMembersPage() {
   <div style={styles.guideTitle}>Procedura soci (IMPORTANTE)</div>
 
   <div style={styles.guideStep}>
-    1️⃣ Importa file CSV da Wallyfor
+    1️⃣ Importa file da Wallyfor
   </div>
 
   <div style={styles.guideStep}>
@@ -391,12 +439,12 @@ export default function AdminMembersPage() {
               <div style={styles.cardTop}>
                 <div>
                   <div style={styles.cardTitle}>
-                    {tab === "wallyfor" ? "Import Wallyfor (CSV)" : "Soci ETS (Members)"}
+                    {tab === "wallyfor" ? "Import Wallyfor " : "Soci ETS (Members)"}
                   </div>
                   <div style={styles.cardDesc}>
                     {tab === "wallyfor" ? (
                       <>
-                        Carica l’export CSV Wallyfor. Upsert per <b>Barcode</b>. Tutte le colonne finiscono in <b>raw</b>.
+                        Carica l’export Wallyfor. Upsert per <b>Barcode</b>. Tutte le colonne finiscono in <b>raw</b>.
                       </>
                     ) : (
                       <>
@@ -410,7 +458,7 @@ export default function AdminMembersPage() {
                   {tab === "wallyfor" ? (
                     <>
                       <label style={importing ? styles.primaryBtnDisabled : styles.primaryBtn}>
-                        {importing ? "Import in corso..." : "Import CSV"}
+                        {importing ? "Import in corso..." : "Import File"}
                         <input
                           type="file"
                           accept=".csv,.xls,text/csv,application/vnd.ms-excel"
@@ -422,7 +470,7 @@ export default function AdminMembersPage() {
 
                       <button
                         type="button"
-                        onClick={() => runSyncToMembers(5000)}
+                        onClick={() => runSyncToMembers(10000)}
                         disabled={syncing}
                         style={syncing ? styles.primaryBtnDisabled : styles.primaryBtn}
                       >
@@ -486,7 +534,7 @@ export default function AdminMembersPage() {
                   <div style={styles.emptyTitle}>Nessun dato</div>
                   <div style={styles.emptyDesc}>
                     {tab === "wallyfor"
-                      ? "Importa un CSV Wallyfor per popolare la lista."
+                      ? "Importa Export Wallyfor per popolare la lista."
                       : "Non ci sono soci in members (o i filtri non trovano risultati)."}
                   </div>
                 </div>
