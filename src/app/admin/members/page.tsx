@@ -345,6 +345,8 @@ export default function AdminMembersPage() {
   async function onImportCsv(file: File | null) {
     if (!file) return;
 
+    const BATCH_SIZE = 500;
+
     setImporting(true);
     setImportMsg(null);
     setSyncMsg(null);
@@ -353,22 +355,54 @@ export default function AdminMembersPage() {
     try {
       const text = await file.text();
       const parsed = parseCsv(text);
-      if (!parsed.headers.length) throw new Error("File non valido (header mancante).");
 
-      const mapped = parsed.rows.map(mapWallyRow).filter((r) => r.barcode);
-      if (mapped.length === 0) throw new Error("Nessuna riga valida: manca la colonna Barcode (o valori vuoti).");
+      if (!parsed.headers.length) {
+        throw new Error("File non valido: intestazioni mancanti.");
+      }
 
-      const json = await fetchJsonSafe("/api/admin/wallyfor/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: mapped }),
-      });
+      const mapped = parsed.rows
+        .map(mapWallyRow)
+        .filter((row) => row.barcode);
 
-      if (!json?.ok) throw new Error(json?.error || "import_failed");
-      setImportMsg(`Import OK: ${json.imported} righe.`);
+      if (mapped.length === 0) {
+        throw new Error(
+          "Nessuna riga valida: colonna Barcode mancante o senza valori."
+        );
+      }
+
+      let importedTotal = 0;
+      const batchCount = Math.ceil(mapped.length / BATCH_SIZE);
+
+      for (let start = 0; start < mapped.length; start += BATCH_SIZE) {
+        const batch = mapped.slice(start, start + BATCH_SIZE);
+        const currentBatch = Math.floor(start / BATCH_SIZE) + 1;
+
+        setImportMsg(
+          `Import in corso: blocco ${currentBatch} di ${batchCount} — ${importedTotal}/${mapped.length} righe.`
+        );
+
+        const json = await fetchJsonSafe("/api/admin/wallyfor/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: batch }),
+        });
+
+        if (!json?.ok) {
+          throw new Error(
+            json?.error || `Import fallito al blocco ${currentBatch}.`
+          );
+        }
+
+        importedTotal += Number(json.imported || batch.length);
+      }
+
+      setImportMsg(
+        `Import completato: ${importedTotal} righe elaborate in ${batchCount} blocchi.`
+      );
+
       await loadWallyfor();
     } catch (e: any) {
-      setErr(e?.message || "import_failed");
+      setErr(readableError(e));
     } finally {
       setImporting(false);
     }
