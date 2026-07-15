@@ -722,6 +722,7 @@ export default function AdminMembersPage() {
         <th style={styles.th}>Codice fiscale</th>
         <th style={styles.th}>Barcode</th>
         <th style={styles.th}>Validità</th>
+        <th style={styles.th}>Scadenza</th>
         <th style={styles.th} />
       </tr>
     </thead>
@@ -741,6 +742,11 @@ export default function AdminMembersPage() {
             <td style={styles.tdMono}>{cf || "—"}</td>
             <td style={styles.tdMono}>{r.barcode || "—"}</td>
             <td style={styles.td}>{r.status || "—"}</td>
+            <td style={styles.td}>
+            {r.membership_expires_at
+            ? new Date(`${r.membership_expires_at}T00:00:00`).toLocaleDateString("it-IT")
+            : "—"}
+            </td>
             <td style={styles.tdRight}>
               {r.barcode ? (
                 <button type="button" style={styles.qrBtn} onClick={() => openQr(r.barcode)}>

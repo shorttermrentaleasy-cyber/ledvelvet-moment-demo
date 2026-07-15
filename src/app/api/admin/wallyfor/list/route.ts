@@ -48,7 +48,7 @@ export async function GET(req: Request) {
 
     let query = supabase
       .from("wallyfor_members")
-            .select("id, barcode, first_name, last_name, full_name, email, membership_group, status, raw, updated_at", { count: "exact" })
+            .select("id, barcode, first_name, last_name, full_name, email, membership_group, status, raw, membership_expires_at, updated_at", { count: "exact" })
       .order("updated_at", { ascending: true })
       .range(offset, offset + limit - 1);
 
