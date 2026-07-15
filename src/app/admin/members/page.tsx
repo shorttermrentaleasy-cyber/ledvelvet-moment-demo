@@ -41,7 +41,13 @@ function parseCsv(text: string): { headers: string[]; rows: Record<string, strin
 
   if (lines.length < 2) return { headers: [], rows: [] };
 
-  const delim = lines[0].includes(";") ? ";" : ",";
+  let delim = ",";
+
+if (lines[0].includes("\t")) {
+  delim = "\t";
+} else if (lines[0].includes(";")) {
+  delim = ";";
+}
 
   const headers = lines[0].split(delim).map((h) => h.trim());
   const rows: Record<string, string>[] = [];
@@ -407,7 +413,7 @@ export default function AdminMembersPage() {
                         {importing ? "Import in corso..." : "Import CSV"}
                         <input
                           type="file"
-                          accept=".csv,text/csv"
+                          accept=".csv,.xls,text/csv,application/vnd.ms-excel"
                           style={{ display: "none" }}
                           disabled={importing}
                           onChange={(e) => onImportCsv(e.target.files?.[0] || null)}
