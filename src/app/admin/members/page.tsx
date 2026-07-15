@@ -16,6 +16,9 @@ type WallyRow = {
   phone: string | null;
   membership_group: string | null;
   status: string | null;
+  membership_issued_at?: string | null;
+  membership_expires_at?: string | null;
+  membership_year?: string | null;
   raw: any;
   updated_at: string;
 };
@@ -64,6 +67,58 @@ if (lines[0].includes("\t")) {
   return { headers, rows };
 }
 
+
+function parseWallyDate(value: unknown): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const normalized = raw.replace(/\./g, "/").replace(/-/g, "/");
+  const parts = normalized.split("/").map((part) => part.trim());
+
+  if (parts.length === 3) {
+    let year: number;
+    let month: number;
+    let day: number;
+
+    if (parts[0].length === 4) {
+      year = Number(parts[0]);
+      month = Number(parts[1]);
+      day = Number(parts[2]);
+    } else {
+      day = Number(parts[0]);
+      month = Number(parts[1]);
+      year = Number(parts[2]);
+    }
+
+    if (
+      Number.isInteger(year) &&
+      Number.isInteger(month) &&
+      Number.isInteger(day) &&
+      year >= 2000 &&
+      year <= 2100 &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= 31
+    ) {
+      const yyyy = String(year).padStart(4, "0");
+      const mm = String(month).padStart(2, "0");
+      const dd = String(day).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+  }
+
+  return null;
+}
+
+function todayIsoDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function normalizeBarcode(value: unknown): string {
   return String(value || "")
     .trim()
@@ -75,25 +130,51 @@ function normalizeBarcode(value: unknown): string {
 
 function mapWallyRow(obj: Record<string, string>) {
   const keys = Object.keys(obj);
+
   const getBy = (cands: string[]) => {
-    const found = keys.find((k) => cands.includes(pick(k)));
+    const found = keys.find((key) => cands.includes(pick(key)));
     return found ? obj[found] : "";
   };
 
-  const barcode = getBy(["barcode", "bar code", "codice a barre", "codice", "tessera", "card"]);
-  const first = getBy(["nome iscritto", "nome", "first name", "firstname"]);
-  const last = getBy(["cognome", "last name", "lastname"]);
-  const full = getBy(["nominativo", "nome e cognome", "full name", "fullname"]);
+  const barcode = getBy([
+    "barcode",
+    "bar code",
+    "codice a barre",
+    "codice",
+    "tessera",
+    "card",
+  ]);
+
+  const first = getBy([
+    "nome iscritto",
+    "nome",
+    "first name",
+    "firstname",
+  ]);
+
+  const last = getBy([
+    "cognome",
+    "last name",
+    "lastname",
+  ]);
+
+  const full = getBy([
+    "nominativo",
+    "nome e cognome",
+    "full name",
+    "fullname",
+  ]);
+
   const email = getBy(["email", "e-mail", "mail"]);
 
-  const membership_group = getBy([
+  const membershipGroup = getBy([
     "codicegruppo",
     "codice gruppo",
     "gruppo",
     "membership group",
   ]);
 
-  const status = getBy([
+  const validityValue = getBy([
     "anno validità tessera",
     "anno validita tessera",
     "validità tessera",
@@ -102,17 +183,59 @@ function mapWallyRow(obj: Record<string, string>) {
     "status",
   ]);
 
-  const full_name = full || [first, last].filter(Boolean).join(" ").trim();
+  const issuedValue = getBy([
+    "emissione",
+    "data emissione",
+    "emissione tessera",
+    "data emissione tessera",
+  ]);
+
+  const expiresValue = getBy([
+    "scadenza",
+    "data scadenza",
+    "scadenza tessera",
+    "data scadenza tessera",
+  ]);
+
+  const membershipIssuedAt = parseWallyDate(issuedValue);
+  const membershipExpiresAt = parseWallyDate(expiresValue);
+
+  const normalizedValidity = String(validityValue || "")
+    .trim()
+    .toUpperCase();
+
+  const membershipYear = /^\d{4}$/.test(normalizedValidity)
+    ? normalizedValidity
+    : membershipExpiresAt
+      ? membershipExpiresAt.slice(0, 4)
+      : null;
+
+  let computedStatus = "DA VERIFICARE";
+
+  if (normalizedValidity === "NON ATTIVA") {
+    computedStatus = "NON ATTIVA";
+  } else if (membershipExpiresAt) {
+    computedStatus =
+      membershipExpiresAt >= todayIsoDate() ? "ATTIVA" : "SCADUTA";
+  }
+
+  const fullName =
+    full || [first, last].filter(Boolean).join(" ").trim();
 
   return {
     barcode: normalizeBarcode(barcode),
     first_name: first ? first.trim() : null,
     last_name: last ? last.trim() : null,
-    full_name: full_name || null,
+    full_name: fullName || null,
     email: email ? email.trim() : null,
     phone: getBy(["telefono", "phone", "cellulare"]) || null,
-    membership_group: membership_group ? membership_group.trim() : null,
-    status: status ? status.trim() : null,
+    membership_group: membershipGroup
+      ? membershipGroup.trim()
+      : null,
+    status: computedStatus,
+    membership_issued_at: membershipIssuedAt,
+    membership_expires_at: membershipExpiresAt,
+    membership_year: membershipYear,
     raw: obj,
   };
 }
@@ -293,6 +416,9 @@ export default function AdminMembersPage() {
         phone: m.phone ?? null,
         membership_group: m.membership_group ?? null,
         status: m.status ?? null,
+        membership_issued_at: m.membership_issued_at ?? null,
+        membership_expires_at: m.membership_expires_at ?? null,
+        membership_year: m.membership_year ?? null,
         raw: {
           Telefono: m.phone ?? "",
           "Codice fiscale": "",
@@ -354,8 +480,6 @@ export default function AdminMembersPage() {
   async function onImportCsv(file: File | null) {
     if (!file) return;
 
-    const BATCH_SIZE = 500;
-
     setImporting(true);
     setImportMsg(null);
     setSyncMsg(null);
@@ -364,54 +488,22 @@ export default function AdminMembersPage() {
     try {
       const text = await file.text();
       const parsed = parseCsv(text);
+      if (!parsed.headers.length) throw new Error("File non valido (header mancante).");
 
-      if (!parsed.headers.length) {
-        throw new Error("File non valido: intestazioni mancanti.");
-      }
+      const mapped = parsed.rows.map(mapWallyRow).filter((r) => r.barcode);
+      if (mapped.length === 0) throw new Error("Nessuna riga valida: manca la colonna Barcode (o valori vuoti).");
 
-      const mapped = parsed.rows
-        .map(mapWallyRow)
-        .filter((row) => row.barcode);
+      const json = await fetchJsonSafe("/api/admin/wallyfor/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: mapped }),
+      });
 
-      if (mapped.length === 0) {
-        throw new Error(
-          "Nessuna riga valida: colonna Barcode mancante o senza valori."
-        );
-      }
-
-      let importedTotal = 0;
-      const batchCount = Math.ceil(mapped.length / BATCH_SIZE);
-
-      for (let start = 0; start < mapped.length; start += BATCH_SIZE) {
-        const batch = mapped.slice(start, start + BATCH_SIZE);
-        const currentBatch = Math.floor(start / BATCH_SIZE) + 1;
-
-        setImportMsg(
-          `Import in corso: blocco ${currentBatch} di ${batchCount} — ${importedTotal}/${mapped.length} righe.`
-        );
-
-        const json = await fetchJsonSafe("/api/admin/wallyfor/import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rows: batch }),
-        });
-
-        if (!json?.ok) {
-          throw new Error(
-            json?.error || `Import fallito al blocco ${currentBatch}.`
-          );
-        }
-
-        importedTotal += Number(json.imported || batch.length);
-      }
-
-      setImportMsg(
-        `Import completato: ${importedTotal} righe elaborate in ${batchCount} blocchi.`
-      );
-
+      if (!json?.ok) throw new Error(json?.error || "import_failed");
+      setImportMsg(`Import OK: ${json.imported} righe.`);
       await loadWallyfor();
     } catch (e: any) {
-      setErr(readableError(e));
+      setErr(e?.message || "import_failed");
     } finally {
       setImporting(false);
     }
