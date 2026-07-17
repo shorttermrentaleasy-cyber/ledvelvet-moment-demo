@@ -15,6 +15,16 @@ type FastDecision =
   | "DB_ERROR"
   | "FATAL_ERROR";
 
+type MemberRow = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  status: string | null;
+  membership_group: string | null;
+  membership_expires_at: string | null;
+};
+
 function assertEnv(name: string): string {
   const value = process.env[name];
 
@@ -31,6 +41,14 @@ function normalize(value: unknown): string {
 
 function normalizeEmail(value: unknown): string {
   return normalize(value).toLowerCase();
+}
+
+function normalizeName(value: unknown): string {
+  return normalize(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
 }
 
 function todayIsoDate(): string {
@@ -79,6 +97,75 @@ function extractTicketEmail(raw: any): string | null {
     if (email) {
       return email;
     }
+  }
+
+  return null;
+}
+
+function extractTicketFirstName(raw: any): string | null {
+  const candidates = [
+    raw?.pass?.firstName,
+    raw?.ticket?.firstName,
+    raw?.ticket?.booking?.firstName,
+    raw?.booking?.buyer?.firstName,
+    raw?.booking?.firstName,
+  ];
+
+  for (const candidate of candidates) {
+    const firstName = normalize(candidate);
+
+    if (firstName) {
+      return firstName;
+    }
+  }
+
+  return null;
+}
+
+function extractTicketLastName(raw: any): string | null {
+  const candidates = [
+    raw?.pass?.lastName,
+    raw?.ticket?.lastName,
+    raw?.ticket?.booking?.lastName,
+    raw?.booking?.buyer?.lastName,
+    raw?.booking?.lastName,
+  ];
+
+  for (const candidate of candidates) {
+    const lastName = normalize(candidate);
+
+    if (lastName) {
+      return lastName;
+    }
+  }
+
+  return null;
+}
+
+function resolveMember(
+  members: MemberRow[],
+  ticketFirstName: string | null,
+  ticketLastName: string | null
+): MemberRow | null {
+  if (members.length === 1) {
+    return members[0];
+  }
+
+  if (!ticketFirstName || !ticketLastName) {
+    return null;
+  }
+
+  const normalizedTicketFirstName = normalizeName(ticketFirstName);
+  const normalizedTicketLastName = normalizeName(ticketLastName);
+
+  const exactMatches = members.filter(
+    (member) =>
+      normalizeName(member.first_name) === normalizedTicketFirstName &&
+      normalizeName(member.last_name) === normalizedTicketLastName
+  );
+
+  if (exactMatches.length === 1) {
+    return exactMatches[0];
   }
 
   return null;
@@ -185,6 +272,8 @@ export async function POST(req: NextRequest) {
       hasCheckedIn === true;
 
     const ticketEmail = extractTicketEmail(raw);
+    const ticketFirstName = extractTicketFirstName(raw);
+    const ticketLastName = extractTicketLastName(raw);
 
     if (!ticketEmail) {
       return jsonFast(
@@ -199,14 +288,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: member, error: memberError } = await supabase
+    const { data: members, error: memberError } = await supabase
       .from("members")
       .select(
         "id,first_name,last_name,email,status,membership_group,membership_expires_at"
       )
-      .ilike("email", ticketEmail)
-      .limit(1)
-      .maybeSingle();
+      .ilike("email", ticketEmail);
 
     if (memberError) {
       console.error("FAST_CHECK_MEMBER_ERROR", memberError);
@@ -221,7 +308,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!member) {
+    const memberRows = (members || []) as MemberRow[];
+
+    if (memberRows.length === 0) {
       return jsonFast(
         true,
         "MEMBER_NOT_FOUND",
@@ -230,6 +319,31 @@ export async function POST(req: NextRequest) {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
           ticket_email: ticketEmail,
+          ticket_first_name: ticketFirstName,
+          ticket_last_name: ticketLastName,
+          ticket_status: ticketStatus || null,
+        }
+      );
+    }
+
+    const member = resolveMember(
+      memberRows,
+      ticketFirstName,
+      ticketLastName
+    );
+
+    if (!member) {
+      return jsonFast(
+        true,
+        "MEMBERSHIP_REVIEW",
+        "Biglietto valido. Più soci associati alla stessa email: verificare nome e tessera.",
+        {
+          ms: Date.now() - startedAt,
+          checked_in: isCheckedIn,
+          ticket_email: ticketEmail,
+          ticket_first_name: ticketFirstName,
+          ticket_last_name: ticketLastName,
+          matching_members: memberRows.length,
           ticket_status: ticketStatus || null,
         }
       );
@@ -249,6 +363,8 @@ export async function POST(req: NextRequest) {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
           member_id: member.id,
+          member_first_name: member.first_name,
+          member_last_name: member.last_name,
           member_status: memberStatus,
           membership_expires_at: membershipExpiresAt || null,
         }
@@ -268,16 +384,15 @@ export async function POST(req: NextRequest) {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
           member_id: member.id,
+          member_first_name: member.first_name,
+          member_last_name: member.last_name,
           member_status: memberStatus,
           membership_expires_at: membershipExpiresAt || null,
         }
       );
     }
 
-    if (
-      memberStatus !== "ATTIVA" ||
-      !membershipExpiresAt
-    ) {
+    if (memberStatus !== "ATTIVA" || !membershipExpiresAt) {
       return jsonFast(
         true,
         "MEMBERSHIP_REVIEW",
@@ -286,6 +401,8 @@ export async function POST(req: NextRequest) {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
           member_id: member.id,
+          member_first_name: member.first_name,
+          member_last_name: member.last_name,
           member_status: memberStatus || null,
           membership_expires_at: membershipExpiresAt || null,
         }
