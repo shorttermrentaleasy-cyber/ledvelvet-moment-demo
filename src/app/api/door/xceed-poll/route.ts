@@ -94,19 +94,20 @@ export async function POST(req: NextRequest) {
   const pollThresholdIso = new Date(now.getTime() - POLL_INTERVAL_MS).toISOString();
   let eventId = "";
   let leaseAcquired = false;
-
-  const supabase = createClient(
-    requiredEnv("SUPABASE_URL"),
-    requiredEnv("SUPABASE_SERVICE_ROLE"),
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    }
-  );
+  let supabase: any = null;
 
   try {
+    supabase = createClient(
+      requiredEnv("SUPABASE_URL"),
+      requiredEnv("SUPABASE_SERVICE_ROLE"),
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
+
     const body = await req.json().catch(() => ({}));
     eventId = normalize(body?.event_id);
 
@@ -294,7 +295,7 @@ export async function POST(req: NextRequest) {
           ? String(error.message)
           : JSON.stringify(error) || "Unknown error";
 
-    if (eventId && leaseAcquired) {
+    if (eventId && leaseAcquired && supabase) {
       await supabase
         .from("xceed_poll_state")
         .update({
