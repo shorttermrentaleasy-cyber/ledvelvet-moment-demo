@@ -4,6 +4,7 @@ import { resolveDoorGateByXceedEmail } from "@/lib/door/resolve-door-gate";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 type XceedTicket = {
   qrCode?: string | null;
@@ -20,8 +21,6 @@ type FastResponse = {
   [key: string]: unknown;
 };
 
-const POLL_INTERVAL_MS = 5_000;
-const LEASE_DURATION_MS = 15_000;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 50;
 
@@ -46,6 +45,22 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+function buildLiveKey(eventId: string, ticket: XceedTicket) {
+  return `${eventId}__${normalize(ticket.qrCode)}__${Number(
+    ticket.checkedInTime || 0
+  )}`;
+}
+
+function chunks<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+
+  return result;
+}
+
 async function fetchXceedTickets(params: {
   baseUrl: string;
   apiKey: string;
@@ -54,10 +69,9 @@ async function fetchXceedTickets(params: {
   const tickets: XceedTicket[] = [];
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const offset = page * PAGE_SIZE;
     const url = new URL("/v1/tickets", params.baseUrl);
 
-    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("offset", String(page * PAGE_SIZE));
     url.searchParams.set("limit", String(PAGE_SIZE));
     url.searchParams.set("events", params.xceedEventId);
     url.searchParams.set("includeCancelledTickets", "true");
@@ -70,7 +84,6 @@ async function fetchXceedTickets(params: {
       },
       cache: "no-store",
     });
-
     const payload = await response.json().catch(() => null);
 
     if (!response.ok || !payload?.success || !Array.isArray(payload.data)) {
@@ -88,16 +101,15 @@ async function fetchXceedTickets(params: {
 }
 
 export async function POST(req: NextRequest) {
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const leaseUntilIso = new Date(now.getTime() + LEASE_DURATION_MS).toISOString();
-  const pollThresholdIso = new Date(now.getTime() - POLL_INTERVAL_MS).toISOString();
-  let eventId = "";
-  let leaseAcquired = false;
-  let supabase: any = null;
-
   try {
-    supabase = createClient(
+    const body = await req.json().catch(() => ({}));
+    const eventId = normalize(body?.event_id);
+
+    if (!eventId) {
+      return json({ ok: false, error: "Missing event_id" }, 400);
+    }
+
+    const supabase = createClient(
       requiredEnv("SUPABASE_URL"),
       requiredEnv("SUPABASE_SERVICE_ROLE"),
       {
@@ -108,49 +120,13 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    const body = await req.json().catch(() => ({}));
-    eventId = normalize(body?.event_id);
-
-    if (!eventId) {
-      return json({ ok: false, error: "Missing event_id" }, 400);
-    }
-
-    const { data: pollState, error: leaseError } = await supabase
-      .from("xceed_poll_state")
-      .update({
-        lease_until: leaseUntilIso,
-        last_polled_at: nowIso,
-        updated_at: nowIso,
-      })
-      .eq("event_id", eventId)
-      .or(`lease_until.is.null,lease_until.lt.${nowIso}`)
-      .or(`last_polled_at.is.null,last_polled_at.lt.${pollThresholdIso}`)
-      .select("event_id,last_checked_in_time")
-      .maybeSingle();
-
-    if (leaseError) {
-      throw leaseError;
-    }
-
-    if (!pollState) {
-      return json({
-        ok: true,
-        polled: false,
-        reason: "lease_or_interval",
-      });
-    }
-
-    leaseAcquired = true;
-
     const { data: event, error: eventError } = await supabase
       .from("events")
       .select("id,xceed_event_uuid,xceed_event_ref")
       .eq("id", eventId)
       .maybeSingle();
 
-    if (eventError) {
-      throw eventError;
-    }
+    if (eventError) throw eventError;
 
     const xceedEventId =
       normalize(event?.xceed_event_uuid) || normalize(event?.xceed_event_ref);
@@ -164,13 +140,11 @@ export async function POST(req: NextRequest) {
       apiKey: requiredEnv("XCEED_API_KEY"),
       xceedEventId,
     });
-
-    const checkpoint = Number(pollState.last_checked_in_time || 0);
-    const newScans = tickets
+    const checkedInTickets = tickets
       .filter(
         (ticket) =>
           ticket.hasCheckedIn === true &&
-          Number(ticket.checkedInTime || 0) > checkpoint &&
+          Number(ticket.checkedInTime || 0) > 0 &&
           Boolean(normalize(ticket.qrCode))
       )
       .sort(
@@ -178,8 +152,30 @@ export async function POST(req: NextRequest) {
           Number(left.checkedInTime || 0) - Number(right.checkedInTime || 0)
       );
 
+    const liveKeys = checkedInTickets.map((ticket) =>
+      buildLiveKey(eventId, ticket)
+    );
+    const existingLiveKeys = new Set<string>();
+
+    for (const keyChunk of chunks(liveKeys, 100)) {
+      const { data: existing, error: existingError } = await supabase
+        .from("door_live_events")
+        .select("live_key")
+        .eq("event_id", eventId)
+        .in("live_key", keyChunk);
+
+      if (existingError) throw existingError;
+
+      for (const row of existing || []) {
+        if (row.live_key) existingLiveKeys.add(String(row.live_key));
+      }
+    }
+
+    const newScans = checkedInTickets.filter(
+      (ticket) => !existingLiveKeys.has(buildLiveKey(eventId, ticket))
+    );
     let processed = 0;
-    let latestProcessedTime = checkpoint;
+    let skippedUnmapped = 0;
 
     for (const ticket of newScans) {
       const qrCode = normalize(ticket.qrCode);
@@ -188,9 +184,8 @@ export async function POST(req: NextRequest) {
       const gate = await resolveDoorGateByXceedEmail(supabase, checkedInBy);
 
       if (!gate.gate_id || !gate.door_role) {
-        throw new Error(
-          `No active gate configured for Xceed email: ${checkedInBy || "missing"}`
-        );
+        skippedUnmapped += 1;
+        continue;
       }
 
       const { error: ticketUpdateError } = await supabase
@@ -203,23 +198,17 @@ export async function POST(req: NextRequest) {
         .eq("event_id", eventId)
         .eq("qr_code", qrCode);
 
-      if (ticketUpdateError) {
-        throw ticketUpdateError;
-      }
+      if (ticketUpdateError) throw ticketUpdateError;
 
       const fastResponse = await fetch(
-        new URL("/api/door/fast-check", req.nextUrl.origin),
+        "https://www.ledvelvet.it/api/door/fast-check",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_id: eventId,
-            code: qrCode,
-          }),
+          body: JSON.stringify({ event_id: eventId, code: qrCode }),
           cache: "no-store",
         }
       );
-
       const fastPayload = (await fastResponse.json().catch(() => null)) as
         | FastResponse
         | null;
@@ -228,7 +217,7 @@ export async function POST(req: NextRequest) {
         throw new Error("Fast Check evaluation failed");
       }
 
-      const liveKey = `${eventId}__${qrCode}__${checkedInTime}`;
+      const liveKey = buildLiveKey(eventId, ticket);
       const { error: liveError } = await supabase
         .from("door_live_events")
         .upsert(
@@ -253,39 +242,18 @@ export async function POST(req: NextRequest) {
           { onConflict: "live_key" }
         );
 
-      if (liveError) {
-        throw liveError;
-      }
+      if (liveError) throw liveError;
 
       processed += 1;
-      latestProcessedTime = checkedInTime;
     }
-
-    const completedAt = new Date().toISOString();
-    const { error: stateUpdateError } = await supabase
-      .from("xceed_poll_state")
-      .update({
-        last_success_at: completedAt,
-        last_checked_in_time: latestProcessedTime || null,
-        lease_until: null,
-        last_error: null,
-        updated_at: completedAt,
-      })
-      .eq("event_id", eventId);
-
-    if (stateUpdateError) {
-      throw stateUpdateError;
-    }
-
-    leaseAcquired = false;
 
     return json({
       ok: true,
-      polled: true,
       fetched: tickets.length,
+      checked_in: checkedInTickets.length,
       candidates: newScans.length,
       processed,
-      checkpoint: latestProcessedTime || null,
+      skipped_unmapped: skippedUnmapped,
     });
   } catch (error) {
     const message =
@@ -294,17 +262,6 @@ export async function POST(req: NextRequest) {
         : error && typeof error === "object" && "message" in error
           ? String(error.message)
           : JSON.stringify(error) || "Unknown error";
-
-    if (eventId && leaseAcquired && supabase) {
-      await supabase
-        .from("xceed_poll_state")
-        .update({
-          lease_until: null,
-          last_error: message,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("event_id", eventId);
-    }
 
     return json({ ok: false, error: message }, 500);
   }
