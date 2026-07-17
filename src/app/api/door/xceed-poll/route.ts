@@ -287,7 +287,12 @@ export async function POST(req: NextRequest) {
       checkpoint: latestProcessedTime || null,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message =
+      error instanceof Error
+        ? error.message
+        : error && typeof error === "object" && "message" in error
+          ? String(error.message)
+          : JSON.stringify(error) || "Unknown error";
 
     if (eventId && leaseAcquired) {
       await supabase
