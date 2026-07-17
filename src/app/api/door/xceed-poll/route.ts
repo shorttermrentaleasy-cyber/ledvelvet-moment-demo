@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
   let leaseAcquired = false;
 
   const supabase = createClient(
-    requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    requiredEnv("SUPABASE_URL"),
     requiredEnv("SUPABASE_SERVICE_ROLE"),
     {
       auth: {
