@@ -186,7 +186,7 @@ export default function FastDoorClient() {
     }
 
     void start();
-    const interval = window.setInterval(() => void poll(), 2_000);
+    const interval = window.setInterval(() => void poll(), 5_000);
 
     return () => {
       cancelled = true;
