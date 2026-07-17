@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type FastStatus = "idle" | "ok" | "warning" | "no";
@@ -22,6 +22,11 @@ type FastResponse = {
   message?: string;
 };
 
+type LiveEvent = {
+  live_key?: string | null;
+  payload_json?: FastResponse | null;
+};
+
 export default function FastDoorClient() {
   const searchParams = useSearchParams();
 
@@ -32,10 +37,13 @@ export default function FastDoorClient() {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLiveKeyRef = useRef("");
+  const pollingRef = useRef(false);
 
   const eventId =
     searchParams.get("event_id") ||
     "6ebab3cf-67dc-47c9-b5f9-92527a0c51f2";
+  const gateId = searchParams.get("gate_id")?.trim() || "";
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -49,17 +57,17 @@ export default function FastDoorClient() {
     };
   }, []);
 
-  function playOkFeedback() {
+  const playOkFeedback = useCallback(() => {
     new Audio("/ok.mp3").play().catch(() => {});
     navigator.vibrate?.(100);
-  }
+  }, []);
 
-  function playAttentionFeedback() {
+  const playAttentionFeedback = useCallback(() => {
     new Audio("/no.mp3").play().catch(() => {});
     navigator.vibrate?.([100, 50, 100]);
-  }
+  }, []);
 
-  function resetScanner() {
+  const resetScanner = useCallback(() => {
     setStatus("idle");
     setMessage("");
     setDecision(null);
@@ -69,9 +77,9 @@ export default function FastDoorClient() {
       inputRef.current.value = "";
       inputRef.current.focus();
     }
-  }
+  }, []);
 
-  function scheduleReset() {
+  const scheduleReset = useCallback(() => {
     if (resetTimerRef.current) {
       clearTimeout(resetTimerRef.current);
     }
@@ -79,9 +87,9 @@ export default function FastDoorClient() {
     resetTimerRef.current = setTimeout(() => {
       resetScanner();
     }, 1600);
-  }
+  }, [resetScanner]);
 
-  function applyDecision(data: FastResponse) {
+  const applyDecision = useCallback((data: FastResponse) => {
     const nextDecision = data.decision || "FATAL_ERROR";
 
     setDecision(nextDecision);
@@ -106,7 +114,85 @@ export default function FastDoorClient() {
 
     setStatus("no");
     playAttentionFeedback();
-  }
+  }, [playAttentionFeedback, playOkFeedback]);
+
+  const loadLatestGateResult = useCallback(async (applyResult: boolean) => {
+    if (!gateId) return;
+
+    const params = new URLSearchParams({
+      eventId,
+      gateId,
+    });
+    const response = await fetch(`/api/door/live-latest?${params.toString()}`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) return;
+
+    const data = (await response.json().catch(() => null)) as
+      | { ok?: boolean; item?: LiveEvent | null }
+      | null;
+    const item = data?.item;
+    const liveKey = String(item?.live_key || "");
+
+    if (!liveKey || liveKey === lastLiveKeyRef.current) return;
+
+    lastLiveKeyRef.current = liveKey;
+
+    if (applyResult && item?.payload_json?.decision) {
+      applyDecision(item.payload_json);
+      scheduleReset();
+    }
+  }, [applyDecision, eventId, gateId, scheduleReset]);
+
+  useEffect(() => {
+    if (!gateId) return;
+
+    let cancelled = false;
+
+    async function poll() {
+      if (cancelled || pollingRef.current) return;
+
+      pollingRef.current = true;
+
+      try {
+        await fetch("/api/door/xceed-poll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ event_id: eventId }),
+          cache: "no-store",
+        });
+
+        if (!cancelled) {
+          await loadLatestGateResult(true);
+        }
+      } catch {
+        // Il polling riprova al ciclo successivo senza bloccare Fast Check.
+      } finally {
+        pollingRef.current = false;
+      }
+    }
+
+    async function start() {
+      try {
+        await loadLatestGateResult(false);
+      } catch {
+        // Il primo ciclo di polling riproverà la lettura.
+      }
+
+      if (!cancelled) {
+        void poll();
+      }
+    }
+
+    void start();
+    const interval = window.setInterval(() => void poll(), 2_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [eventId, gateId, loadLatestGateResult]);
 
   async function handleScan(value: string) {
     const code = value.trim();
