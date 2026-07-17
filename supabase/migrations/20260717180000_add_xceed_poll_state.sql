@@ -1,4 +1,4 @@
-create table public.xceed_poll_state (
+create table if not exists public.xceed_poll_state (
   event_id uuid primary key
     references public.events(id)
     on delete cascade,
@@ -14,4 +14,5 @@ create table public.xceed_poll_state (
 alter table public.xceed_poll_state enable row level security;
 
 insert into public.xceed_poll_state (event_id)
-values ('9d49c0a1-30d9-4758-963b-fda8f30bbd0e');
+values ('9d49c0a1-30d9-4758-963b-fda8f30bbd0e')
+on conflict (event_id) do nothing;
