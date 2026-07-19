@@ -419,13 +419,19 @@ if (amountCents !== null) {
     const byRole: any = {};
     let mappedGateScans = 0;
     let unmappedGateScans = 0;
+    let missingScannerDataScans = 0;
 
     for (const ticket of tickets) {
       if (String(ticket.status || "").toLowerCase() !== "checked_in") continue;
 
       const scannerEmail = getCheckedInBy(ticket);
-      const gate = scannerEmail ? gateByEmail.get(scannerEmail) : null;
 
+      if (!scannerEmail) {
+        missingScannerDataScans += 1;
+        continue;
+      }
+
+      const gate = gateByEmail.get(scannerEmail);
       if (!gate) {
         unmappedGateScans += 1;
         continue;
@@ -465,6 +471,7 @@ if (amountCents !== null) {
         gap_door_vs_xceed: checkedIn - checkedInDoor,
         mapped_gate_scans: mappedGateScans,
         unmapped_gate_scans: unmappedGateScans,
+        missing_scanner_data_scans: missingScannerDataScans,
         not_arrived: totalTickets - checkedIn,
         conversion_rate: totalTickets > 0 ? checkedIn / totalTickets : 0,
         revenue_cents: revenueCents,
