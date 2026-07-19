@@ -53,6 +53,7 @@ type FastContext = {
     gate_id?: string | null;
     name?: string | null;
     door_role?: string | null;
+    xceed_email?: string | null;
     active?: boolean | null;
   } | null;
 };
@@ -349,16 +350,16 @@ export default function FastDoorClient() {
       className="min-h-screen w-full bg-black text-white"
       onClick={() => inputRef.current?.focus()}
     >
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-4 sm:px-6">
-        <header className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-3 px-3 py-3 sm:px-5">
+        <header className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 sm:grid-cols-[1fr_auto] sm:items-center">
           <div>
             <div className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
               Fast Check
             </div>
-            <h1 className="mt-1 text-xl font-black sm:text-2xl">
+            <h1 className="mt-0.5 text-lg font-black sm:text-xl">
               {context?.event?.name || "Evento in caricamento"}
             </h1>
-            <div className="mt-1 text-sm text-white/55">
+            <div className="mt-0.5 text-xs text-white/55 sm:text-sm">
               {[eventDate, eventPlace].filter(Boolean).join(" · ") || eventId}
             </div>
           </div>
@@ -369,6 +370,11 @@ export default function FastDoorClient() {
             {gateRole && (
               <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-black text-cyan-200">
                 {gateRole}
+              </span>
+            )}
+            {context?.gate?.xceed_email && (
+              <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-white/55">
+                {context.gate.xceed_email}
               </span>
             )}
             <span
@@ -387,9 +393,9 @@ export default function FastDoorClient() {
           </div>
         </header>
 
-        <main className="flex flex-1 flex-col items-center justify-center gap-4 py-5 text-center">
+        <main className="flex flex-col items-center justify-center gap-3 py-1 text-center">
         <div
-          className={`h-44 w-44 rounded-full transition-all duration-150 sm:h-56 sm:w-56 ${
+          className={`h-36 w-36 rounded-full transition-all duration-150 sm:h-44 sm:w-44 ${
             status === "ok"
               ? "bg-green-500 shadow-[0_0_80px_rgba(34,197,94,0.9)]"
               : status === "warning"
@@ -400,13 +406,13 @@ export default function FastDoorClient() {
           }`}
         />
 
-        <div className="text-3xl font-black tracking-wide sm:text-5xl">
+        <div className="text-2xl font-black tracking-wide sm:text-4xl">
           {mainLabel()}
         </div>
 
         {message && (
           <div
-            className={`max-w-2xl rounded-2xl border px-5 py-3 text-lg font-bold sm:text-xl ${
+            className={`max-w-2xl rounded-2xl border px-4 py-2.5 text-base font-bold sm:text-lg ${
               status === "ok"
                 ? "border-green-400/30 bg-green-500/10 text-green-200"
                 : status === "warning"
@@ -468,7 +474,7 @@ export default function FastDoorClient() {
 
         </main>
 
-        <footer className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs sm:grid-cols-3 sm:text-sm">
+        <footer className="grid gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 text-[11px] sm:grid-cols-3 sm:text-xs">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 shrink-0 rounded-full bg-green-500" />
             <span><b>Verde</b> · Tessera attiva, gate corretto</span>
