@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import QRCode from "react-qr-code";
+
+const WALLY_NEW_MEMBERSHIP_URL =
+  process.env.NEXT_PUBLIC_WALLY_MEMBERSHIP_URL ||
+  "https://www.wallyfor.com/step1.php?ref=1d7439beb34f751e1db481e40592079e";
+const WALLY_RENEWAL_URL =
+  process.env.NEXT_PUBLIC_WALLY_RENEWAL_URL ||
+  "https://wallyfor.com/rinnovi/index.php?idcode=5355";
 
 type FastStatus = "idle" | "ok" | "warning" | "no";
 
@@ -73,6 +81,7 @@ export default function FastDoorClient() {
   const [context, setContext] = useState<FastContext | null>(null);
   const [connectionState, setConnectionState] = useState<"connecting" | "online" | "retrying">("connecting");
   const [lastScanAt, setLastScanAt] = useState<Date | null>(null);
+  const [wallyQrOpen, setWallyQrOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,6 +121,7 @@ export default function FastDoorClient() {
     setDecision(null);
     setResultDetails(null);
     setLoading(false);
+    setWallyQrOpen(false);
 
     if (inputRef.current) {
       inputRef.current.value = "";
@@ -138,6 +148,7 @@ export default function FastDoorClient() {
     setMessage(data.message || "Esito non disponibile.");
     setResultDetails(data);
     setLastScanAt(new Date());
+    setWallyQrOpen(false);
 
     if (nextDecision === "OK_ACCESS") {
       setStatus("ok");
@@ -344,6 +355,20 @@ export default function FastDoorClient() {
   const gateRole = String(context?.gate?.door_role || resultDetails?.gate_role || "")
     .toUpperCase();
   const resultStaysOpen = Boolean(decision && keepsResultOpen(decision));
+  const wallyAction =
+    decision === "MEMBER_NOT_FOUND"
+      ? {
+          label: "Mostra QR nuova tessera",
+          title: "Fai la nuova tessera",
+          url: WALLY_NEW_MEMBERSHIP_URL,
+        }
+      : decision === "MEMBERSHIP_INACTIVE" || decision === "MEMBERSHIP_EXPIRED"
+        ? {
+            label: "Mostra QR rinnovo",
+            title: "Rinnova la tessera",
+            url: WALLY_RENEWAL_URL,
+          }
+        : null;
 
   return (
     <div
@@ -449,16 +474,30 @@ export default function FastDoorClient() {
               {lastScanAt && ` · ${lastScanAt.toLocaleTimeString("it-IT")}`}
             </div>
             {resultStaysOpen && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  resetScanner();
-                }}
-                className="rounded-xl border border-white/20 bg-white/10 px-6 py-3 text-sm font-black uppercase tracking-wide hover:bg-white/15"
-              >
-                Operazione conclusa
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {wallyAction && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setWallyQrOpen(true);
+                    }}
+                    className="rounded-xl bg-cyan-300 px-5 py-3 text-sm font-black uppercase tracking-wide text-black hover:bg-cyan-200"
+                  >
+                    {wallyAction.label}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    resetScanner();
+                  }}
+                  className="rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black uppercase tracking-wide hover:bg-white/15"
+                >
+                  Operazione conclusa
+                </button>
+              </div>
             )}
           </>
         )}
@@ -489,6 +528,36 @@ export default function FastDoorClient() {
           </div>
         </footer>
       </div>
+
+      {wallyQrOpen && wallyAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={(event) => {
+            event.stopPropagation();
+            setWallyQrOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl border border-white/15 bg-zinc-950 p-5 text-center shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="text-2xl font-black">{wallyAction.title}</div>
+            <div className="mt-1 text-sm text-white/55">
+              Inquadra il QR con il telefono
+            </div>
+            <div className="mx-auto mt-4 w-fit rounded-2xl bg-white p-4">
+              <QRCode value={wallyAction.url} size={240} />
+            </div>
+            <button
+              type="button"
+              onClick={() => setWallyQrOpen(false)}
+              className="mt-4 w-full rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black uppercase"
+            >
+              Chiudi QR
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
