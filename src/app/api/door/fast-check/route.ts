@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 
 type FastDecision =
   | "OK_ACCESS"
+  | "WRONG_GATE"
   | "NO_TICKET"
   | "MEMBER_NOT_FOUND"
   | "MEMBERSHIP_INACTIVE"
@@ -49,6 +50,24 @@ function normalizeName(value: unknown): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
+}
+
+type DoorRole = "ordinary" | "loyalty" | "privileged";
+
+function normalizeDoorRole(value: unknown): DoorRole | null {
+  const role = normalize(value).toLowerCase();
+  return role === "ordinary" || role === "loyalty" || role === "privileged"
+    ? role
+    : null;
+}
+
+function getMemberRole(member: MemberRow): DoorRole {
+  const group = normalize(member.membership_group).toLowerCase();
+  if (group.includes("loyalty")) return "loyalty";
+  if (group.includes("ledvelvet") || group.includes("staff")) {
+    return "privileged";
+  }
+  return "ordinary";
 }
 
 function todayIsoDate(): string {
@@ -179,6 +198,7 @@ export async function POST(req: NextRequest) {
 
     const eventId = normalize(body?.event_id);
     const code = normalize(body?.code);
+    const gateRole = normalizeDoorRole(body?.gate_role);
 
     if (!eventId || !code) {
       return jsonFast(
@@ -284,7 +304,7 @@ export async function POST(req: NextRequest) {
       return jsonFast(
         true,
         "MEMBER_NOT_FOUND",
-        "Biglietto valido, ma email socio non disponibile.",
+        "Email tessera non disponibile: verificare il socio.",
         {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
@@ -319,7 +339,7 @@ export async function POST(req: NextRequest) {
       return jsonFast(
         true,
         "MEMBER_NOT_FOUND",
-        "Biglietto valido. Tessera socio da fare.",
+        "Nessuna tessera associata: procedere al tesseramento.",
         {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
@@ -341,7 +361,7 @@ export async function POST(req: NextRequest) {
       return jsonFast(
         true,
         "MEMBERSHIP_REVIEW",
-        "Biglietto valido. Più soci associati alla stessa email: verificare nome e tessera.",
+        "Più soci associati alla stessa email: verificare nome e tessera.",
         {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
@@ -363,7 +383,7 @@ export async function POST(req: NextRequest) {
       return jsonFast(
         true,
         "MEMBERSHIP_INACTIVE",
-        "Biglietto valido. Tessera non attiva.",
+        "La tessera risulta non attiva.",
         {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
@@ -385,7 +405,7 @@ export async function POST(req: NextRequest) {
       return jsonFast(
         true,
         "MEMBERSHIP_EXPIRED",
-        "Biglietto valido. Tessera scaduta.",
+        "La tessera risulta scaduta.",
         {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
@@ -403,7 +423,7 @@ export async function POST(req: NextRequest) {
       return jsonFast(
         true,
         "MEMBERSHIP_REVIEW",
-        "Biglietto valido. Verificare la tessera.",
+        "Verificare manualmente lo stato della tessera.",
         {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
@@ -417,24 +437,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const memberRole = getMemberRole(member);
+    const memberPayload = {
+      id: member.id,
+      first_name: member.first_name,
+      last_name: member.last_name,
+      email: member.email,
+      membership_group: member.membership_group,
+      status: member.status,
+      membership_expires_at: member.membership_expires_at,
+    };
+
+    if (gateRole && gateRole !== memberRole) {
+      return jsonFast(
+        true,
+        "WRONG_GATE",
+        `Gate non corretto: socio ${memberRole.toUpperCase()}, gate ${gateRole.toUpperCase()}.`,
+        {
+          ms: Date.now() - startedAt,
+          checked_in: isCheckedIn,
+          ticket_status: ticketStatus || null,
+          member_role: memberRole,
+          gate_role: gateRole,
+          member: memberPayload,
+        }
+      );
+    }
+
     return jsonFast(
       true,
       "OK_ACCESS",
-      "Biglietto e tessera validi.",
+      "Tessera attiva e gate corretto.",
       {
         ms: Date.now() - startedAt,
         checked_in: isCheckedIn,
         ticket_status: ticketStatus || null,
         offer_type: offerType || null,
-        member: {
-          id: member.id,
-          first_name: member.first_name,
-          last_name: member.last_name,
-          email: member.email,
-          membership_group: member.membership_group,
-          status: member.status,
-          membership_expires_at: member.membership_expires_at,
-        },
+        member_role: memberRole,
+        gate_role: gateRole,
+        member: memberPayload,
       }
     );
   } catch (error) {
