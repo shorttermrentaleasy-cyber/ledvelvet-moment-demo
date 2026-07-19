@@ -7,6 +7,7 @@ type FastStatus = "idle" | "ok" | "warning" | "no";
 
 type FastDecision =
   | "OK_ACCESS"
+  | "WRONG_GATE"
   | "NO_TICKET"
   | "MEMBER_NOT_FOUND"
   | "MEMBERSHIP_INACTIVE"
@@ -32,12 +33,33 @@ type FastResponse = {
   membership_group?: string | null;
   ticket_first_name?: string | null;
   ticket_last_name?: string | null;
+  member_role?: string | null;
+  gate_role?: string | null;
 };
 
 type LiveEvent = {
   live_key?: string | null;
   payload_json?: FastResponse | null;
 };
+
+type FastContext = {
+  event?: {
+    name?: string | null;
+    starts_at?: string | null;
+    venue?: string | null;
+    city?: string | null;
+  } | null;
+  gate?: {
+    gate_id?: string | null;
+    name?: string | null;
+    door_role?: string | null;
+    active?: boolean | null;
+  } | null;
+};
+
+function keepsResultOpen(decision?: FastDecision | null) {
+  return decision !== "OK_ACCESS";
+}
 
 export default function FastDoorClient() {
   const searchParams = useSearchParams();
@@ -47,6 +69,9 @@ export default function FastDoorClient() {
   const [decision, setDecision] = useState<FastDecision | null>(null);
   const [resultDetails, setResultDetails] = useState<FastResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [context, setContext] = useState<FastContext | null>(null);
+  const [connectionState, setConnectionState] = useState<"connecting" | "online" | "retrying">("connecting");
+  const [lastScanAt, setLastScanAt] = useState<Date | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,10 +118,12 @@ export default function FastDoorClient() {
     }
   }, []);
 
-  const scheduleReset = useCallback(() => {
+  const scheduleReset = useCallback((nextDecision?: FastDecision | null) => {
     if (resetTimerRef.current) {
       clearTimeout(resetTimerRef.current);
     }
+
+    if (keepsResultOpen(nextDecision)) return;
 
     resetTimerRef.current = setTimeout(() => {
       resetScanner();
@@ -109,6 +136,7 @@ export default function FastDoorClient() {
     setDecision(nextDecision);
     setMessage(data.message || "Esito non disponibile.");
     setResultDetails(data);
+    setLastScanAt(new Date());
 
     if (nextDecision === "OK_ACCESS") {
       setStatus("ok");
@@ -117,9 +145,7 @@ export default function FastDoorClient() {
     }
 
     if (
-      nextDecision === "MEMBER_NOT_FOUND" ||
-      nextDecision === "MEMBERSHIP_INACTIVE" ||
-      nextDecision === "MEMBERSHIP_EXPIRED" ||
+      nextDecision === "WRONG_GATE" ||
       nextDecision === "MEMBERSHIP_REVIEW"
     ) {
       setStatus("warning");
@@ -156,9 +182,29 @@ export default function FastDoorClient() {
 
     if (applyResult && item?.payload_json?.decision) {
       applyDecision(item.payload_json);
-      scheduleReset();
+      scheduleReset(item.payload_json.decision);
     }
   }, [applyDecision, eventId, gateId, scheduleReset]);
+
+  useEffect(() => {
+    if (!eventId || !gateId) return;
+
+    Promise.all([
+      fetch("/api/admin/analytics-events", { cache: "no-store" }).then((response) =>
+        response.json()
+      ),
+      fetch("/api/admin/door-gates", { cache: "no-store" }).then((response) =>
+        response.json()
+      ),
+    ])
+      .then(([eventsData, gatesData]) => {
+        setContext({
+          event: eventsData?.events?.find((event: any) => event.id === eventId) || null,
+          gate: gatesData?.gates?.find((gate: any) => gate.gate_id === gateId) || null,
+        });
+      })
+      .catch(() => {});
+  }, [eventId, gateId]);
 
   useEffect(() => {
     if (!gateId) return;
@@ -178,10 +224,13 @@ export default function FastDoorClient() {
           cache: "no-store",
         });
 
+        setConnectionState("online");
+
         if (!cancelled) {
           await loadLatestGateResult(true);
         }
       } catch {
+        setConnectionState("retrying");
         // Il polling riprova al ciclo successivo senza bloccare Fast Check.
       } finally {
         pollingRef.current = false;
@@ -230,20 +279,21 @@ export default function FastDoorClient() {
         body: JSON.stringify({
           event_id: eventId,
           code,
+          gate_role: context?.gate?.door_role || null,
         }),
       });
 
       const data = (await response.json()) as FastResponse;
 
       applyDecision(data);
+      scheduleReset(data.decision);
     } catch {
       setStatus("no");
       setDecision("FATAL_ERROR");
       setMessage("Errore di collegamento.");
       playAttentionFeedback();
+      scheduleReset("FATAL_ERROR");
     }
-
-    scheduleReset();
   }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -253,10 +303,14 @@ export default function FastDoorClient() {
   }
 
   function mainLabel() {
-    if (status === "ok") return "OK";
-    if (status === "warning") return "ATTENZIONE";
-    if (status === "no") return "NO";
-    return loading ? "CONTROLLO" : "SCAN";
+    if (decision === "WRONG_GATE") return "GATE NON CORRETTO";
+    if (decision === "MEMBERSHIP_REVIEW") return "VERIFICA TESSERA";
+    if (decision === "MEMBER_NOT_FOUND") return "TESSERA NON PRESENTE";
+    if (decision === "MEMBERSHIP_EXPIRED") return "TESSERA SCADUTA";
+    if (decision === "MEMBERSHIP_INACTIVE") return "TESSERA NON ATTIVA";
+    if (status === "ok") return "ACCESSO OK";
+    if (status === "no") return "ERRORE";
+    return loading ? "CONTROLLO" : "IN ATTESA";
   }
 
   const displayFirstName =
@@ -276,15 +330,66 @@ export default function FastDoorClient() {
     (decision === "MEMBER_NOT_FOUND" ? "NON SOCIO" : "");
   const membershipStatus =
     resultDetails?.member?.status || resultDetails?.member_status || "";
+  const eventDate = context?.event?.starts_at
+    ? new Date(context.event.starts_at).toLocaleDateString("it-IT", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "";
+  const eventPlace = [context?.event?.venue, context?.event?.city]
+    .filter(Boolean)
+    .join(" · ");
+  const gateRole = String(context?.gate?.door_role || resultDetails?.gate_role || "")
+    .toUpperCase();
+  const resultStaysOpen = Boolean(decision && keepsResultOpen(decision));
 
   return (
     <div
-      className="flex min-h-screen w-full items-center justify-center bg-black text-white"
+      className="min-h-screen w-full bg-black text-white"
       onClick={() => inputRef.current?.focus()}
     >
-      <div className="flex w-full max-w-2xl flex-col items-center gap-7 px-4 text-center">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-4 sm:px-6">
+        <header className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
+              Fast Check
+            </div>
+            <h1 className="mt-1 text-xl font-black sm:text-2xl">
+              {context?.event?.name || "Evento in caricamento"}
+            </h1>
+            <div className="mt-1 text-sm text-white/55">
+              {[eventDate, eventPlace].filter(Boolean).join(" · ") || eventId}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase">
+              {context?.gate?.name || gateId}
+            </span>
+            {gateRole && (
+              <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1.5 text-xs font-black text-cyan-200">
+                {gateRole}
+              </span>
+            )}
+            <span
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+                connectionState === "online"
+                  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                  : "border-amber-300/30 bg-amber-300/10 text-amber-200"
+              }`}
+            >
+              {connectionState === "online"
+                ? "XCEED CONNESSO"
+                : connectionState === "retrying"
+                  ? "RICONNESSIONE…"
+                  : "CONNESSIONE…"}
+            </span>
+          </div>
+        </header>
+
+        <main className="flex flex-1 flex-col items-center justify-center gap-4 py-5 text-center">
         <div
-          className={`h-64 w-64 rounded-full transition-all duration-150 ${
+          className={`h-44 w-44 rounded-full transition-all duration-150 sm:h-56 sm:w-56 ${
             status === "ok"
               ? "bg-green-500 shadow-[0_0_80px_rgba(34,197,94,0.9)]"
               : status === "warning"
@@ -295,13 +400,13 @@ export default function FastDoorClient() {
           }`}
         />
 
-        <div className="text-4xl font-black tracking-wider md:text-5xl">
+        <div className="text-3xl font-black tracking-wide sm:text-5xl">
           {mainLabel()}
         </div>
 
         {message && (
           <div
-            className={`max-w-xl rounded-2xl border px-5 py-4 text-xl font-bold ${
+            className={`max-w-2xl rounded-2xl border px-5 py-3 text-lg font-bold sm:text-xl ${
               status === "ok"
                 ? "border-green-400/30 bg-green-500/10 text-green-200"
                 : status === "warning"
@@ -332,9 +437,24 @@ export default function FastDoorClient() {
         )}
 
         {decision && (
-          <div className="text-xs uppercase tracking-[0.2em] text-white/35">
-            {decision}
-          </div>
+          <>
+            <div className="text-xs uppercase tracking-[0.2em] text-white/35">
+              {decision}
+              {lastScanAt && ` · ${lastScanAt.toLocaleTimeString("it-IT")}`}
+            </div>
+            {resultStaysOpen && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  resetScanner();
+                }}
+                className="rounded-xl border border-white/20 bg-white/10 px-6 py-3 text-sm font-black uppercase tracking-wide hover:bg-white/15"
+              >
+                Operazione conclusa
+              </button>
+            )}
+          </>
         )}
 
         <input
@@ -346,9 +466,22 @@ export default function FastDoorClient() {
           className="absolute left-0 top-0 h-px w-px opacity-0"
         />
 
-        <div className="text-xs text-white/30">
-          Evento: {eventId}
-        </div>
+        </main>
+
+        <footer className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs sm:grid-cols-3 sm:text-sm">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 shrink-0 rounded-full bg-green-500" />
+            <span><b>Verde</b> · Tessera attiva, gate corretto</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 shrink-0 rounded-full bg-yellow-400" />
+            <span><b>Giallo</b> · Tessera attiva, gate non corretto</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 shrink-0 rounded-full bg-red-500" />
+            <span><b>Rosso</b> · Tessera assente, scaduta o inattiva</span>
+          </div>
+        </footer>
       </div>
     </div>
   );
