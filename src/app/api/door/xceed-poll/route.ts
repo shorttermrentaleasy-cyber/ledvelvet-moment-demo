@@ -211,7 +211,11 @@ export async function POST(req: NextRequest) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ event_id: eventId, code: qrCode }),
+          body: JSON.stringify({
+            event_id: eventId,
+            code: qrCode,
+            gate_role: gate.door_role,
+          }),
           cache: "no-store",
         }
       );
