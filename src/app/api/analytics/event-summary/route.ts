@@ -171,8 +171,26 @@ function getTicketAmountCents(t: any): number | null {
   return null;
 }
 
+function getDoorQrCode(d: any): string | null {
+  return d.qr_code || d.ticket_qr_code || null;
+}
+
 function isCheckedInDoor(d: any) {
-  return d.live_key?.includes("__checked_in") && d.qr_code;
+  const qrCode = getDoorQrCode(d);
+  if (!qrCode) return false;
+
+  const payload = d.payload_json || {};
+
+  return (
+    d.live_key?.includes("__checked_in") ||
+    Boolean(payload.checked_in_by) ||
+    Boolean(payload.checked_in_time)
+  );
+}
+
+function isNewPollingEvent(d: any) {
+  const payload = d.payload_json || {};
+  return Boolean(payload.checked_in_by) || Boolean(payload.checked_in_time);
 }
 
 export async function GET(req: NextRequest) {
@@ -182,9 +200,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Missing eventId" }, { status: 400 });
     }
 
+    const serviceRole =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      assertEnv("SUPABASE_SERVICE_ROLE");
+
     const supabase = createClient(
-      assertEnv("SUPABASE_URL"),
-      assertEnv("SUPABASE_SERVICE_ROLE")
+      assertEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      serviceRole
     );
 
     let tickets: any[] = [];
@@ -212,7 +234,9 @@ export async function GET(req: NextRequest) {
     while (true) {
       const { data, error } = await supabase
         .from("door_live_events")
-        .select("qr_code, gate_id, door_role, live_key, payload_json, created_at")
+        .select(
+          "qr_code, ticket_qr_code, gate_id, door_role, live_key, payload_json, created_at"
+        )
         .eq("event_id", eventId)
         .range(fromDoor, fromDoor + batchSize - 1);
 
@@ -294,20 +318,28 @@ if (amountCents !== null) {
       missingAmount += t.missing_amount || 0;
     });
 
-    const checkedSet = new Set<string>();
-
-    for (const d of door) {
-      if (isCheckedInDoor(d)) checkedSet.add(d.qr_code);
-    }
-
-    const checkedInDoor = checkedSet.size;
-
-    const byGate: any = {};
-    const byRole: any = {};
+    const doorByQr = new Map<string, any>();
 
     for (const d of door) {
       if (!isCheckedInDoor(d)) continue;
 
+      const qrCode = getDoorQrCode(d);
+      if (!qrCode) continue;
+
+      const current = doorByQr.get(qrCode);
+
+      if (!current || (!isNewPollingEvent(current) && isNewPollingEvent(d))) {
+        doorByQr.set(qrCode, d);
+      }
+    }
+
+    const uniqueDoorEvents = Array.from(doorByQr.values());
+    const checkedInDoor = uniqueDoorEvents.length;
+
+    const byGate: any = {};
+    const byRole: any = {};
+
+    for (const d of uniqueDoorEvents) {
       const gate = d.gate_id || "unknown";
       const role = d.door_role || "unknown";
 
@@ -317,8 +349,8 @@ if (amountCents !== null) {
 
     const timelineMap: any = {};
 
-    for (const d of door) {
-      if (!isCheckedInDoor(d) || !d.created_at) continue;
+    for (const d of uniqueDoorEvents) {
+      if (!d.created_at) continue;
 
       const date = new Date(d.created_at);
       const minutes = Math.floor(date.getMinutes() / 15) * 15;

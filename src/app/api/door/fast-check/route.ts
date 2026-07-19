@@ -366,6 +366,7 @@ export async function POST(req: NextRequest) {
           member_first_name: member.first_name,
           member_last_name: member.last_name,
           member_status: memberStatus,
+          membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
         }
       );
@@ -387,6 +388,7 @@ export async function POST(req: NextRequest) {
           member_first_name: member.first_name,
           member_last_name: member.last_name,
           member_status: memberStatus,
+          membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
         }
       );
@@ -404,6 +406,7 @@ export async function POST(req: NextRequest) {
           member_first_name: member.first_name,
           member_last_name: member.last_name,
           member_status: memberStatus || null,
+          membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
         }
       );

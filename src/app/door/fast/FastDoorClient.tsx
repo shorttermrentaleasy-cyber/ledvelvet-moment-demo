@@ -20,6 +20,18 @@ type FastResponse = {
   ok: boolean;
   decision?: FastDecision;
   message?: string;
+  member?: {
+    first_name?: string | null;
+    last_name?: string | null;
+    membership_group?: string | null;
+    status?: string | null;
+  } | null;
+  member_first_name?: string | null;
+  member_last_name?: string | null;
+  member_status?: string | null;
+  membership_group?: string | null;
+  ticket_first_name?: string | null;
+  ticket_last_name?: string | null;
 };
 
 type LiveEvent = {
@@ -33,6 +45,7 @@ export default function FastDoorClient() {
   const [status, setStatus] = useState<FastStatus>("idle");
   const [message, setMessage] = useState("");
   const [decision, setDecision] = useState<FastDecision | null>(null);
+  const [resultDetails, setResultDetails] = useState<FastResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,6 +84,7 @@ export default function FastDoorClient() {
     setStatus("idle");
     setMessage("");
     setDecision(null);
+    setResultDetails(null);
     setLoading(false);
 
     if (inputRef.current) {
@@ -86,7 +100,7 @@ export default function FastDoorClient() {
 
     resetTimerRef.current = setTimeout(() => {
       resetScanner();
-    }, 1600);
+    }, 2500);
   }, [resetScanner]);
 
   const applyDecision = useCallback((data: FastResponse) => {
@@ -94,6 +108,7 @@ export default function FastDoorClient() {
 
     setDecision(nextDecision);
     setMessage(data.message || "Esito non disponibile.");
+    setResultDetails(data);
 
     if (nextDecision === "OK_ACCESS") {
       setStatus("ok");
@@ -204,6 +219,7 @@ export default function FastDoorClient() {
     setLoading(true);
     setMessage("");
     setDecision(null);
+    setResultDetails(null);
 
     try {
       const response = await fetch("/api/door/fast-check", {
@@ -243,6 +259,24 @@ export default function FastDoorClient() {
     return loading ? "CONTROLLO" : "SCAN";
   }
 
+  const displayFirstName =
+    resultDetails?.member?.first_name ||
+    resultDetails?.member_first_name ||
+    resultDetails?.ticket_first_name ||
+    "";
+  const displayLastName =
+    resultDetails?.member?.last_name ||
+    resultDetails?.member_last_name ||
+    resultDetails?.ticket_last_name ||
+    "";
+  const displayName = `${displayFirstName} ${displayLastName}`.trim();
+  const membershipGroup =
+    resultDetails?.member?.membership_group ||
+    resultDetails?.membership_group ||
+    (decision === "MEMBER_NOT_FOUND" ? "NON SOCIO" : "");
+  const membershipStatus =
+    resultDetails?.member?.status || resultDetails?.member_status || "";
+
   return (
     <div
       className="flex min-h-screen w-full items-center justify-center bg-black text-white"
@@ -276,6 +310,24 @@ export default function FastDoorClient() {
             }`}
           >
             {message}
+          </div>
+        )}
+
+        {(displayName || membershipGroup || membershipStatus) && (
+          <div className="flex max-w-xl flex-wrap items-center justify-center gap-2 text-base">
+            {displayName && (
+              <span className="font-bold text-white">{displayName}</span>
+            )}
+            {membershipGroup && (
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white/90">
+                {membershipGroup}
+              </span>
+            )}
+            {membershipStatus && (
+              <span className="rounded-full border border-white/15 px-3 py-1 text-xs uppercase tracking-wider text-white/60">
+                {membershipStatus}
+              </span>
+            )}
           </div>
         )}
 
