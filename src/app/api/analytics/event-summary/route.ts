@@ -242,7 +242,22 @@ export async function GET(req: NextRequest) {
     if (!supabaseUrl) {
       throw new Error("Missing env: NEXT_PUBLIC_SUPABASE_URL");
     }
-    const supabase = createClient(supabaseUrl, serviceRole);
+    const supabase = createClient(supabaseUrl, serviceRole, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: {
+        fetch: (input, init) => {
+          const headers = new Headers(init?.headers);
+          headers.set("Cache-Control", "no-store");
+          headers.set("Pragma", "no-cache");
+
+          return fetch(input, {
+            ...init,
+            cache: "no-store",
+            headers,
+          });
+        },
+      },
+    });
 
     let tickets: any[] = [];
     let from = 0;
@@ -423,18 +438,19 @@ if (amountCents !== null) {
       .map(([time, total]) => ({ time, total }))
       .sort((a, b) => a.time.localeCompare(b.time));
 
-    return NextResponse.json({
-      ok: true,
-      event_id: eventId,
-      source_debug: {
-        db_project: new URL(supabaseUrl).hostname.split(".")[0],
-        raw_rows: tickets.length,
-        raw_checked_in: tickets.filter(
-          (ticket) =>
-            String(ticket.status || "").toLowerCase() === "checked_in"
-        ).length,
-      },
-      totals: {
+    return NextResponse.json(
+      {
+        ok: true,
+        event_id: eventId,
+        source_debug: {
+          db_project: new URL(supabaseUrl).hostname.split(".")[0],
+          raw_rows: tickets.length,
+          raw_checked_in: tickets.filter(
+            (ticket) =>
+              String(ticket.status || "").toLowerCase() === "checked_in"
+          ).length,
+        },
+        totals: {
         tickets: totalTickets,
         checked_in_xceed: checkedIn,
         checked_in_door: checkedInDoor,
@@ -450,8 +466,14 @@ if (amountCents !== null) {
       by_type: byType,
       by_gate: byGate,
       by_role: byRole,
-      timeline,
-    });
+        timeline,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { ok: false, error: err.message || "error" },
