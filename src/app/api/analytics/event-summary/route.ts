@@ -238,10 +238,8 @@ export async function GET(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
       assertEnv("SUPABASE_SERVICE_ROLE");
 
-    const supabase = createClient(
-      assertEnv("NEXT_PUBLIC_SUPABASE_URL"),
-      serviceRole
-    );
+    const supabaseUrl = assertEnv("NEXT_PUBLIC_SUPABASE_URL");
+    const supabase = createClient(supabaseUrl, serviceRole);
 
     let tickets: any[] = [];
     let from = 0;
@@ -425,6 +423,14 @@ if (amountCents !== null) {
     return NextResponse.json({
       ok: true,
       event_id: eventId,
+      source_debug: {
+        db_project: new URL(supabaseUrl).hostname.split(".")[0],
+        raw_rows: tickets.length,
+        raw_checked_in: tickets.filter(
+          (ticket) =>
+            String(ticket.status || "").toLowerCase() === "checked_in"
+        ).length,
+      },
       totals: {
         tickets: totalTickets,
         checked_in_xceed: checkedIn,
