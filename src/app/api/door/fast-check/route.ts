@@ -191,8 +191,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error("Missing env: NEXT_PUBLIC_SUPABASE_URL");
+    }
+
     const supabase = createClient(
-      assertEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      supabaseUrl,
       assertEnv("SUPABASE_SERVICE_ROLE"),
       {
         auth: {
