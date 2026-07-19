@@ -238,7 +238,10 @@ export async function GET(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
       assertEnv("SUPABASE_SERVICE_ROLE");
 
-    const supabaseUrl = assertEnv("NEXT_PUBLIC_SUPABASE_URL");
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error("Missing env: NEXT_PUBLIC_SUPABASE_URL");
+    }
     const supabase = createClient(supabaseUrl, serviceRole);
 
     let tickets: any[] = [];
