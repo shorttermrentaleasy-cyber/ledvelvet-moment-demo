@@ -36,6 +36,40 @@ function getQrCode(t: any): string | null {
   );
 }
 
+function getCheckedInBy(t: any): string {
+  const raw = t.raw || {};
+
+  return String(
+    raw?.checkedInBy ||
+      raw?.pass?.checkedInBy ||
+      raw?.ticket?.checkedInBy ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function getCheckedInDate(t: any): Date | null {
+  const raw = t.raw || {};
+  const value =
+    raw?.checkedInTime ||
+    raw?.pass?.checkedInTime ||
+    raw?.ticket?.checkedInTime ||
+    raw?.checkedInAt ||
+    raw?.pass?.checkedInAt ||
+    raw?.ticket?.checkedInAt ||
+    null;
+
+  if (!value) return null;
+
+  const numeric = Number(value);
+  const date = Number.isFinite(numeric)
+    ? new Date(numeric < 10_000_000_000 ? numeric * 1000 : numeric)
+    : new Date(String(value));
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function getAmountFromQr(qr: string | null): number | null {
   if (!qr) return null;
 
@@ -171,8 +205,26 @@ function getTicketAmountCents(t: any): number | null {
   return null;
 }
 
+function getDoorQrCode(d: any): string | null {
+  return d.qr_code || d.ticket_qr_code || null;
+}
+
 function isCheckedInDoor(d: any) {
-  return d.live_key?.includes("__checked_in") && d.qr_code;
+  const qrCode = getDoorQrCode(d);
+  if (!qrCode) return false;
+
+  const payload = d.payload_json || {};
+
+  return (
+    d.live_key?.includes("__checked_in") ||
+    Boolean(payload.checked_in_by) ||
+    Boolean(payload.checked_in_time)
+  );
+}
+
+function isNewPollingEvent(d: any) {
+  const payload = d.payload_json || {};
+  return Boolean(payload.checked_in_by) || Boolean(payload.checked_in_time);
 }
 
 export async function GET(req: NextRequest) {
@@ -182,10 +234,30 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Missing eventId" }, { status: 400 });
     }
 
-    const supabase = createClient(
-      assertEnv("SUPABASE_URL"),
-      assertEnv("SUPABASE_SERVICE_ROLE")
-    );
+    const serviceRole =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      assertEnv("SUPABASE_SERVICE_ROLE");
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error("Missing env: NEXT_PUBLIC_SUPABASE_URL");
+    }
+    const supabase = createClient(supabaseUrl, serviceRole, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: {
+        fetch: (input, init) => {
+          const headers = new Headers(init?.headers);
+          headers.set("Cache-Control", "no-store");
+          headers.set("Pragma", "no-cache");
+
+          return fetch(input, {
+            ...init,
+            cache: "no-store",
+            headers,
+          });
+        },
+      },
+    });
 
     let tickets: any[] = [];
     let from = 0;
@@ -206,13 +278,44 @@ export async function GET(req: NextRequest) {
       from += batchSize;
     }
 
+    const { data: gates, error: gatesError } = await supabase
+      .from("door_gates")
+      .select("gate_id,door_role,xceed_email")
+      .eq("active", true);
+
+    if (gatesError) throw gatesError;
+
+    const gateByEmail = new Map<string, any>();
+    for (const gate of gates || []) {
+      const email = String(gate.xceed_email || "").trim().toLowerCase();
+      if (email) gateByEmail.set(email, gate);
+    }
+
+    // Historical events may have a different gate/role assignment from the
+    // current Door configuration. Event overrides take precedence.
+    const { data: gateOverrides, error: gateOverridesError } = await supabase
+      .from("event_gate_overrides")
+      .select("gate_id,door_role,scanner_email")
+      .eq("event_id", eventId);
+
+    if (gateOverridesError && gateOverridesError.code !== "42P01") {
+      throw gateOverridesError;
+    }
+
+    for (const override of gateOverrides || []) {
+      const email = String(override.scanner_email || "").trim().toLowerCase();
+      if (email) gateByEmail.set(email, override);
+    }
+
     let door: any[] = [];
     let fromDoor = 0;
 
     while (true) {
       const { data, error } = await supabase
         .from("door_live_events")
-        .select("qr_code, gate_id, door_role, live_key, payload_json, created_at")
+        .select(
+          "qr_code, ticket_qr_code, gate_id, door_role, live_key, payload_json, created_at"
+        )
         .eq("event_id", eventId)
         .range(fromDoor, fromDoor + batchSize - 1);
 
@@ -294,33 +397,58 @@ if (amountCents !== null) {
       missingAmount += t.missing_amount || 0;
     });
 
-    const checkedSet = new Set<string>();
-
-    for (const d of door) {
-      if (isCheckedInDoor(d)) checkedSet.add(d.qr_code);
-    }
-
-    const checkedInDoor = checkedSet.size;
-
-    const byGate: any = {};
-    const byRole: any = {};
+    const doorByQr = new Map<string, any>();
 
     for (const d of door) {
       if (!isCheckedInDoor(d)) continue;
 
-      const gate = d.gate_id || "unknown";
-      const role = d.door_role || "unknown";
+      const qrCode = getDoorQrCode(d);
+      if (!qrCode) continue;
 
-      byGate[gate] = (byGate[gate] || 0) + 1;
-      byRole[role] = (byRole[role] || 0) + 1;
+      const current = doorByQr.get(qrCode);
+
+      if (!current || (!isNewPollingEvent(current) && isNewPollingEvent(d))) {
+        doorByQr.set(qrCode, d);
+      }
+    }
+
+    const uniqueDoorEvents = Array.from(doorByQr.values());
+    const checkedInDoor = uniqueDoorEvents.length;
+
+    const byGate: any = {};
+    const byRole: any = {};
+    let mappedGateScans = 0;
+    let unmappedGateScans = 0;
+    let missingScannerDataScans = 0;
+
+    for (const ticket of tickets) {
+      if (String(ticket.status || "").toLowerCase() !== "checked_in") continue;
+
+      const scannerEmail = getCheckedInBy(ticket);
+
+      if (!scannerEmail) {
+        missingScannerDataScans += 1;
+        continue;
+      }
+
+      const gate = gateByEmail.get(scannerEmail);
+      if (!gate) {
+        unmappedGateScans += 1;
+        continue;
+      }
+
+      mappedGateScans += 1;
+      byGate[gate.gate_id] = (byGate[gate.gate_id] || 0) + 1;
+      byRole[gate.door_role] = (byRole[gate.door_role] || 0) + 1;
     }
 
     const timelineMap: any = {};
 
-    for (const d of door) {
-      if (!isCheckedInDoor(d) || !d.created_at) continue;
+    for (const ticket of tickets) {
+      if (String(ticket.status || "").toLowerCase() !== "checked_in") continue;
 
-      const date = new Date(d.created_at);
+      const date = getCheckedInDate(ticket);
+      if (!date) continue;
       const minutes = Math.floor(date.getMinutes() / 15) * 15;
       date.setMinutes(minutes, 0, 0);
 
@@ -332,14 +460,18 @@ if (amountCents !== null) {
       .map(([time, total]) => ({ time, total }))
       .sort((a, b) => a.time.localeCompare(b.time));
 
-    return NextResponse.json({
-      ok: true,
-      event_id: eventId,
-      totals: {
+    return NextResponse.json(
+      {
+        ok: true,
+        event_id: eventId,
+        totals: {
         tickets: totalTickets,
         checked_in_xceed: checkedIn,
         checked_in_door: checkedInDoor,
         gap_door_vs_xceed: checkedIn - checkedInDoor,
+        mapped_gate_scans: mappedGateScans,
+        unmapped_gate_scans: unmappedGateScans,
+        missing_scanner_data_scans: missingScannerDataScans,
         not_arrived: totalTickets - checkedIn,
         conversion_rate: totalTickets > 0 ? checkedIn / totalTickets : 0,
         revenue_cents: revenueCents,
@@ -349,8 +481,14 @@ if (amountCents !== null) {
       by_type: byType,
       by_gate: byGate,
       by_role: byRole,
-      timeline,
-    });
+        timeline,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { ok: false, error: err.message || "error" },

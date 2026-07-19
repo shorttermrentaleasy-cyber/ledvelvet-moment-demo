@@ -191,8 +191,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error("Missing env: NEXT_PUBLIC_SUPABASE_URL");
+    }
+
     const supabase = createClient(
-      assertEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      supabaseUrl,
       assertEnv("SUPABASE_SERVICE_ROLE"),
       {
         auth: {
@@ -366,6 +371,7 @@ export async function POST(req: NextRequest) {
           member_first_name: member.first_name,
           member_last_name: member.last_name,
           member_status: memberStatus,
+          membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
         }
       );
@@ -387,6 +393,7 @@ export async function POST(req: NextRequest) {
           member_first_name: member.first_name,
           member_last_name: member.last_name,
           member_status: memberStatus,
+          membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
         }
       );
@@ -404,6 +411,7 @@ export async function POST(req: NextRequest) {
           member_first_name: member.first_name,
           member_last_name: member.last_name,
           member_status: memberStatus || null,
+          membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
         }
       );

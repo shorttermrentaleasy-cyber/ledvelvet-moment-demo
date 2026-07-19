@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 // 🔐 Env
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-  throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE");
+  throw new Error(
+    "Missing NEXT_PUBLIC_SUPABASE_URL or Supabase service role"
+  );
 }
 
 // ✅ Client admin (fix TS + stabilità runtime)
@@ -24,6 +28,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const eventId = String(searchParams.get("eventId") || "").trim();
+    const gateId = String(searchParams.get("gateId") || "").trim();
     if (!eventId) {
       return NextResponse.json(
         { ok: false, error: "Missing eventId" },
@@ -39,6 +44,10 @@ let query = supabase
   .eq("event_id", eventId)
   .order("created_at", { ascending: false })
   .limit(1);
+
+if (gateId) {
+  query = query.eq("gate_id", gateId);
+}
 
 const { data, error } = await query.maybeSingle();
 

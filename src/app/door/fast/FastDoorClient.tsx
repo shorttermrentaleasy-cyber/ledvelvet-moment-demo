@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type FastStatus = "idle" | "ok" | "warning" | "no";
@@ -20,6 +20,23 @@ type FastResponse = {
   ok: boolean;
   decision?: FastDecision;
   message?: string;
+  member?: {
+    first_name?: string | null;
+    last_name?: string | null;
+    membership_group?: string | null;
+    status?: string | null;
+  } | null;
+  member_first_name?: string | null;
+  member_last_name?: string | null;
+  member_status?: string | null;
+  membership_group?: string | null;
+  ticket_first_name?: string | null;
+  ticket_last_name?: string | null;
+};
+
+type LiveEvent = {
+  live_key?: string | null;
+  payload_json?: FastResponse | null;
 };
 
 export default function FastDoorClient() {
@@ -28,14 +45,18 @@ export default function FastDoorClient() {
   const [status, setStatus] = useState<FastStatus>("idle");
   const [message, setMessage] = useState("");
   const [decision, setDecision] = useState<FastDecision | null>(null);
+  const [resultDetails, setResultDetails] = useState<FastResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLiveKeyRef = useRef("");
+  const pollingRef = useRef(false);
 
   const eventId =
     searchParams.get("event_id") ||
     "6ebab3cf-67dc-47c9-b5f9-92527a0c51f2";
+  const gateId = searchParams.get("gate_id")?.trim() || "";
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -49,43 +70,45 @@ export default function FastDoorClient() {
     };
   }, []);
 
-  function playOkFeedback() {
+  const playOkFeedback = useCallback(() => {
     new Audio("/ok.mp3").play().catch(() => {});
     navigator.vibrate?.(100);
-  }
+  }, []);
 
-  function playAttentionFeedback() {
+  const playAttentionFeedback = useCallback(() => {
     new Audio("/no.mp3").play().catch(() => {});
     navigator.vibrate?.([100, 50, 100]);
-  }
+  }, []);
 
-  function resetScanner() {
+  const resetScanner = useCallback(() => {
     setStatus("idle");
     setMessage("");
     setDecision(null);
+    setResultDetails(null);
     setLoading(false);
 
     if (inputRef.current) {
       inputRef.current.value = "";
       inputRef.current.focus();
     }
-  }
+  }, []);
 
-  function scheduleReset() {
+  const scheduleReset = useCallback(() => {
     if (resetTimerRef.current) {
       clearTimeout(resetTimerRef.current);
     }
 
     resetTimerRef.current = setTimeout(() => {
       resetScanner();
-    }, 1600);
-  }
+    }, 2500);
+  }, [resetScanner]);
 
-  function applyDecision(data: FastResponse) {
+  const applyDecision = useCallback((data: FastResponse) => {
     const nextDecision = data.decision || "FATAL_ERROR";
 
     setDecision(nextDecision);
     setMessage(data.message || "Esito non disponibile.");
+    setResultDetails(data);
 
     if (nextDecision === "OK_ACCESS") {
       setStatus("ok");
@@ -106,7 +129,85 @@ export default function FastDoorClient() {
 
     setStatus("no");
     playAttentionFeedback();
-  }
+  }, [playAttentionFeedback, playOkFeedback]);
+
+  const loadLatestGateResult = useCallback(async (applyResult: boolean) => {
+    if (!gateId) return;
+
+    const params = new URLSearchParams({
+      eventId,
+      gateId,
+    });
+    const response = await fetch(`/api/door/live-latest?${params.toString()}`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) return;
+
+    const data = (await response.json().catch(() => null)) as
+      | { ok?: boolean; item?: LiveEvent | null }
+      | null;
+    const item = data?.item;
+    const liveKey = String(item?.live_key || "");
+
+    if (!liveKey || liveKey === lastLiveKeyRef.current) return;
+
+    lastLiveKeyRef.current = liveKey;
+
+    if (applyResult && item?.payload_json?.decision) {
+      applyDecision(item.payload_json);
+      scheduleReset();
+    }
+  }, [applyDecision, eventId, gateId, scheduleReset]);
+
+  useEffect(() => {
+    if (!gateId) return;
+
+    let cancelled = false;
+
+    async function poll() {
+      if (cancelled || pollingRef.current) return;
+
+      pollingRef.current = true;
+
+      try {
+        await fetch("/api/door/xceed-poll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ event_id: eventId }),
+          cache: "no-store",
+        });
+
+        if (!cancelled) {
+          await loadLatestGateResult(true);
+        }
+      } catch {
+        // Il polling riprova al ciclo successivo senza bloccare Fast Check.
+      } finally {
+        pollingRef.current = false;
+      }
+    }
+
+    async function start() {
+      try {
+        await loadLatestGateResult(false);
+      } catch {
+        // Il primo ciclo di polling riproverà la lettura.
+      }
+
+      if (!cancelled) {
+        void poll();
+      }
+    }
+
+    void start();
+    const interval = window.setInterval(() => void poll(), 5_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [eventId, gateId, loadLatestGateResult]);
 
   async function handleScan(value: string) {
     const code = value.trim();
@@ -118,6 +219,7 @@ export default function FastDoorClient() {
     setLoading(true);
     setMessage("");
     setDecision(null);
+    setResultDetails(null);
 
     try {
       const response = await fetch("/api/door/fast-check", {
@@ -157,6 +259,24 @@ export default function FastDoorClient() {
     return loading ? "CONTROLLO" : "SCAN";
   }
 
+  const displayFirstName =
+    resultDetails?.member?.first_name ||
+    resultDetails?.member_first_name ||
+    resultDetails?.ticket_first_name ||
+    "";
+  const displayLastName =
+    resultDetails?.member?.last_name ||
+    resultDetails?.member_last_name ||
+    resultDetails?.ticket_last_name ||
+    "";
+  const displayName = `${displayFirstName} ${displayLastName}`.trim();
+  const membershipGroup =
+    resultDetails?.member?.membership_group ||
+    resultDetails?.membership_group ||
+    (decision === "MEMBER_NOT_FOUND" ? "NON SOCIO" : "");
+  const membershipStatus =
+    resultDetails?.member?.status || resultDetails?.member_status || "";
+
   return (
     <div
       className="flex min-h-screen w-full items-center justify-center bg-black text-white"
@@ -190,6 +310,24 @@ export default function FastDoorClient() {
             }`}
           >
             {message}
+          </div>
+        )}
+
+        {(displayName || membershipGroup || membershipStatus) && (
+          <div className="flex max-w-xl flex-wrap items-center justify-center gap-2 text-base">
+            {displayName && (
+              <span className="font-bold text-white">{displayName}</span>
+            )}
+            {membershipGroup && (
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white/90">
+                {membershipGroup}
+              </span>
+            )}
+            {membershipStatus && (
+              <span className="rounded-full border border-white/15 px-3 py-1 text-xs uppercase tracking-wider text-white/60">
+                {membershipStatus}
+              </span>
+            )}
           </div>
         )}
 

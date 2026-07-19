@@ -64,7 +64,13 @@ const typeLabels: Record<string, string> = {
 
     setLoading(true);
 
-    const res = await fetch(`/api/analytics/event-summary?eventId=${useId}`);
+    const params = new URLSearchParams({
+      eventId: useId,
+      t: String(Date.now()),
+    });
+    const res = await fetch(`/api/analytics/event-summary?${params}`, {
+      cache: "no-store",
+    });
     const json = await res.json();
 
     setData(json);
@@ -107,7 +113,7 @@ const typeLabels: Record<string, string> = {
                 Analytics Eventi
               </h1>
               <p className="mt-2 text-sm text-white/60">
-                Lettura storica da Xceed + Door Live Events
+                Dati automatici dalla Partner API Xceed
               </p>
             </div>
 
@@ -158,28 +164,50 @@ const typeLabels: Record<string, string> = {
           <>
             
 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-  <Card title="Ricavi" value={euro(data.totals.revenue_eur)} highlight />
+  <Card title="Valore titoli" value={euro(data.totals.revenue_eur)} highlight />
 
-  <Card title="Tickets" value={intNum(data.totals.tickets)} />
-  <Card title="Xceed IN" value={intNum(data.totals.checked_in_xceed)} />
-  <Card title="Door IN" value={intNum(data.totals.checked_in_door)} />
+  <Card title="Titoli validi" value={intNum(data.totals.tickets)} />
+  <Card title="Ingressi tracciati" value={intNum(data.totals.checked_in_xceed)} />
+  <Card title="Gate attribuiti" value={intNum(data.totals.mapped_gate_scans)} />
 
-  <Card title="Gap" value={intNum(data.totals.gap_door_vs_xceed)} danger />
-  <Card title="Conversione" value={`${conversion}%`} />
+  <Card
+    title="Ingressi non attribuibili"
+    value={intNum(
+      (data.totals.unmapped_gate_scans || 0) +
+        (data.totals.missing_scanner_data_scans || 0)
+    )}
+    danger={
+      (data.totals.unmapped_gate_scans || 0) +
+        (data.totals.missing_scanner_data_scans || 0) >
+      0
+    }
+  />
+  <Card title="Tasso ingressi" value={`${conversion}%`} />
 
-  <Card title="No Show" value={intNum(data.totals.not_arrived)} />
-  <Card title="Senza importo" value={intNum(data.totals.missing_amount_tickets)} />
+  <Card title="Senza ingresso tracciato" value={intNum(data.totals.not_arrived)} />
+  <Card title="Senza prezzo" value={intNum(data.totals.missing_amount_tickets)} />
 </div>
 
 
 
-            <div className="rounded-3xl border border-red-500/40 bg-red-950/30 p-5">
-              <div className="text-xs uppercase tracking-[0.25em] text-red-300">
-                Alert operativo
+            <div
+              className={`rounded-3xl border p-5 ${
+                (data.totals.unmapped_gate_scans || 0) +
+                    (data.totals.missing_scanner_data_scans || 0) >
+                  0
+                  ? "border-red-500/40 bg-red-950/30"
+                  : "border-emerald-500/30 bg-emerald-950/20"
+              }`}
+            >
+              <div className="text-xs uppercase tracking-[0.25em] text-white/60">
+                Mappatura scanner Xceed
               </div>
               <div className="mt-2 text-lg">
-                Gap Door vs Xceed: <b>{data.totals.gap_door_vs_xceed}</b>{" "}
-                ingressi registrati da Xceed ma non intercettati da Door.
+                <b>{data.totals.mapped_gate_scans}</b> ingressi attribuiti ai gate;{" "}
+                <b>{data.totals.unmapped_gate_scans || 0}</b> ingressi con email scanner
+                non configurata;{" "}
+                <b>{data.totals.missing_scanner_data_scans || 0}</b> ingressi per cui
+                Xceed non fornisce il dato scanner.
               </div>
             </div>
 
@@ -193,7 +221,7 @@ const typeLabels: Record<string, string> = {
                         <th className="px-3 py-3 md:px-4 text-right">Tot</th>
                         <th className="px-3 py-3 md:px-4 text-right">Entrati</th>
                         <th className="px-3 py-3 md:px-4 text-right">Out</th>
-                        <th className="px-3 py-3 md:px-4 text-right">Ricavi</th>
+                        <th className="px-3 py-3 md:px-4 text-right">Valore</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -229,7 +257,7 @@ const typeLabels: Record<string, string> = {
                 </div>
               </Panel>
 
-              <Panel title="Ricavi per tipo">
+              <Panel title="Valore titoli per tipo">
                 <div className="space-y-4">
 {typeOrder
   .filter((k) => data.by_type?.[k])
@@ -252,20 +280,20 @@ const typeLabels: Record<string, string> = {
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <Panel title="Ingressi per ruolo">
+              <Panel title="Ingressi tracciati per ruolo">
                 <div className="space-y-3">
                   {Object.entries(data.by_role || {}).map(([k, v]: any) => (
                     <BarRow
                       key={k}
                       label={k}
                       value={v}
-                      max={data.totals.checked_in_door || 1}
+                      max={data.totals.checked_in_xceed || 1}
                     />
                   ))}
                 </div>
               </Panel>
 
-              <Panel title="Ingressi per gate">
+              <Panel title="Ingressi tracciati per gate">
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   {Object.entries(data.by_gate || {}).map(([k, v]: any) => (
                     <div
@@ -282,7 +310,7 @@ const typeLabels: Record<string, string> = {
               </Panel>
             </div>
 
-            <Panel title="Timeline ingressi Door">
+            <Panel title="Timeline ingressi tracciati">
               <div className="max-h-[420px] space-y-2 overflow-y-auto pr-2">
                 {data.timeline.map((t: any, i: number) => {
                   const max = Math.max(

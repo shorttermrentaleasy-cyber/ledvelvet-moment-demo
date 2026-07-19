@@ -752,8 +752,10 @@ export async function GET(req: NextRequest) {
 
   const apiKey = process.env.XCEED_API_KEY;
   const baseUrl = process.env.XCEED_BASE_URL;
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceRole =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE;
 
   if (!apiKey || !baseUrl) {
     return NextResponse.json(
@@ -764,7 +766,10 @@ export async function GET(req: NextRequest) {
 
   if (!supabaseUrl || !supabaseServiceRole) {
     return NextResponse.json(
-      { ok: false, error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE" },
+      {
+        ok: false,
+        error: "Missing NEXT_PUBLIC_SUPABASE_URL or Supabase service role",
+      },
       { status: 500 }
     );
   }
@@ -776,6 +781,7 @@ export async function GET(req: NextRequest) {
   ).trim();
   const includeCancelledTickets =
     searchParams.get("includeCancelledTickets") || "true";
+  const skipDoorLive = searchParams.get("skipDoorLive") === "true";
   const debugQr = String(searchParams.get("qr") || "").trim();
   const mode = String(searchParams.get("mode") || "").trim().toLowerCase( );
   if (!xceedEventRef && !localEventIdFromQuery) {
@@ -1165,15 +1171,25 @@ const debugUpsertedRow = debugQr
   ? rows.find((r) => String(r.qr_code || "").trim() === debugQr) || null
   : null;
 
+let liveSyncResult = {
+  liveEventsWritten: 0,
+  liveEventsCandidates: 0,
+  liveEventsDebug: [] as any[],
+};
+
+if (!skipDoorLive) {
+  liveSyncResult = await insertDoorLiveEvents({
+    supabase,
+    req,
+    rows,
+  });
+}
+
 const {
   liveEventsWritten,
   liveEventsCandidates,
   liveEventsDebug,
-} = await insertDoorLiveEvents({
-  supabase,
-  req,
-  rows: rows,
-});
+} = liveSyncResult;
 
     const { count: totalRowsAfterSync, error: countErr } = await supabase
       .from("xceed_tickets")
@@ -1224,6 +1240,7 @@ const {
       live_events_candidates: liveEventsCandidates,
       live_events_written: liveEventsWritten,
       live_events_debug: liveEventsDebug,
+      door_live_skipped: skipDoorLive,
       total_rows_after_sync: Number(totalRowsAfterSync || 0),
       source: "tickets+bookings_merge",
       preview,
