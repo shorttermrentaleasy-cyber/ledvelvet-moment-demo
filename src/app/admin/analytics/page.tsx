@@ -171,9 +171,16 @@ const typeLabels: Record<string, string> = {
   <Card title="Gate attribuiti" value={intNum(data.totals.mapped_gate_scans)} />
 
   <Card
-    title="Scanner non configurati"
-    value={intNum(data.totals.unmapped_gate_scans)}
-    danger={data.totals.unmapped_gate_scans > 0}
+    title="Ingressi non attribuibili"
+    value={intNum(
+      (data.totals.unmapped_gate_scans || 0) +
+        (data.totals.missing_scanner_data_scans || 0)
+    )}
+    danger={
+      (data.totals.unmapped_gate_scans || 0) +
+        (data.totals.missing_scanner_data_scans || 0) >
+      0
+    }
   />
   <Card title="Tasso ingressi" value={`${conversion}%`} />
 
@@ -185,7 +192,9 @@ const typeLabels: Record<string, string> = {
 
             <div
               className={`rounded-3xl border p-5 ${
-                data.totals.unmapped_gate_scans > 0
+                (data.totals.unmapped_gate_scans || 0) +
+                    (data.totals.missing_scanner_data_scans || 0) >
+                  0
                   ? "border-red-500/40 bg-red-950/30"
                   : "border-emerald-500/30 bg-emerald-950/20"
               }`}
@@ -195,7 +204,10 @@ const typeLabels: Record<string, string> = {
               </div>
               <div className="mt-2 text-lg">
                 <b>{data.totals.mapped_gate_scans}</b> ingressi attribuiti ai gate;{" "}
-                <b>{data.totals.unmapped_gate_scans}</b> scanner senza configurazione.
+                <b>{data.totals.unmapped_gate_scans || 0}</b> ingressi con email scanner
+                non configurata;{" "}
+                <b>{data.totals.missing_scanner_data_scans || 0}</b> ingressi per cui
+                Xceed non fornisce il dato scanner.
               </div>
             </div>
 
