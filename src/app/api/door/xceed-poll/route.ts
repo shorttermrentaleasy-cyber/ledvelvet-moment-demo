@@ -166,14 +166,19 @@ export async function POST(req: NextRequest) {
     for (const keyChunk of chunks(liveKeys, 100)) {
       const { data: existing, error: existingError } = await supabase
         .from("door_live_events")
-        .select("live_key")
+        .select("live_key,result")
         .eq("event_id", eventId)
         .in("live_key", keyChunk);
 
       if (existingError) throw existingError;
 
       for (const row of existing || []) {
-        if (row.live_key) existingLiveKeys.add(String(row.live_key));
+        const retryable = ["NO_TICKET", "DB_ERROR", "FATAL_ERROR"].includes(
+          String(row.result || "")
+        );
+        if (row.live_key && !retryable) {
+          existingLiveKeys.add(String(row.live_key));
+        }
       }
     }
 
@@ -196,13 +201,15 @@ export async function POST(req: NextRequest) {
 
       const { error: ticketUpdateError } = await supabase
         .from("xceed_tickets")
-        .update({
+        .upsert({
+          event_id: eventId,
+          qr_code: qrCode,
           status: "checked_in",
           raw: ticket,
           imported_at: new Date().toISOString(),
-        })
-        .eq("event_id", eventId)
-        .eq("qr_code", qrCode);
+        }, {
+          onConflict: "event_id,qr_code",
+        });
 
       if (ticketUpdateError) throw ticketUpdateError;
 
