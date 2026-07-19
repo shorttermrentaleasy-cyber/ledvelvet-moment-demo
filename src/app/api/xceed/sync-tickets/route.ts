@@ -752,8 +752,10 @@ export async function GET(req: NextRequest) {
 
   const apiKey = process.env.XCEED_API_KEY;
   const baseUrl = process.env.XCEED_BASE_URL;
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceRole =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE;
 
   if (!apiKey || !baseUrl) {
     return NextResponse.json(
@@ -764,7 +766,10 @@ export async function GET(req: NextRequest) {
 
   if (!supabaseUrl || !supabaseServiceRole) {
     return NextResponse.json(
-      { ok: false, error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE" },
+      {
+        ok: false,
+        error: "Missing NEXT_PUBLIC_SUPABASE_URL or Supabase service role",
+      },
       { status: 500 }
     );
   }
