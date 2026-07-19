@@ -162,9 +162,9 @@ const typeLabels: Record<string, string> = {
 
   <Card title="Tickets" value={intNum(data.totals.tickets)} />
   <Card title="Xceed IN" value={intNum(data.totals.checked_in_xceed)} />
-  <Card title="Door IN" value={intNum(data.totals.checked_in_door)} />
+  <Card title="Gate assegnati" value={intNum(data.totals.mapped_gate_scans)} />
 
-  <Card title="Gap" value={intNum(data.totals.gap_door_vs_xceed)} danger />
+  <Card title="Non mappati" value={intNum(data.totals.unmapped_gate_scans)} danger />
   <Card title="Conversione" value={`${conversion}%`} />
 
   <Card title="No Show" value={intNum(data.totals.not_arrived)} />
@@ -173,13 +173,19 @@ const typeLabels: Record<string, string> = {
 
 
 
-            <div className="rounded-3xl border border-red-500/40 bg-red-950/30 p-5">
-              <div className="text-xs uppercase tracking-[0.25em] text-red-300">
-                Alert operativo
+            <div
+              className={`rounded-3xl border p-5 ${
+                data.totals.unmapped_gate_scans > 0
+                  ? "border-red-500/40 bg-red-950/30"
+                  : "border-emerald-500/30 bg-emerald-950/20"
+              }`}
+            >
+              <div className="text-xs uppercase tracking-[0.25em] text-white/60">
+                Mappatura scanner Xceed
               </div>
               <div className="mt-2 text-lg">
-                Gap Door vs Xceed: <b>{data.totals.gap_door_vs_xceed}</b>{" "}
-                ingressi registrati da Xceed ma non intercettati da Door.
+                <b>{data.totals.mapped_gate_scans}</b> ingressi assegnati ai gate;{" "}
+                <b>{data.totals.unmapped_gate_scans}</b> senza gate configurato.
               </div>
             </div>
 
@@ -252,20 +258,20 @@ const typeLabels: Record<string, string> = {
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <Panel title="Ingressi per ruolo">
+              <Panel title="Ingressi Xceed per ruolo">
                 <div className="space-y-3">
                   {Object.entries(data.by_role || {}).map(([k, v]: any) => (
                     <BarRow
                       key={k}
                       label={k}
                       value={v}
-                      max={data.totals.checked_in_door || 1}
+                      max={data.totals.checked_in_xceed || 1}
                     />
                   ))}
                 </div>
               </Panel>
 
-              <Panel title="Ingressi per gate">
+              <Panel title="Ingressi Xceed per gate">
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   {Object.entries(data.by_gate || {}).map(([k, v]: any) => (
                     <div
@@ -282,7 +288,7 @@ const typeLabels: Record<string, string> = {
               </Panel>
             </div>
 
-            <Panel title="Timeline ingressi Door">
+            <Panel title="Timeline ingressi Xceed">
               <div className="max-h-[420px] space-y-2 overflow-y-auto pr-2">
                 {data.timeline.map((t: any, i: number) => {
                   const max = Math.max(

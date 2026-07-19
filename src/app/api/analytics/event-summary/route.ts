@@ -36,6 +36,40 @@ function getQrCode(t: any): string | null {
   );
 }
 
+function getCheckedInBy(t: any): string {
+  const raw = t.raw || {};
+
+  return String(
+    raw?.checkedInBy ||
+      raw?.pass?.checkedInBy ||
+      raw?.ticket?.checkedInBy ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function getCheckedInDate(t: any): Date | null {
+  const raw = t.raw || {};
+  const value =
+    raw?.checkedInTime ||
+    raw?.pass?.checkedInTime ||
+    raw?.ticket?.checkedInTime ||
+    raw?.checkedInAt ||
+    raw?.pass?.checkedInAt ||
+    raw?.ticket?.checkedInAt ||
+    null;
+
+  if (!value) return null;
+
+  const numeric = Number(value);
+  const date = Number.isFinite(numeric)
+    ? new Date(numeric < 10_000_000_000 ? numeric * 1000 : numeric)
+    : new Date(String(value));
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function getAmountFromQr(qr: string | null): number | null {
   if (!qr) return null;
 
@@ -228,6 +262,19 @@ export async function GET(req: NextRequest) {
       from += batchSize;
     }
 
+    const { data: gates, error: gatesError } = await supabase
+      .from("door_gates")
+      .select("gate_id,door_role,xceed_email")
+      .eq("active", true);
+
+    if (gatesError) throw gatesError;
+
+    const gateByEmail = new Map<string, any>();
+    for (const gate of gates || []) {
+      const email = String(gate.xceed_email || "").trim().toLowerCase();
+      if (email) gateByEmail.set(email, gate);
+    }
+
     let door: any[] = [];
     let fromDoor = 0;
 
@@ -338,21 +385,32 @@ if (amountCents !== null) {
 
     const byGate: any = {};
     const byRole: any = {};
+    let mappedGateScans = 0;
+    let unmappedGateScans = 0;
 
-    for (const d of uniqueDoorEvents) {
-      const gate = d.gate_id || "unknown";
-      const role = d.door_role || "unknown";
+    for (const ticket of tickets) {
+      if (String(ticket.status || "").toLowerCase() !== "checked_in") continue;
 
-      byGate[gate] = (byGate[gate] || 0) + 1;
-      byRole[role] = (byRole[role] || 0) + 1;
+      const scannerEmail = getCheckedInBy(ticket);
+      const gate = scannerEmail ? gateByEmail.get(scannerEmail) : null;
+
+      if (!gate) {
+        unmappedGateScans += 1;
+        continue;
+      }
+
+      mappedGateScans += 1;
+      byGate[gate.gate_id] = (byGate[gate.gate_id] || 0) + 1;
+      byRole[gate.door_role] = (byRole[gate.door_role] || 0) + 1;
     }
 
     const timelineMap: any = {};
 
-    for (const d of uniqueDoorEvents) {
-      if (!d.created_at) continue;
+    for (const ticket of tickets) {
+      if (String(ticket.status || "").toLowerCase() !== "checked_in") continue;
 
-      const date = new Date(d.created_at);
+      const date = getCheckedInDate(ticket);
+      if (!date) continue;
       const minutes = Math.floor(date.getMinutes() / 15) * 15;
       date.setMinutes(minutes, 0, 0);
 
@@ -372,6 +430,8 @@ if (amountCents !== null) {
         checked_in_xceed: checkedIn,
         checked_in_door: checkedInDoor,
         gap_door_vs_xceed: checkedIn - checkedInDoor,
+        mapped_gate_scans: mappedGateScans,
+        unmapped_gate_scans: unmappedGateScans,
         not_arrived: totalTickets - checkedIn,
         conversion_rate: totalTickets > 0 ? checkedIn / totalTickets : 0,
         revenue_cents: revenueCents,
