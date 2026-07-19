@@ -291,6 +291,22 @@ export async function GET(req: NextRequest) {
       if (email) gateByEmail.set(email, gate);
     }
 
+    // Historical events may have a different gate/role assignment from the
+    // current Door configuration. Event overrides take precedence.
+    const { data: gateOverrides, error: gateOverridesError } = await supabase
+      .from("event_gate_overrides")
+      .select("gate_id,door_role,scanner_email")
+      .eq("event_id", eventId);
+
+    if (gateOverridesError && gateOverridesError.code !== "42P01") {
+      throw gateOverridesError;
+    }
+
+    for (const override of gateOverrides || []) {
+      const email = String(override.scanner_email || "").trim().toLowerCase();
+      if (email) gateByEmail.set(email, override);
+    }
+
     let door: any[] = [];
     let fromDoor = 0;
 
