@@ -442,14 +442,6 @@ if (amountCents !== null) {
       {
         ok: true,
         event_id: eventId,
-        source_debug: {
-          db_project: new URL(supabaseUrl).hostname.split(".")[0],
-          raw_rows: tickets.length,
-          raw_checked_in: tickets.filter(
-            (ticket) =>
-              String(ticket.status || "").toLowerCase() === "checked_in"
-          ).length,
-        },
         totals: {
         tickets: totalTickets,
         checked_in_xceed: checkedIn,
