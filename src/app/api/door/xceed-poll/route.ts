@@ -109,8 +109,13 @@ export async function POST(req: NextRequest) {
       return json({ ok: false, error: "Missing event_id" }, 400);
     }
 
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error("Missing env: NEXT_PUBLIC_SUPABASE_URL");
+    }
+
     const supabase = createClient(
-      requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      supabaseUrl,
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
         requiredEnv("SUPABASE_SERVICE_ROLE"),
       {
