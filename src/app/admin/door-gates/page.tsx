@@ -12,6 +12,14 @@ type Gate = {
   active: boolean;
 };
 
+type DoorEvent = {
+  id: string;
+  name: string;
+  starts_at: string | null;
+  venue: string | null;
+  city: string | null;
+};
+
 const emptyForm = {
   gate_id: "",
   name: "",
@@ -31,7 +39,10 @@ function DoorGatesContent() {
   const searchParams = useSearchParams();
 
   const [gates, setGates] = useState<Gate[]>([]);
+  const [events, setEvents] = useState<DoorEvent[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
@@ -45,6 +56,9 @@ function DoorGatesContent() {
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [linkBusyGateId, setLinkBusyGateId] = useState<string | null>(null);
+  const [linkFeedback, setLinkFeedback] = useState("");
+  const [linkError, setLinkError] = useState("");
 
   async function load() {
     setLoading(true);
@@ -52,6 +66,98 @@ function DoorGatesContent() {
     const json = await res.json();
     setGates(json.gates || []);
     setLoading(false);
+  }
+
+  async function loadEvents() {
+    setEventsLoading(true);
+    const res = await fetch("/api/admin/analytics-events", {
+      cache: "no-store",
+    });
+    const json = await res.json();
+    const rows = (json.events || []) as DoorEvent[];
+
+    setEvents(rows);
+    setSelectedEventId((current) => {
+      if (current && rows.some((event) => event.id === current)) return current;
+
+      const now = Date.now();
+      const upcoming = rows
+        .filter((event) => {
+          const time = event.starts_at ? new Date(event.starts_at).getTime() : 0;
+          return Number.isFinite(time) && time >= now;
+        })
+        .sort(
+          (left, right) =>
+            new Date(left.starts_at || 0).getTime() -
+            new Date(right.starts_at || 0).getTime()
+        );
+
+      return upcoming[0]?.id || rows[0]?.id || "";
+    });
+    setEventsLoading(false);
+  }
+
+  async function copyToClipboard(value: string) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+
+  async function prepareGateLink(gate: Gate, action: "open" | "copy") {
+    setLinkFeedback("");
+    setLinkError("");
+
+    if (!selectedEventId) {
+      setLinkError("Seleziona prima un evento.");
+      return;
+    }
+
+    const openedWindow = action === "open" ? window.open("about:blank", "_blank") : null;
+    setLinkBusyGateId(gate.gate_id);
+
+    try {
+      const res = await fetch("/api/admin/event-gate-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_id: selectedEventId,
+          gate_id: gate.gate_id,
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok || !json.link) {
+        openedWindow?.close();
+        throw new Error(json.error || "Errore nella creazione del link.");
+      }
+
+      if (action === "open") {
+        if (openedWindow) {
+          openedWindow.location.href = json.link;
+        } else {
+          window.location.href = json.link;
+        }
+        setLinkFeedback(`Fast Check aperto per ${gate.name}.`);
+      } else {
+        await copyToClipboard(json.link);
+        setLinkFeedback(`Link copiato per ${gate.name}.`);
+      }
+    } catch (err: any) {
+      openedWindow?.close();
+      setLinkError(err?.message || "Errore nella creazione del link.");
+    } finally {
+      setLinkBusyGateId(null);
+    }
   }
 
   async function toggleActive(gate: Gate) {
@@ -135,6 +241,7 @@ function DoorGatesContent() {
 
   useEffect(() => {
     load();
+    loadEvents();
 
     const email = searchParams.get("email");
     if (email) {
@@ -183,6 +290,60 @@ function DoorGatesContent() {
             </button>
           </div>
         </div>
+
+        <section className="mb-8 rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.06] p-5 shadow-xl backdrop-blur">
+          <div className="grid gap-4 md:grid-cols-[1fr_1.4fr] md:items-end">
+            <div>
+              <h2 className="text-xl font-bold">Link Fast Check per evento</h2>
+              <p className="mt-2 text-sm leading-6 text-white/60">
+                Seleziona l&apos;evento, poi apri o copia il link del gate. Al
+                primo utilizzo vengono conservati ruolo ed email Xceed validi
+                per quello specifico evento.
+              </p>
+            </div>
+
+            <label className="grid gap-2 text-sm font-semibold text-white/75">
+              Evento
+              <select
+                value={selectedEventId}
+                onChange={(event) => {
+                  setSelectedEventId(event.target.value);
+                  setLinkFeedback("");
+                  setLinkError("");
+                }}
+                disabled={eventsLoading || events.length === 0}
+                className="rounded-2xl border border-white/10 bg-[#16161A] px-4 py-3 text-white outline-none focus:border-cyan-300/60 disabled:opacity-50"
+              >
+                {events.length === 0 && (
+                  <option value="">
+                    {eventsLoading ? "Caricamento eventi..." : "Nessun evento disponibile"}
+                  </option>
+                )}
+                {events.map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {event.starts_at
+                      ? new Date(event.starts_at).toLocaleDateString("it-IT")
+                      : "Senza data"}
+                    {" · "}
+                    {event.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {linkFeedback && (
+            <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-200">
+              {linkFeedback}
+            </div>
+          )}
+
+          {linkError && (
+            <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+              {linkError}
+            </div>
+          )}
+        </section>
 
         <form
           onSubmit={createGate}
@@ -396,6 +557,34 @@ function DoorGatesContent() {
                         </>
                       ) : (
                         <>
+                          <button
+                            type="button"
+                            onClick={() => prepareGateLink(g, "open")}
+                            disabled={
+                              !g.active ||
+                              !selectedEventId ||
+                              linkBusyGateId === g.gate_id
+                            }
+                            className="rounded-2xl bg-cyan-300 px-5 py-3 text-sm font-bold text-black hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {linkBusyGateId === g.gate_id
+                              ? "Preparazione..."
+                              : "Apri Fast Check"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => prepareGateLink(g, "copy")}
+                            disabled={
+                              !g.active ||
+                              !selectedEventId ||
+                              linkBusyGateId === g.gate_id
+                            }
+                            className="rounded-2xl border border-cyan-300/30 bg-cyan-300/10 px-5 py-3 text-sm font-semibold text-cyan-100 hover:bg-cyan-300/15 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Copia link
+                          </button>
+
                           <button
                             onClick={() => startEdit(g)}
                             className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/15"
