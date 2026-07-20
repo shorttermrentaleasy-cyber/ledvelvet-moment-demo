@@ -613,7 +613,7 @@ async function loadWallyfor() {
 <section style={styles.guideBox}>
   <div style={styles.guideTitle}>Procedura soci (IMPORTANTE)</div>
 
-  <div style={styles.guideStep}>Aggiornamento automatico Wallyfor ogni ora.</div>
+  <div style={styles.guideStep}>Aggiornamento automatico Wallyfor ogni giorno.</div>
   <div style={styles.guideStep}>Il file XLS resta disponibile come procedura di emergenza.</div>
 </section>
           <div>
@@ -652,7 +652,7 @@ async function loadWallyfor() {
                   <div style={styles.cardDesc}>
                     {tab === "wallyfor" ? (
                       <>
-                        Sincronizzazione automatica ogni ora. Import manuale per <b>Barcode</b> disponibile come fallback.
+                        Sincronizzazione automatica ogni giorno. Import manuale per <b>Barcode</b> disponibile come fallback.
                       </>
                     ) : (
                       <>
