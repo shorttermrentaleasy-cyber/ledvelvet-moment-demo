@@ -46,9 +46,12 @@ export async function GET(req: Request) {
       auth: { persistSession: false },
     });
 
+    const extendedFields = "id, barcode, first_name, last_name, full_name, email, phone, membership_group, status, raw, membership_expires_at, source, is_present, missing_since, last_seen_at, updated_at";
+    const legacyFields = "id, barcode, first_name, last_name, full_name, email, phone, membership_group, status, raw, membership_expires_at, updated_at";
+
     let query = supabase
       .from("wallyfor_members")
-            .select("id, barcode, first_name, last_name, full_name, email, membership_group, status, raw, membership_expires_at, updated_at", { count: "exact" })
+      .select(extendedFields, { count: "exact" })
       .order("updated_at", { ascending: true })
       .range(offset, offset + limit - 1);
 
@@ -61,7 +64,32 @@ export async function GET(req: Request) {
       );
     }
 
-    const { data, error, count } = await query;
+    const initial = await query;
+    let data: any[] | null = initial.data;
+    let error = initial.error;
+    let count: number | null = initial.count;
+
+    // Durante il deploy precedente all'applicazione della migrazione la lista
+    // continua a funzionare con lo schema storico.
+    if (error && /source|is_present|missing_since|last_seen_at/i.test(error.message)) {
+      let fallback = supabase
+        .from("wallyfor_members")
+        .select(legacyFields, { count: "exact" })
+        .order("updated_at", { ascending: true })
+        .range(offset, offset + limit - 1);
+      if (status && status !== "all") fallback = fallback.eq("status", status);
+      if (q) {
+        const like = safeLike(q);
+        fallback = fallback.or(
+          `barcode.ilike.${like},full_name.ilike.${like},email.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`
+        );
+      }
+      const legacy = await fallback;
+      data = legacy.data;
+      error = legacy.error;
+      count = legacy.count;
+    }
+
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
     return NextResponse.json({

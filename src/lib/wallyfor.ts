@@ -34,6 +34,12 @@ export type WallyforMember = {
   status: string | null;
   membership_group: string | null;
   membership_expires_at: string | null;
+  raw: WallyforPass;
+};
+
+export type WallyforSnapshot = {
+  members: WallyforMember[];
+  pages: number;
 };
 
 export class WallyforApiError extends Error {
@@ -94,22 +100,24 @@ function mapPass(pass: WallyforPass): WallyforMember | null {
     status: normalizeStatus(pass.stato),
     membership_group: nullableText(pass.gruppo?.nome),
     membership_expires_at: normalizeExpiryDate(pass.scadenza),
+    raw: pass,
   };
 }
 
-export async function findWallyforMembersByEmail(
-  email: string
-): Promise<WallyforMember[]> {
-  const normalizedEmail = normalizeEmail(email);
-  if (!normalizedEmail) return [];
-
+async function fetchPassesPage(params: {
+  email?: string;
+  page?: number;
+  perPage: number;
+  timeoutMs?: number;
+}): Promise<WallyforPass[]> {
   const baseUrl = String(
     process.env.WALLYFOR_BASE_URL || DEFAULT_WALLYFOR_BASE_URL
   ).replace(/\/$/, "");
   const url = new URL(`${baseUrl}/passes.php`);
   url.searchParams.set("ID", requiredEnv("WALLYFOR_ASSOCIATION_ID"));
-  url.searchParams.set("email", normalizedEmail);
-  url.searchParams.set("perPage", "500");
+  url.searchParams.set("perPage", String(params.perPage));
+  if (params.email) url.searchParams.set("email", params.email);
+  if (params.page) url.searchParams.set("page", String(params.page));
 
   let response: Response;
   try {
@@ -120,7 +128,7 @@ export async function findWallyforMembersByEmail(
         Accept: "application/json",
       },
       cache: "no-store",
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(params.timeoutMs ?? 15000),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Network error";
@@ -139,7 +147,61 @@ export async function findWallyforMembersByEmail(
     );
   }
 
-  return payload.data
+  return payload.data;
+}
+
+export async function fetchAllWallyforMembers(): Promise<WallyforSnapshot> {
+  const perPage = 500;
+  const maxPages = 100;
+  const members = new Map<string, WallyforMember>();
+  let previousSignature: string | null = null;
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const passes = await fetchPassesPage({ page, perPage });
+    const signature = passes
+      .slice(0, 5)
+      .map((pass) => String(pass?.barcode || ""))
+      .join("|");
+
+    if (page > 1 && passes.length > 0 && signature === previousSignature) {
+      throw new WallyforApiError(
+        "Wallyfor pagination repeated the same page; snapshot aborted",
+        502,
+        "PAGINATION_REPEATED"
+      );
+    }
+    previousSignature = signature;
+
+    for (const pass of passes) {
+      const member = mapPass(pass);
+      if (member) members.set(member.barcode, member);
+    }
+
+    if (passes.length < perPage) {
+      return { members: Array.from(members.values()), pages: page };
+    }
+  }
+
+  throw new WallyforApiError(
+    "Wallyfor snapshot exceeded the pagination safety limit",
+    502,
+    "PAGINATION_LIMIT"
+  );
+}
+
+export async function findWallyforMembersByEmail(
+  email: string
+): Promise<WallyforMember[]> {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return [];
+
+  const passes = await fetchPassesPage({
+    email: normalizedEmail,
+    perPage: 500,
+    timeoutMs: 4000,
+  });
+
+  return passes
     .filter((pass) => normalizeEmail(pass.email) === normalizedEmail)
     .map(mapPass)
     .filter((member): member is WallyforMember => Boolean(member));

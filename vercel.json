@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/wallyfor-sync",
+      "schedule": "17 * * * *"
+    }
+  ]
+}

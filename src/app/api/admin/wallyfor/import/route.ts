@@ -130,6 +130,9 @@ export async function POST(req: Request) {
           row?.raw && typeof row.raw === "object"
             ? row.raw
             : {},
+        source: "xls",
+        is_present: true,
+        missing_since: null,
         updated_at: nowIso,
       }))
       .filter((row) => row.barcode);
@@ -157,11 +160,21 @@ export async function POST(req: Request) {
       }
     );
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from("wallyfor_members")
       .upsert(cleaned, {
         onConflict: "barcode",
       });
+
+    if (error && /source|is_present|missing_since/i.test(error.message)) {
+      const legacyRows = cleaned.map(
+        ({ source: _source, is_present: _isPresent, missing_since: _missingSince, ...row }) => row
+      );
+      const fallback = await supabase
+        .from("wallyfor_members")
+        .upsert(legacyRows, { onConflict: "barcode" });
+      error = fallback.error;
+    }
 
     if (error) {
       return NextResponse.json(

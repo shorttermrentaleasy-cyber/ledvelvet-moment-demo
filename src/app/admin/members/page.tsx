@@ -21,6 +21,18 @@ type WallyRow = {
   membership_year?: string | null;
   raw: any;
   updated_at: string;
+  source?: string | null;
+  is_present?: boolean;
+  missing_since?: string | null;
+  last_seen_at?: string | null;
+};
+
+type SyncState = {
+  status?: string;
+  last_success_at?: string | null;
+  last_error?: string | null;
+  fetched_count?: number;
+  missing_count?: number;
 };
 
 function normHeader(s: string) {
@@ -335,6 +347,7 @@ export default function AdminMembersPage() {
 
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<SyncState | null>(null);
 
   const [qrOpen, setQrOpen] = useState(false);
   const [qrValue, setQrValue] = useState<string>("");
@@ -353,13 +366,13 @@ export default function AdminMembersPage() {
 
   const subtitle = useMemo(() => {
     return tab === "wallyfor"
-      ? "Importa e visualizza i soci ETS (fonte: export Wallyfor)."
+      ? "Anagrafica soci aggiornata automaticamente da Wallyfor. XLS disponibile come fallback."
       : tab === "members"
       ? "Vista operativa soci ETS (tabella members). Questa è la fonte usata dal sistema (DoorCheck)."
       : "Placeholder. Qui gestiremo i partecipanti/non-soci da convertire in ETS (step successivo).";
   }, [tab]);
 
-  async function loadWallyfor() {
+async function loadWallyfor() {
   setLoading(true);
   setErr(null);
 
@@ -393,6 +406,37 @@ export default function AdminMembersPage() {
     setLoading(false);
   }
 }
+
+  async function loadSyncState() {
+    try {
+      const json = await fetchJsonSafe("/api/admin/wallyfor/refresh", {
+        cache: "no-store",
+      });
+      setSyncState(json.state || null);
+    } catch {
+      setSyncState(null);
+    }
+  }
+
+  async function refreshFromWallyfor() {
+    setSyncing(true);
+    setSyncMsg(null);
+    setErr(null);
+    try {
+      const json = await fetchJsonSafe("/api/admin/wallyfor/refresh", {
+        method: "POST",
+      });
+      setSyncMsg(
+        `Aggiornamento Wallyfor completato: ${Number(json.fetched || 0)} soci, ${Number(json.missing || 0)} non più restituiti.`
+      );
+      await Promise.all([loadWallyfor(), loadSyncState()]);
+    } catch (e: any) {
+      setErr(e?.message || "wallyfor_refresh_failed");
+      await loadSyncState();
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function loadMembers() {
     setLoading(true);
@@ -469,7 +513,10 @@ export default function AdminMembersPage() {
     setSyncMsg(null);
     setErr(null);
 
-    if (tab === "wallyfor") loadWallyfor();
+    if (tab === "wallyfor") {
+      loadWallyfor();
+      loadSyncState();
+    }
     if (tab === "members") loadMembers();
     if (tab === "legacy") {
       setRows([]);
@@ -566,17 +613,8 @@ export default function AdminMembersPage() {
 <section style={styles.guideBox}>
   <div style={styles.guideTitle}>Procedura soci (IMPORTANTE)</div>
 
-  <div style={styles.guideStep}>
-    1️⃣ Importa file da Wallyfor
-  </div>
-
-  <div style={styles.guideStep}>
-    2️⃣ Premi &quot;Sync → members&quot;
-  </div>
-
-  <div style={styles.guideStep}>
-    3️⃣ I soci sono pronti per DoorCheck
-  </div>
+  <div style={styles.guideStep}>Aggiornamento automatico Wallyfor ogni ora.</div>
+  <div style={styles.guideStep}>Il file XLS resta disponibile come procedura di emergenza.</div>
 </section>
           <div>
             <div style={styles.kicker}>LED VELVET • ADMIN</div>
@@ -609,12 +647,12 @@ export default function AdminMembersPage() {
               <div style={styles.cardTop}>
                 <div>
                   <div style={styles.cardTitle}>
-                    {tab === "wallyfor" ? "Import Wallyfor " : "Soci ETS (Members)"}
+                    {tab === "wallyfor" ? "Anagrafica Wallyfor" : "Soci ETS (Members)"}
                   </div>
                   <div style={styles.cardDesc}>
                     {tab === "wallyfor" ? (
                       <>
-                        Carica l’export Wallyfor. Upsert per <b>Barcode</b>. Tutte le colonne finiscono in <b>raw</b>.
+                        Sincronizzazione automatica ogni ora. Import manuale per <b>Barcode</b> disponibile come fallback.
                       </>
                     ) : (
                       <>
@@ -627,8 +665,16 @@ export default function AdminMembersPage() {
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   {tab === "wallyfor" ? (
                     <>
+                      <button
+                        type="button"
+                        onClick={refreshFromWallyfor}
+                        disabled={syncing || importing}
+                        style={syncing ? styles.primaryBtnDisabled : styles.primaryBtn}
+                      >
+                        {syncing ? "Aggiornamento..." : "Aggiorna da Wallyfor"}
+                      </button>
                       <label style={importing ? styles.primaryBtnDisabled : styles.primaryBtn}>
-                        {importing ? "Import in corso..." : "Import File"}
+                        {importing ? "Import in corso..." : "Import XLS (fallback)"}
                         <input
                           type="file"
                           accept=".csv,.xls,text/csv,application/vnd.ms-excel"
@@ -641,10 +687,10 @@ export default function AdminMembersPage() {
                       <button
                         type="button"
                         onClick={() => runSyncToMembers(10000)}
-                        disabled={syncing}
-                        style={syncing ? styles.primaryBtnDisabled : styles.primaryBtn}
+                        disabled={syncing || importing}
+                        style={syncing ? styles.primaryBtnDisabled : styles.secondaryBtn}
                       >
-                        {syncing ? "Sync in corso..." : "Sync → members"}
+                        Sync XLS → members
                       </button>
                     </>
                   ) : null}
@@ -653,6 +699,19 @@ export default function AdminMembersPage() {
 
               {importMsg ? <div style={styles.okBox}>{importMsg}</div> : null}
               {syncMsg ? <div style={styles.okBox}>{syncMsg}</div> : null}
+              {tab === "wallyfor" && syncState ? (
+                <div style={styles.syncInfo}>
+                  Ultimo aggiornamento: {syncState.last_success_at
+                    ? new Date(syncState.last_success_at).toLocaleString("it-IT")
+                    : "mai"}
+                  {typeof syncState.fetched_count === "number"
+                    ? ` · ${syncState.fetched_count} soci ricevuti`
+                    : ""}
+                  {syncState.status === "error" && syncState.last_error
+                    ? ` · Errore: ${syncState.last_error}`
+                    : ""}
+                </div>
+              ) : null}
               {err ? <div style={styles.errBox}>{String(err)}</div> : null}
 
               <div style={styles.filtersGrid}>
@@ -722,6 +781,7 @@ export default function AdminMembersPage() {
         <th style={styles.th}>Codice fiscale</th>
         <th style={styles.th}>Barcode</th>
         <th style={styles.th}>Validità</th>
+        {tab === "wallyfor" ? <th style={styles.th}>Presenza Wallyfor</th> : null}
         <th style={styles.th}>Scadenza</th>
         <th style={styles.th} />
       </tr>
@@ -742,6 +802,15 @@ export default function AdminMembersPage() {
             <td style={styles.tdMono}>{cf || "—"}</td>
             <td style={styles.tdMono}>{r.barcode || "—"}</td>
             <td style={styles.td}>{r.status || "—"}</td>
+            {tab === "wallyfor" ? (
+              <td style={styles.td}>
+                {r.source === "wallyfor_api"
+                  ? r.is_present === false
+                    ? "NON PIÙ RESTITUITO"
+                    : "PRESENTE"
+                  : "IMPORT XLS"}
+              </td>
+            ) : null}
             <td style={styles.td}>
             {r.membership_expires_at
             ? new Date(`${r.membership_expires_at}T00:00:00`).toLocaleDateString("it-IT")
@@ -959,6 +1028,15 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(0,255,209,0.08)",
     fontSize: 13,
     opacity: 0.9,
+  },
+  syncInfo: {
+    marginTop: 12,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.05)",
+    padding: "10px 12px",
+    fontSize: 13,
+    opacity: 0.85,
   },
   errBox: {
     marginTop: 10,
