@@ -47,7 +47,7 @@ export async function GET(req: Request) {
     });
 
     const extendedFields = "id, barcode, first_name, last_name, full_name, email, phone, membership_group, status, raw, membership_expires_at, source, is_present, missing_since, last_seen_at, updated_at";
-    const legacyFields = "id, barcode, first_name, last_name, full_name, email, phone, membership_group, status, raw, membership_expires_at, updated_at";
+    const legacyFields = "id, barcode, first_name, last_name, full_name, email, membership_group, status, raw, membership_expires_at, updated_at";
 
     let query = supabase
       .from("wallyfor_members")
@@ -71,7 +71,7 @@ export async function GET(req: Request) {
 
     // Durante il deploy precedente all'applicazione della migrazione la lista
     // continua a funzionare con lo schema storico.
-    if (error && /source|is_present|missing_since|last_seen_at/i.test(error.message)) {
+    if (error && /phone|source|is_present|missing_since|last_seen_at/i.test(error.message)) {
       let fallback = supabase
         .from("wallyfor_members")
         .select(legacyFields, { count: "exact" })

@@ -1,4 +1,5 @@
 alter table public.wallyfor_members
+  add column if not exists phone text,
   add column if not exists source text not null default 'xls',
   add column if not exists is_present boolean not null default true,
   add column if not exists last_seen_at timestamptz,
