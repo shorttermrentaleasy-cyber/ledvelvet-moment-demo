@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  findWallyforMembersByEmail,
+  WallyforApiError,
+} from "@/lib/wallyfor";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +29,8 @@ type MemberRow = {
   membership_group: string | null;
   membership_expires_at: string | null;
 };
+
+type MemberSource = "wallyfor_api" | "supabase_fallback";
 
 function assertEnv(name: string): string {
   const value = process.env[name];
@@ -64,10 +70,19 @@ function normalizeDoorRole(value: unknown): DoorRole | null {
 function getMemberRole(member: MemberRow): DoorRole {
   const group = normalize(member.membership_group).toLowerCase();
   if (group.includes("loyalty")) return "loyalty";
-  if (group.includes("ledvelvet") || group.includes("staff")) {
+  if (
+    group.includes("consiglio direttivo") ||
+    group.includes("ledvelvet") ||
+    group.includes("staff")
+  ) {
     return "privileged";
   }
   return "ordinary";
+}
+
+function canUseGate(memberRole: DoorRole, gateRole: DoorRole | null): boolean {
+  if (!gateRole || memberRole === "privileged") return true;
+  return memberRole === gateRole;
 }
 
 function todayIsoDate(): string {
@@ -188,6 +203,21 @@ function resolveMember(
   }
 
   return null;
+}
+
+async function findLocalMembersByEmail(
+  supabase: any,
+  email: string
+): Promise<MemberRow[]> {
+  const { data, error } = await supabase
+    .from("members")
+    .select(
+      "id,first_name,last_name,email,status,membership_group,membership_expires_at"
+    )
+    .ilike("email", email);
+
+  if (error) throw error;
+  return (data || []) as MemberRow[];
 }
 
 export async function POST(req: NextRequest) {
@@ -313,27 +343,41 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: members, error: memberError } = await supabase
-      .from("members")
-      .select(
-        "id,first_name,last_name,email,status,membership_group,membership_expires_at"
-      )
-      .ilike("email", ticketEmail);
+    let memberRows: MemberRow[] = [];
+    let memberSource: MemberSource = "wallyfor_api";
+    let wallyforFallbackReason: string | null = null;
 
-    if (memberError) {
-      console.error("FAST_CHECK_MEMBER_ERROR", memberError);
-
-      return jsonFast(
-        false,
-        "DB_ERROR",
-        "Errore durante il controllo della tessera.",
-        {
-          ms: Date.now() - startedAt,
-        }
-      );
+    try {
+      memberRows = await findWallyforMembersByEmail(ticketEmail);
+    } catch (error) {
+      memberSource = "supabase_fallback";
+      wallyforFallbackReason =
+        error instanceof WallyforApiError
+          ? error.code || String(error.status)
+          : "UNKNOWN_ERROR";
+      console.error("FAST_CHECK_WALLYFOR_ERROR", error);
     }
 
-    const memberRows = (members || []) as MemberRow[];
+    if (memberRows.length === 0) {
+      memberSource = "supabase_fallback";
+
+      try {
+        memberRows = await findLocalMembersByEmail(supabase, ticketEmail);
+      } catch (memberError) {
+        console.error("FAST_CHECK_MEMBER_ERROR", memberError);
+
+        return jsonFast(
+          false,
+          "DB_ERROR",
+          "Errore durante il controllo della tessera.",
+          {
+            ms: Date.now() - startedAt,
+            membership_source: memberSource,
+            wallyfor_fallback_reason: wallyforFallbackReason,
+          }
+        );
+      }
+    }
 
     if (memberRows.length === 0) {
       return jsonFast(
@@ -347,6 +391,8 @@ export async function POST(req: NextRequest) {
           ticket_first_name: ticketFirstName,
           ticket_last_name: ticketLastName,
           ticket_status: ticketStatus || null,
+          membership_source: memberSource,
+          wallyfor_fallback_reason: wallyforFallbackReason,
         }
       );
     }
@@ -370,6 +416,8 @@ export async function POST(req: NextRequest) {
           ticket_last_name: ticketLastName,
           matching_members: memberRows.length,
           ticket_status: ticketStatus || null,
+          membership_source: memberSource,
+          wallyfor_fallback_reason: wallyforFallbackReason,
         }
       );
     }
@@ -393,6 +441,26 @@ export async function POST(req: NextRequest) {
           member_status: memberStatus,
           membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
+          membership_source: memberSource,
+        }
+      );
+    }
+
+    if (memberStatus === "REVOCATA") {
+      return jsonFast(
+        true,
+        "MEMBERSHIP_INACTIVE",
+        "La tessera risulta revocata.",
+        {
+          ms: Date.now() - startedAt,
+          checked_in: isCheckedIn,
+          member_id: member.id,
+          member_first_name: member.first_name,
+          member_last_name: member.last_name,
+          member_status: memberStatus,
+          membership_group: member.membership_group,
+          membership_expires_at: membershipExpiresAt || null,
+          membership_source: memberSource,
         }
       );
     }
@@ -415,6 +483,7 @@ export async function POST(req: NextRequest) {
           member_status: memberStatus,
           membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
+          membership_source: memberSource,
         }
       );
     }
@@ -433,6 +502,7 @@ export async function POST(req: NextRequest) {
           member_status: memberStatus || null,
           membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
+          membership_source: memberSource,
         }
       );
     }
@@ -448,11 +518,11 @@ export async function POST(req: NextRequest) {
       membership_expires_at: member.membership_expires_at,
     };
 
-    if (gateRole && gateRole !== memberRole) {
+    if (!canUseGate(memberRole, gateRole)) {
       return jsonFast(
         true,
         "WRONG_GATE",
-        `Gate non corretto: socio ${memberRole.toUpperCase()}, gate ${gateRole.toUpperCase()}.`,
+        `Gate non corretto: socio ${memberRole.toUpperCase()}, gate ${String(gateRole).toUpperCase()}.`,
         {
           ms: Date.now() - startedAt,
           checked_in: isCheckedIn,
@@ -460,6 +530,7 @@ export async function POST(req: NextRequest) {
           member_role: memberRole,
           gate_role: gateRole,
           member: memberPayload,
+          membership_source: memberSource,
         }
       );
     }
@@ -476,6 +547,7 @@ export async function POST(req: NextRequest) {
         member_role: memberRole,
         gate_role: gateRole,
         member: memberPayload,
+        membership_source: memberSource,
       }
     );
   } catch (error) {
