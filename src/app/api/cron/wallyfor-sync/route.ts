@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { syncWallyforSnapshot } from "@/lib/wallyfor-sync";
+import { readableSyncError, syncWallyforSnapshot } from "@/lib/wallyfor-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, ...(await syncWallyforSnapshot()) });
   } catch (error) {
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "server_error" },
+      { ok: false, error: readableSyncError(error) },
       { status: 500 }
     );
   }

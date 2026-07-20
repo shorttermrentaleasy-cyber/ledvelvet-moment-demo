@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
-import { getWallyforSyncState, syncWallyforSnapshot } from "@/lib/wallyfor-sync";
+import { getWallyforSyncState, readableSyncError, syncWallyforSnapshot } from "@/lib/wallyfor-sync";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,7 +25,7 @@ export async function GET() {
     return NextResponse.json({ ok: true, state: await getWallyforSyncState() });
   } catch (error) {
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "server_error" },
+      { ok: false, error: readableSyncError(error) },
       { status: 500 }
     );
   }
@@ -39,7 +39,7 @@ export async function POST() {
     return NextResponse.json({ ok: true, ...(await syncWallyforSnapshot()) });
   } catch (error) {
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "server_error" },
+      { ok: false, error: readableSyncError(error) },
       { status: 500 }
     );
   }

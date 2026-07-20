@@ -7,6 +7,24 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+export function readableSyncError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const value = error as Record<string, unknown>;
+    const parts = [value.message, value.details, value.hint, value.code]
+      .filter((item) => typeof item === "string" && item.trim())
+      .map(String);
+    if (parts.length) return parts.join(" · ");
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Unknown structured error";
+    }
+  }
+  return String(error || "Unknown error");
+}
+
 function fullName(firstName: string | null, lastName: string | null) {
   return [firstName, lastName].filter(Boolean).join(" ").trim() || null;
 }
@@ -139,7 +157,7 @@ export async function syncWallyforSnapshot(): Promise<WallyforSyncResult> {
 
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = readableSyncError(error);
     await supabase.from("wallyfor_sync_state").upsert({
       id: 1,
       status: "error",
