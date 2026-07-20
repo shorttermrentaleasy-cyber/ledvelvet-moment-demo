@@ -37,6 +37,8 @@ type FastResponse = {
   } | null;
   member_first_name?: string | null;
   member_last_name?: string | null;
+  member_email?: string | null;
+  member_phone?: string | null;
   member_status?: string | null;
   membership_group?: string | null;
   ticket_first_name?: string | null;
@@ -342,6 +344,10 @@ export default function FastDoorClient() {
     (decision === "MEMBER_NOT_FOUND" ? "NON SOCIO" : "");
   const membershipStatus =
     resultDetails?.member?.status || resultDetails?.member_status || "";
+  const memberEmail = resultDetails?.member_email || "";
+  const memberPhone = resultDetails?.member_phone || "";
+  const showRenewalContact =
+    decision === "MEMBERSHIP_INACTIVE" || decision === "MEMBERSHIP_EXPIRED";
   const eventDate = context?.event?.starts_at
     ? new Date(context.event.starts_at).toLocaleDateString("it-IT", {
         day: "2-digit",
@@ -467,6 +473,13 @@ export default function FastDoorClient() {
           </div>
         )}
 
+        {showRenewalContact && (memberEmail || memberPhone) && (
+          <div className="flex max-w-xl flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-white/70">
+            {memberEmail && <span>{memberEmail}</span>}
+            {memberPhone && <span>{memberPhone}</span>}
+          </div>
+        )}
+
         {decision && (
           <>
             <div className="text-xs uppercase tracking-[0.2em] text-white/35">
@@ -545,6 +558,12 @@ export default function FastDoorClient() {
             <div className="mt-1 text-sm text-white/55">
               Inquadra il QR con il telefono
             </div>
+            {showRenewalContact && (memberEmail || memberPhone) && (
+              <div className="mt-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/75">
+                {memberEmail && <div>{memberEmail}</div>}
+                {memberPhone && <div>{memberPhone}</div>}
+              </div>
+            )}
             <div className="mx-auto mt-4 w-fit rounded-2xl bg-white p-4">
               <QRCode value={wallyAction.url} size={240} />
             </div>

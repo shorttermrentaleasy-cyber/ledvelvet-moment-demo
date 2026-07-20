@@ -25,6 +25,7 @@ type MemberRow = {
   first_name: string | null;
   last_name: string | null;
   email: string | null;
+  phone: string | null;
   status: string | null;
   membership_group: string | null;
   membership_expires_at: string | null;
@@ -212,7 +213,7 @@ async function findLocalMembersByEmail(
   const { data, error } = await supabase
     .from("members")
     .select(
-      "id,first_name,last_name,email,status,membership_group,membership_expires_at"
+      "id,first_name,last_name,email,phone,status,membership_group,membership_expires_at"
     )
     .ilike("email", email);
 
@@ -438,6 +439,8 @@ export async function POST(req: NextRequest) {
           member_id: member.id,
           member_first_name: member.first_name,
           member_last_name: member.last_name,
+          member_email: member.email,
+          member_phone: member.phone,
           member_status: memberStatus,
           membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
@@ -457,6 +460,8 @@ export async function POST(req: NextRequest) {
           member_id: member.id,
           member_first_name: member.first_name,
           member_last_name: member.last_name,
+          member_email: member.email,
+          member_phone: member.phone,
           member_status: memberStatus,
           membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
@@ -480,6 +485,8 @@ export async function POST(req: NextRequest) {
           member_id: member.id,
           member_first_name: member.first_name,
           member_last_name: member.last_name,
+          member_email: member.email,
+          member_phone: member.phone,
           member_status: memberStatus,
           membership_group: member.membership_group,
           membership_expires_at: membershipExpiresAt || null,
