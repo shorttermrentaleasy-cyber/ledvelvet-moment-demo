@@ -34,5 +34,4 @@ comment on column public.wallyfor_members.missing_since is
   'First completed snapshot in which an API member was no longer returned; the member is never deleted.';
 
 -- Wallyfor può contenere contatti telefonici condivisi tra più soci.
-alter table public.members
-  drop constraint if exists members_phone_unique;
+drop index if exists public.members_phone_unique;
