@@ -411,7 +411,7 @@ export default function FastDoorClient() {
       onClick={() => inputRef.current?.focus()}
     >
       <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-3 px-3 py-3 sm:px-5">
-        <header className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+        <header className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
           <div>
             <div className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
               Fast Check
@@ -423,7 +423,7 @@ export default function FastDoorClient() {
               {[eventDate, eventPlace].filter(Boolean).join(" · ") || eventId}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 sm:justify-end">
+          <div className="flex flex-wrap gap-2">
             <div
               className="flex rounded-full border border-white/15 bg-white/5 p-0.5"
               onClick={(event) => event.stopPropagation()}
