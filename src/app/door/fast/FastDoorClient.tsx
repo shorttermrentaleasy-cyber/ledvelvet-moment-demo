@@ -12,6 +12,7 @@ const WALLY_RENEWAL_URL =
   "https://wallyfor.com/rinnovi/index.php?idcode=5355";
 
 type FastStatus = "idle" | "ok" | "warning" | "no";
+type AdvanceMode = "automatic" | "manual";
 
 type FastDecision =
   | "OK_ACCESS"
@@ -84,6 +85,7 @@ export default function FastDoorClient() {
   const [connectionState, setConnectionState] = useState<"connecting" | "online" | "retrying">("connecting");
   const [lastScanAt, setLastScanAt] = useState<Date | null>(null);
   const [wallyQrOpen, setWallyQrOpen] = useState(false);
+  const [advanceMode, setAdvanceMode] = useState<AdvanceMode>("automatic");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,6 +100,11 @@ export default function FastDoorClient() {
   useEffect(() => {
     inputRef.current?.focus();
 
+    const savedMode = window.localStorage.getItem("fast-check-advance-mode");
+    if (savedMode === "automatic" || savedMode === "manual") {
+      setAdvanceMode(savedMode);
+    }
+
     document.documentElement.requestFullscreen?.().catch(() => {});
 
     return () => {
@@ -105,6 +112,11 @@ export default function FastDoorClient() {
         clearTimeout(resetTimerRef.current);
       }
     };
+  }, []);
+
+  const changeAdvanceMode = useCallback((mode: AdvanceMode) => {
+    setAdvanceMode(mode);
+    window.localStorage.setItem("fast-check-advance-mode", mode);
   }, []);
 
   const playOkFeedback = useCallback(() => {
@@ -137,11 +149,26 @@ export default function FastDoorClient() {
     }
 
     if (keepsResultOpen(nextDecision)) return;
+    if (nextDecision === "OK_ACCESS" && advanceMode === "manual") return;
 
     resetTimerRef.current = setTimeout(() => {
       resetScanner();
     }, 2500);
-  }, [resetScanner]);
+  }, [advanceMode, resetScanner]);
+
+  useEffect(() => {
+    if (decision !== "OK_ACCESS") return;
+
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+    }
+
+    if (advanceMode === "automatic") {
+      resetTimerRef.current = setTimeout(() => {
+        resetScanner();
+      }, 2500);
+    }
+  }, [advanceMode, decision, resetScanner]);
 
   const applyDecision = useCallback((data: FastResponse) => {
     const nextDecision = data.decision || "FATAL_ERROR";
@@ -360,7 +387,9 @@ export default function FastDoorClient() {
     .join(" · ");
   const gateRole = String(context?.gate?.door_role || resultDetails?.gate_role || "")
     .toUpperCase();
-  const resultStaysOpen = Boolean(decision && keepsResultOpen(decision));
+  const resultStaysOpen = Boolean(
+    decision && (keepsResultOpen(decision) || advanceMode === "manual")
+  );
   const wallyAction =
     decision === "MEMBER_NOT_FOUND"
       ? {
@@ -395,6 +424,34 @@ export default function FastDoorClient() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 sm:justify-end">
+            <div
+              className="flex rounded-full border border-white/15 bg-white/5 p-0.5"
+              onClick={(event) => event.stopPropagation()}
+              aria-label="Modalità avanzamento Fast Check"
+            >
+              <button
+                type="button"
+                onClick={() => changeAdvanceMode("automatic")}
+                className={`rounded-full px-3 py-1 text-[11px] font-black uppercase transition ${
+                  advanceMode === "automatic"
+                    ? "bg-cyan-300 text-black"
+                    : "text-white/50 hover:text-white"
+                }`}
+              >
+                Automatico
+              </button>
+              <button
+                type="button"
+                onClick={() => changeAdvanceMode("manual")}
+                className={`rounded-full px-3 py-1 text-[11px] font-black uppercase transition ${
+                  advanceMode === "manual"
+                    ? "bg-cyan-300 text-black"
+                    : "text-white/50 hover:text-white"
+                }`}
+              >
+                Manuale
+              </button>
+            </div>
             <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-bold uppercase">
               {context?.gate?.name || gateId}
             </span>
@@ -473,10 +530,10 @@ export default function FastDoorClient() {
           </div>
         )}
 
-        {showRenewalContact && (memberEmail || memberPhone) && (
+        {(memberEmail || memberPhone) && (
           <div className="flex max-w-xl flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-white/70">
-            {memberEmail && <span>{memberEmail}</span>}
-            {memberPhone && <span>{memberPhone}</span>}
+            {memberEmail && <span>Email: {memberEmail}</span>}
+            {memberPhone && <span>Cellulare: {memberPhone}</span>}
           </div>
         )}
 
@@ -508,7 +565,7 @@ export default function FastDoorClient() {
                   }}
                   className="rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black uppercase tracking-wide hover:bg-white/15"
                 >
-                  Operazione conclusa
+                  {decision === "OK_ACCESS" ? "Continua" : "Operazione conclusa"}
                 </button>
               </div>
             )}
