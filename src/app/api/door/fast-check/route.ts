@@ -520,6 +520,7 @@ export async function POST(req: NextRequest) {
       first_name: member.first_name,
       last_name: member.last_name,
       email: member.email,
+      phone: member.phone,
       membership_group: member.membership_group,
       status: member.status,
       membership_expires_at: member.membership_expires_at,
@@ -536,6 +537,8 @@ export async function POST(req: NextRequest) {
           ticket_status: ticketStatus || null,
           member_role: memberRole,
           gate_role: gateRole,
+          member_email: member.email,
+          member_phone: member.phone,
           member: memberPayload,
           membership_source: memberSource,
         }
@@ -553,6 +556,8 @@ export async function POST(req: NextRequest) {
         offer_type: offerType || null,
         member_role: memberRole,
         gate_role: gateRole,
+        member_email: member.email,
+        member_phone: member.phone,
         member: memberPayload,
         membership_source: memberSource,
       }
