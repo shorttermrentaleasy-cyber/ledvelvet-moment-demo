@@ -4,8 +4,24 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import DeepDiveOverlay from "./DeepDiveOverlay";
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 
 type Level = "BASE" | "VIP" | "FOUNDER";
+
+type AccountProfile = {
+  email: string;
+  fullName: string;
+  qualification: "Amministratore" | "Socio" | "Amministratore e socio";
+  isAdmin: boolean;
+  isMember: boolean;
+  member: {
+    id: string;
+    group: string | null;
+    status: string | null;
+    expiresAt: string | null;
+    barcode: string | null;
+  } | null;
+};
 
 type Product = {
   sku: string;
@@ -319,6 +335,39 @@ export default function Moment2() {
   }, [experienceSlug]);
 
   const [user, setUser] = useState<{ email: string | null; level?: Level; kyc?: boolean }>({ email: null });
+  const [account, setAccount] = useState<AccountProfile | null>(null);
+  const [accountLoading, setAccountLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const response = await fetch("/api/account/summary", { cache: "no-store" });
+        const payload = await response.json();
+
+        if (!alive) return;
+
+        if (response.ok && payload?.authenticated && payload?.profile) {
+          setAccount(payload.profile);
+          setUser({ email: payload.profile.email });
+        } else {
+          setAccount(null);
+          setUser({ email: null });
+        }
+      } catch {
+        if (!alive) return;
+        setAccount(null);
+        setUser({ email: null });
+      } finally {
+        if (alive) setAccountLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedSize, setSelectedSize] = useState<Record<string, string>>({});
   const [showCart, setShowCart] = useState(false);
@@ -1002,30 +1051,67 @@ export default function Moment2() {
             </div>
 
             {/* AUTH */}
-            {!user.email ? (
+            {accountLoading ? (
+              <span className="w-20 h-9 rounded-full border border-white/10 bg-white/5 animate-pulse" aria-label="Caricamento profilo" />
+            ) : !account ? (
               <a href="/login" className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap">
                 Accedi
               </a>
             ) : (
-              <div className="flex items-center gap-2">
-                <select
-                  className="bg-transparent rounded-full px-3 py-2 text-xs tracking-[0.18em] uppercase border border-white/15 text-[var(--text)] max-w-[140px]"
-                  value={user.level || "BASE"}
-                  onChange={(e) => setUser((u) => ({ ...u, level: e.target.value as Level }))}
-                >
-                  <option value="BASE">BASE</option>
-                  <option value="VIP">VIP</option>
-                  <option value="FOUNDER">FOUNDER</option>
-                </select>
+              <details className="relative group">
+                <summary className="list-none cursor-pointer select-none px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs whitespace-nowrap max-w-[230px]">
+                  <span className="block truncate font-semibold">{account.fullName}</span>
+                  <span className="block truncate text-[10px] tracking-[0.12em] uppercase text-white/55">{account.qualification}</span>
+                </summary>
 
-                <button
-                  onClick={() => setUser({ email: null })}
-                  className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap"
-                  type="button"
-                >
-                  Esci
-                </button>
-              </div>
+                <div className="absolute right-0 top-[calc(100%+10px)] z-[80] w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-white/15 bg-black/75 shadow-[0_24px_70px_rgba(0,0,0,0.65)] backdrop-blur-xl">
+                  <div className="p-4 border-b border-white/10">
+                    <div className="font-semibold text-white">{account.fullName}</div>
+                    <div className="mt-1 text-[11px] tracking-[0.16em] uppercase text-white/55">{account.qualification}</div>
+                  </div>
+
+                  {account.member ? (
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-4 text-xs">
+                      <div>
+                        <div className="text-white/45">Stato tessera</div>
+                        <div className="mt-1 text-white/90">{account.member.status || "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-white/45">Scadenza</div>
+                        <div className="mt-1 text-white/90">{account.member.expiresAt ? fmtDateIT(account.member.expiresAt) : "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-white/45">Tipologia</div>
+                        <div className="mt-1 text-white/90">{account.member.group || "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-white/45">Tessera</div>
+                        <div className="mt-1 text-white/90 truncate" title={account.member.barcode || ""}>{account.member.barcode || "—"}</div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="p-2 border-t border-white/10">
+                    {account.isMember ? (
+                      <Link href="/lvpeople" className="block rounded-xl px-3 py-2.5 text-xs text-white/80 hover:bg-white/10 hover:text-white">
+                        Scheda socio
+                      </Link>
+                    ) : null}
+                    {account.isAdmin ? (
+                      <Link href="/admin" className="block rounded-xl px-3 py-2.5 text-xs text-white/80 hover:bg-white/10 hover:text-white">
+                        Area amministrativa
+                      </Link>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => signOut({ callbackUrl: "/moment2" })}
+                      className="block w-full rounded-xl px-3 py-2.5 text-left text-xs text-white/60 hover:bg-white/10 hover:text-white"
+                    >
+                      Esci
+                    </button>
+                  </div>
+                </div>
+              </details>
             )}
           </div>
         </div>
