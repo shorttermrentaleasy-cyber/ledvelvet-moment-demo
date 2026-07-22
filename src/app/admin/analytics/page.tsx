@@ -61,6 +61,25 @@ const typeLabels: Record<string, string> = {
     [events, eventId]
   );
 
+  const overviewTotals = useMemo(() => {
+    const totals = eventOverview.reduce(
+      (sum, event) => ({
+        events: sum.events + 1,
+        total: sum.total + event.total,
+        checked_in: sum.checked_in + event.checked_in,
+        active: sum.active + event.active,
+        cancelled: sum.cancelled + event.cancelled,
+      }),
+      { events: 0, total: 0, checked_in: 0, active: 0, cancelled: 0 }
+    );
+    const validTickets = totals.checked_in + totals.active;
+
+    return {
+      ...totals,
+      conversion_rate: validTickets > 0 ? totals.checked_in / validTickets : 0,
+    };
+  }, [eventOverview]);
+
   useEffect(() => {
     async function loadEvents() {
       const [eventsRes, overviewRes] = await Promise.all([
@@ -254,6 +273,41 @@ const typeLabels: Record<string, string> = {
                     </button>
                   </div>
                 ))}
+              </div>
+
+              <div className="border-t border-cyan-300/25 bg-cyan-400/[0.08] p-4">
+                <div className="mb-4 lg:mb-0 lg:grid lg:grid-cols-[minmax(240px,1fr)_100px_100px_120px_90px_100px_150px] lg:items-center lg:gap-3">
+                  <div>
+                    <div className="font-bold text-cyan-100">Totali complessivi</div>
+                    <div className="mt-1 text-xs text-white/50">
+                      {intNum(overviewTotals.events)} eventi
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5 lg:mt-0 lg:contents">
+                    <OverviewValue label="Titoli" value={intNum(overviewTotals.total)} />
+                    <OverviewValue
+                      label="Ingressi"
+                      value={intNum(overviewTotals.checked_in)}
+                      positive
+                    />
+                    <OverviewValue
+                      label="Non entrati"
+                      value={intNum(overviewTotals.active)}
+                    />
+                    <OverviewValue
+                      label="Annullati"
+                      value={intNum(overviewTotals.cancelled)}
+                    />
+                    <OverviewValue
+                      label="Ingresso"
+                      value={`${(overviewTotals.conversion_rate * 100).toFixed(1)}%`}
+                      accent
+                    />
+                  </div>
+
+                  <div className="hidden lg:block" />
+                </div>
               </div>
             </div>
           )}
