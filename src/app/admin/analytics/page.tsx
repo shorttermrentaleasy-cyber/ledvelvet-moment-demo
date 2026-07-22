@@ -11,6 +11,16 @@ type EventItem = {
   city?: string | null;
 };
 
+type EventOverview = EventItem & {
+  total: number;
+  checked_in: number;
+  active: number;
+  cancelled: number;
+  other: number;
+  valid_tickets: number;
+  conversion_rate: number;
+};
+
 function euro(value: any) {
   const n = Number(value || 0);
 
@@ -30,6 +40,9 @@ function intNum(value: any) {
 export default function AnalyticsPage() {
   const router = useRouter();
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventOverview, setEventOverview] = useState<EventOverview[]>([]);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewError, setOverviewError] = useState("");
   const [eventId, setEventId] = useState("");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -50,12 +63,26 @@ const typeLabels: Record<string, string> = {
 
   useEffect(() => {
     async function loadEvents() {
-      const res = await fetch("/api/admin/analytics-events");
-      const json = await res.json();
-      setEvents(json.events || []);
+      const [eventsRes, overviewRes] = await Promise.all([
+        fetch("/api/admin/analytics-events", { cache: "no-store" }),
+        fetch("/api/analytics/events-overview", { cache: "no-store" }),
+      ]);
+      const eventsJson = await eventsRes.json();
+      const overviewJson = await overviewRes.json();
+
+      setEvents(eventsJson.events || []);
+      if (overviewJson.ok) {
+        setEventOverview(overviewJson.events || []);
+      } else {
+        setOverviewError(overviewJson.error || "Impossibile caricare l'archivio eventi");
+      }
+      setOverviewLoading(false);
     }
 
-    loadEvents();
+    loadEvents().catch((error) => {
+      setOverviewError(error?.message || "Impossibile caricare l'archivio eventi");
+      setOverviewLoading(false);
+    });
   }, []);
 
   async function loadData(id?: string) {
@@ -75,6 +102,17 @@ const typeLabels: Record<string, string> = {
 
     setData(json);
     setLoading(false);
+  }
+
+  function openEvent(id: string) {
+    setEventId(id);
+    loadData(id);
+    window.setTimeout(() => {
+      document.getElementById("event-detail")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
   }
 
   const conversion = data?.totals?.conversion_rate
@@ -153,6 +191,75 @@ const typeLabels: Record<string, string> = {
             </div>
           )}
         </div>
+
+        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-xl md:p-5">
+          <div className="mb-4">
+            <div className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">
+              Archivio eventi
+            </div>
+            <p className="mt-2 text-sm text-white/55">
+              Riepilogo Xceed. Apri un evento per visualizzare tutte le statistiche.
+            </p>
+          </div>
+
+          {overviewLoading && <div className="text-sm text-white/60">Caricamento eventi...</div>}
+          {overviewError && <div className="text-sm text-red-300">{overviewError}</div>}
+
+          {!overviewLoading && !overviewError && (
+            <div className="overflow-hidden rounded-2xl border border-white/10">
+              <div className="hidden grid-cols-[minmax(240px,1fr)_100px_100px_120px_90px_100px_150px] gap-3 bg-white/10 px-4 py-3 text-[11px] uppercase tracking-[0.12em] text-white/45 lg:grid">
+                <div>Evento</div>
+                <div className="text-right">Titoli</div>
+                <div className="text-right">Ingressi</div>
+                <div className="text-right">Non entrati</div>
+                <div className="text-right">Annullati</div>
+                <div className="text-right">Ingresso</div>
+                <div />
+              </div>
+
+              <div className="divide-y divide-white/10">
+                {eventOverview.map((event) => (
+                  <div
+                    key={event.id}
+                    className="grid gap-4 bg-black/20 p-4 transition hover:bg-cyan-400/[0.06] lg:grid-cols-[minmax(240px,1fr)_100px_100px_120px_90px_100px_150px] lg:items-center lg:gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-semibold text-white">{event.name}</div>
+                      <div className="mt-1 text-xs text-white/45">
+                        {event.starts_at
+                          ? new Date(event.starts_at).toLocaleDateString("it-IT")
+                          : "Data non disponibile"}
+                        {event.city ? ` · ${event.city}` : ""}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5 lg:contents">
+                      <OverviewValue label="Titoli" value={intNum(event.total)} />
+                      <OverviewValue label="Ingressi" value={intNum(event.checked_in)} positive />
+                      <OverviewValue label="Non entrati" value={intNum(event.active)} />
+                      <OverviewValue label="Annullati" value={intNum(event.cancelled)} />
+                      <OverviewValue
+                        label="Ingresso"
+                        value={`${(event.conversion_rate * 100).toFixed(1)}%`}
+                        accent
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => openEvent(event.id)}
+                      className="w-full rounded-xl border border-cyan-400/35 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100 transition hover:border-cyan-300 hover:bg-cyan-400/20 lg:w-auto"
+                    >
+                      Apri statistiche
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <div id="event-detail" className="scroll-mt-4" />
 
         {loading && (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
@@ -334,6 +441,33 @@ const typeLabels: Record<string, string> = {
             </Panel>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function OverviewValue({
+  label,
+  value,
+  positive,
+  accent,
+}: {
+  label: string;
+  value: string;
+  positive?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <div className="lg:text-right">
+      <div className="text-[10px] uppercase tracking-[0.12em] text-white/40 lg:hidden">
+        {label}
+      </div>
+      <div
+        className={`mt-1 font-semibold lg:mt-0 ${
+          positive ? "text-green-300" : accent ? "text-cyan-200" : "text-white/85"
+        }`}
+      >
+        {value}
       </div>
     </div>
   );
