@@ -1,105 +1,47 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import { createClient } from "@supabase/supabase-js";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const dynamic = "force-dynamic";
 
-function assertEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
-  return v;
+function env(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing env: ${name}`);
+  return value;
 }
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
-  const email = (session?.user?.email || "").toLowerCase().trim();
-  if (!email) return { ok: false as const, code: 401 as const };
-
-  const allowed = (process.env.ADMIN_EMAILS || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!allowed.includes(email)) return { ok: false as const, code: 403 as const };
-  return { ok: true as const, email };
+  const email = String(session?.user?.email || "").toLowerCase().trim();
+  const allowed = String(process.env.ADMIN_EMAILS || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+  return Boolean(email && allowed.includes(email));
 }
 
-function safeLike(q: string) {
-  // escape % and _
-  return `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+function safeLike(value: string) {
+  return `%${value.replace(/[%_]/g, (match) => `\\${match}`)}%`;
 }
 
-export async function GET(req: Request) {
+export async function GET(request: Request) {
+  if (!(await requireAdmin())) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 403 });
   try {
-    const admin = await requireAdmin();
-    if (!admin.ok) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: admin.code });
-
-    const url = new URL(req.url);
-    const q = (url.searchParams.get("q") || "").trim();
+    const url = new URL(request.url);
+    const search = (url.searchParams.get("q") || "").trim();
     const status = (url.searchParams.get("status") || "all").trim();
-
-    const limit = Math.max(1, Math.min(5000, Number(url.searchParams.get("limit") || 500)));
+    const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 50)));
     const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
-
-    const supabase = createClient(assertEnv("SUPABASE_URL"), assertEnv("SUPABASE_SERVICE_ROLE"), {
-      auth: { persistSession: false },
-    });
-
-    const extendedFields = "id, barcode, first_name, last_name, full_name, email, phone, membership_group, status, raw, membership_expires_at, source, is_present, missing_since, last_seen_at, updated_at";
-    const legacyFields = "id, barcode, first_name, last_name, full_name, email, membership_group, status, raw, membership_expires_at, updated_at";
-
-    let query = supabase
-      .from("wallyfor_members")
-      .select(extendedFields, { count: "exact" })
-      .order("updated_at", { ascending: true })
-      .range(offset, offset + limit - 1);
-
-    if (status && status !== "all") query = query.eq("status", status);
-
-    if (q) {
-      const like = safeLike(q);
-      query = query.or(
-        `barcode.ilike.${like},full_name.ilike.${like},email.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`
-      );
+    const supabase = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE"), { auth: { persistSession: false } });
+    const fields = "id,barcode,first_name,last_name,full_name,email,phone,membership_group,status,raw,membership_issued_at,membership_expires_at,source,is_present,missing_since,last_seen_at,updated_at";
+    let query = supabase.from("wallyfor_members").select(fields, { count: "exact" }).order("full_name", { ascending: true, nullsFirst: false }).range(offset, offset + limit - 1);
+    if (status !== "all") query = query.eq("status", status);
+    if (search) {
+      const like = safeLike(search);
+      query = query.or(`barcode.ilike.${like},full_name.ilike.${like},email.ilike.${like},phone.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`);
     }
-
-    const initial = await query;
-    let data: any[] | null = initial.data;
-    let error = initial.error;
-    let count: number | null = initial.count;
-
-    // Durante il deploy precedente all'applicazione della migrazione la lista
-    // continua a funzionare con lo schema storico.
-    if (error && /phone|source|is_present|missing_since|last_seen_at/i.test(error.message)) {
-      let fallback = supabase
-        .from("wallyfor_members")
-        .select(legacyFields, { count: "exact" })
-        .order("updated_at", { ascending: true })
-        .range(offset, offset + limit - 1);
-      if (status && status !== "all") fallback = fallback.eq("status", status);
-      if (q) {
-        const like = safeLike(q);
-        fallback = fallback.or(
-          `barcode.ilike.${like},full_name.ilike.${like},email.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`
-        );
-      }
-      const legacy = await fallback;
-      data = legacy.data;
-      error = legacy.error;
-      count = legacy.count;
-    }
-
+    const { data, error, count } = await query;
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-
-    return NextResponse.json({
-      ok: true,
-      rows: data || [],
-      count: Number(count || 0),
-      limit,
-      offset,
-    });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "server_error" }, { status: 500 });
+    return NextResponse.json({ ok: true, rows: data || [], count: Number(count || 0), limit, offset });
+  } catch (reason) {
+    return NextResponse.json({ ok: false, error: reason instanceof Error ? reason.message : "server_error" }, { status: 500 });
   }
 }
