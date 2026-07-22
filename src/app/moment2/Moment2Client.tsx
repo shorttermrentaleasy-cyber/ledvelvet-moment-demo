@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import DeepDiveOverlay from "./DeepDiveOverlay";
 import Link from "next/link";
-import { signOut } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 
 type Level = "BASE" | "VIP" | "FOUNDER";
 
@@ -337,6 +337,39 @@ export default function Moment2() {
   const [user, setUser] = useState<{ email: string | null; level?: Level; kyc?: boolean }>({ email: null });
   const [account, setAccount] = useState<AccountProfile | null>(null);
   const [accountLoading, setAccountLoading] = useState(true);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginSending, setLoginSending] = useState(false);
+  const [loginSent, setLoginSent] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  async function submitHomepageLogin(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = loginEmail.trim();
+    if (!isValidEmail(email) || loginSending) return;
+
+    setLoginSending(true);
+    setLoginError(null);
+
+    try {
+      const result = await signIn("email", {
+        email,
+        callbackUrl: "/moment2",
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setLoginError("Non è stato possibile inviare il link. Controlla l’email o riprova.");
+        return;
+      }
+
+      setLoginSent(true);
+    } catch {
+      setLoginError("Non è stato possibile inviare il link. Riprova tra poco.");
+    } finally {
+      setLoginSending(false);
+    }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -1054,9 +1087,17 @@ export default function Moment2() {
             {accountLoading ? (
               <span className="w-20 h-9 rounded-full border border-white/10 bg-white/5 animate-pulse" aria-label="Caricamento profilo" />
             ) : !account ? (
-              <a href="/login" className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginError(null);
+                  setLoginSent(false);
+                  setLoginOpen(true);
+                }}
+                className="px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase whitespace-nowrap"
+              >
                 Accedi
-              </a>
+              </button>
             ) : (
               <details className="relative group">
                 <summary className="list-none cursor-pointer select-none px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs whitespace-nowrap max-w-[230px]">
@@ -1847,6 +1888,95 @@ export default function Moment2() {
           <div className="text-xs tracking-[0.22em] uppercase text-white/40">Follow us on Instagram · TikTok · Telegram</div>
         </div>
       </footer>
+{/* Login Modal */}
+{loginOpen && !account ? (
+  <div
+    className="fixed inset-0 z-[10020] bg-black/70 backdrop-blur-sm flex items-start justify-center p-4 pt-24 md:pt-28"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="homepage-login-title"
+    onMouseDown={(event) => {
+      if (event.currentTarget === event.target) setLoginOpen(false);
+    }}
+  >
+    <div className="relative w-[min(430px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-white/15 bg-black/80 shadow-[0_28px_90px_rgba(0,0,0,0.72)] backdrop-blur-xl">
+      <button
+        type="button"
+        onClick={() => setLoginOpen(false)}
+        className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/15 text-white/60 hover:bg-white/10 hover:text-white"
+        aria-label="Chiudi accesso"
+      >
+        ✕
+      </button>
+
+      <div className="border-b border-white/10 px-6 py-5 pr-14">
+        <div className="text-[11px] tracking-[0.24em] uppercase text-white/50">LedVelvet Access</div>
+        <h2 id="homepage-login-title" className="mt-2 text-xl font-semibold text-white">Accedi con email</h2>
+        <p className="mt-2 text-sm leading-relaxed text-white/60">
+          Inserisci la tua email: riceverai il link personale per entrare.
+        </p>
+      </div>
+
+      <div className="p-6">
+        {loginSent ? (
+          <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4">
+            <div className="font-semibold text-emerald-100">Controlla la tua email</div>
+            <p className="mt-2 text-sm leading-relaxed text-emerald-100/70">
+              Abbiamo inviato il link a <span className="text-emerald-50">{loginEmail.trim()}</span>.
+              Dopo il clic tornerai direttamente qui.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginSent(false);
+                setLoginError(null);
+              }}
+              className="mt-4 text-xs tracking-[0.16em] uppercase text-white/60 hover:text-white"
+            >
+              Usa un’altra email
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={submitHomepageLogin}>
+            <label htmlFor="homepage-login-email" className="block text-xs tracking-[0.18em] uppercase text-white/60">
+              Email
+            </label>
+            <input
+              id="homepage-login-email"
+              type="email"
+              value={loginEmail}
+              onChange={(event) => setLoginEmail(event.target.value)}
+              placeholder="nome@dominio.com"
+              autoComplete="email"
+              autoFocus
+              className="mt-2 h-12 w-full rounded-2xl border border-white/15 bg-white/5 px-4 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/35 focus:bg-white/10"
+            />
+
+            {loginError ? (
+              <div className="mt-3 rounded-xl border border-red-300/20 bg-red-300/10 px-3 py-2 text-sm text-red-100">
+                {loginError}
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={!isValidEmail(loginEmail) || loginSending}
+              className={cn(
+                "mt-4 h-12 w-full rounded-2xl text-xs font-semibold tracking-[0.20em] uppercase transition",
+                isValidEmail(loginEmail) && !loginSending
+                  ? "bg-[var(--red-accent)] text-black hover:opacity-90"
+                  : "cursor-not-allowed bg-white/10 text-white/35"
+              )}
+            >
+              {loginSending ? "Invio in corso…" : "Invia link di accesso"}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  </div>
+) : null}
+
 {/* Privacy Modal */}
 {privacyOpen && (
   <div className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
