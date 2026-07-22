@@ -323,7 +323,31 @@ const typeLabels: Record<string, string> = {
 
         {data && data.ok && (
           <>
-            
+            {selectedEvent && (
+              <section className="rounded-3xl border border-cyan-300/25 bg-gradient-to-r from-cyan-400/[0.12] via-white/[0.05] to-transparent p-5 shadow-xl md:p-6">
+                <div className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">
+                  Statistiche evento
+                </div>
+                <h2 className="mt-2 text-2xl font-bold text-white md:text-3xl">
+                  {selectedEvent.name}
+                </h2>
+                <div className="mt-4 flex flex-wrap gap-2 text-sm text-white/70">
+                  {selectedEvent.starts_at && (
+                    <Badge>
+                      Data: {new Date(selectedEvent.starts_at).toLocaleDateString("it-IT", {
+                        weekday: "long",
+                        day: "2-digit",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </Badge>
+                  )}
+                  {selectedEvent.city && <Badge>Città: {selectedEvent.city}</Badge>}
+                  {selectedEvent.venue && <Badge>Luogo: {selectedEvent.venue}</Badge>}
+                </div>
+              </section>
+            )}
+
 <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
   <Card title="Valore titoli" value={euro(data.totals.revenue_eur)} highlight />
 
