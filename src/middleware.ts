@@ -25,11 +25,6 @@ export function middleware(req: NextRequest) {
   // Non bloccare file statici
   if (isPublicPath(pathname)) return NextResponse.next();
 
-  // Eccezione temporanea e strettamente limitata all'import storico Xceed.
-  if (pathname === "/api/admin/xceed-import/historical-events") {
-    return NextResponse.next();
-  }
-
   // bloccate con token temporaneo le API quelle private: 
 
   if (pathname.startsWith("/api") && !pathname.startsWith("/api/admin")) {
