@@ -1181,7 +1181,7 @@ export default function Moment2() {
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => signOut({ callbackUrl: "/moment2" })}
+                      onClick={() => signOut({ callbackUrl: "/" })}
                       className="block w-full rounded-xl px-3 py-2.5 text-left text-xs text-white/60 hover:bg-white/10 hover:text-white"
                     >
                       Esci
