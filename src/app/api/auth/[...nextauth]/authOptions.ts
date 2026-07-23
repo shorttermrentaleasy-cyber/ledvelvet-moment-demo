@@ -98,24 +98,68 @@ export const authOptions: NextAuthOptions = {
     EmailProvider({
       async sendVerificationRequest({ identifier, url }) {
         // ✅ generico (non solo admin)
-        const subject = "Accesso LedVelvet";
+        const subject = "Il tuo accesso a LEDVELVET";
 
         const html = `
-          <div style="font-family:Arial,sans-serif">
-            <h2>LedVelvet</h2>
-            <p>Clicca sul pulsante per accedere:</p>
-            <p>
-              <a href="${url}" style="padding:10px 16px;background:#000;color:#fff;text-decoration:none;border-radius:8px">
-                Accedi
-              </a>
-            </p>
-            <p style="font-size:12px;color:#666">
-              Se non hai richiesto l’accesso, ignora questa email.
-            </p>
-          </div>
+          <!doctype html>
+          <html lang="it">
+            <body style="margin:0;padding:0;background:#ece9e4;color:#171717;font-family:Arial,Helvetica,sans-serif">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ece9e4">
+                <tr>
+                  <td align="center" style="padding:36px 16px">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#111111;border-radius:22px;overflow:hidden">
+                      <tr>
+                        <td style="padding:38px 38px 18px;text-align:center">
+                          <div style="font-size:12px;letter-spacing:5px;color:#d7b7ad;font-weight:700">LEDVELVET</div>
+                          <div style="width:42px;height:2px;background:#d7b7ad;margin:18px auto 0"></div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:12px 38px 38px;text-align:center">
+                          <h1 style="margin:0 0 16px;color:#ffffff;font-size:30px;line-height:1.15;font-weight:500">Il tuo accesso è pronto</h1>
+                          <p style="margin:0 auto 28px;max-width:430px;color:#c9c9c9;font-size:16px;line-height:1.6">
+                            Clicca sul pulsante per confermare il tuo indirizzo email ed entrare nella tua area LEDVELVET.
+                          </p>
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+                            <tr>
+                              <td align="center" bgcolor="#d7b7ad" style="border-radius:999px">
+                                <a href="${url}" style="display:inline-block;padding:15px 34px;color:#111111;font-size:15px;font-weight:700;letter-spacing:.4px;text-decoration:none;border-radius:999px">
+                                  ACCEDI A LEDVELVET
+                                </a>
+                              </td>
+                            </tr>
+                          </table>
+                          <p style="margin:28px auto 0;max-width:430px;color:#999999;font-size:13px;line-height:1.6">
+                            Se hai lasciato aperta la homepage, dopo il clic l’accesso verrà aggiornato automaticamente. La schermata di conferma proverà poi a chiudersi da sola.
+                          </p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:20px 38px;border-top:1px solid #2b2b2b;text-align:center">
+                          <p style="margin:0;color:#777777;font-size:12px;line-height:1.5">
+                            Non hai richiesto tu questo accesso? Puoi ignorare questa email in sicurezza.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:18px 0 0;color:#777777;font-size:11px;line-height:1.5">
+                      LEDVELVET · Accesso personale e protetto
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </body>
+          </html>
         `;
 
-        await sendWithResend({ to: identifier, subject, html });
+        const text = `Il tuo accesso a LEDVELVET è pronto.
+
+Apri questo link per confermare il tuo indirizzo email e accedere:
+${url}
+
+Se hai lasciato aperta la homepage, l’accesso verrà aggiornato automaticamente. Se non hai richiesto tu questa email, puoi ignorarla.`;
+
+        await sendWithResend({ to: identifier, subject, html, text });
       },
     }),
   ],
