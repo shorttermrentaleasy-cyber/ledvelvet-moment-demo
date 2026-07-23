@@ -1,6 +1,5 @@
 "use client";
 
-import { signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
 export default function AdminTopbarClient({ backHref }: { backHref?: string }) {
@@ -8,21 +7,19 @@ export default function AdminTopbarClient({ backHref }: { backHref?: string }) {
 
   return (
     <div style={styles.wrap}>
+      <button
+        onClick={() => window.close()}
+        style={styles.ghostBtn}
+        title="Close"
+      >
+        Close
+      </button>
+
       {backHref ? (
         <button onClick={() => router.push(backHref)} style={styles.ghostBtn}>
           ← Back
         </button>
-      ) : (
-        <span />
-      )}
-
-      <button
-        onClick={() => signOut({ callbackUrl: "/admin/login" })}
-        style={styles.ghostBtn}
-        title="Logout"
-      >
-        Quit
-      </button>
+      ) : null}
     </div>
   );
 }
@@ -30,7 +27,7 @@ export default function AdminTopbarClient({ backHref }: { backHref?: string }) {
 const styles: Record<string, React.CSSProperties> = {
   wrap: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     alignItems: "center",
     gap: 10,
     marginBottom: 16,
