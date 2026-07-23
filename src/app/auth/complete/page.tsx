@@ -43,7 +43,7 @@ export default function AuthCompletePage() {
           </button>
         ) : null}
         <a
-          href="/moment2"
+          href="/"
           className="mt-4 block text-xs tracking-[0.16em] uppercase text-white/45 hover:text-white"
         >
           Torna a LedVelvet
