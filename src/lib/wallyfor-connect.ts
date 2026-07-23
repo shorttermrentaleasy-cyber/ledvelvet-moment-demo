@@ -47,6 +47,14 @@ export async function createPendingWallyforMember(
   const url = String(
     process.env.WALLYFOR_CONNECT_URL || DEFAULT_WALLYFOR_CONNECT_URL
   ).trim();
+  const {
+    privacy,
+    termini,
+    promozionale = false,
+    foto = false,
+    maggiorenne,
+    ...memberFields
+  } = member;
 
   let response: Response;
   try {
@@ -58,7 +66,12 @@ export async function createPendingWallyforMember(
       },
       body: JSON.stringify({
         api_token: requiredEnv("WALLYFOR_WRITE_API_KEY"),
-        ...member,
+        ...memberFields,
+        privacywally: privacy ? "SI" : "NO",
+        termini: termini ? "SI" : "NO",
+        inviomailpromo: promozionale ? "SI" : "NO",
+        consensofoto: foto ? "SI" : "NO",
+        maggiorenne: maggiorenne ? "SI" : "NO",
       }),
       cache: "no-store",
       signal: AbortSignal.timeout(15000),
