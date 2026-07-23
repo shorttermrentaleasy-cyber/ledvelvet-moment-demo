@@ -53,11 +53,13 @@ export async function createPendingWallyforMember(
     response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${requiredEnv("WALLYFOR_WRITE_API_KEY")}`,
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(member),
+      body: JSON.stringify({
+        api_token: requiredEnv("WALLYFOR_WRITE_API_KEY"),
+        ...member,
+      }),
       cache: "no-store",
       signal: AbortSignal.timeout(15000),
     });
