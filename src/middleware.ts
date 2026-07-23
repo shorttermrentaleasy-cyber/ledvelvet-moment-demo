@@ -31,6 +31,13 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
   }
 
+  // Il test Wallyfor usa la sessione NextAuth e verifica ADMIN_EMAILS
+  // direttamente nell'endpoint. La vecchia Basic Auth del middleware
+  // impedirebbe alla richiesta autenticata dalla home di raggiungerlo.
+  if (pathname === "/api/admin/wallyfor/pending-test") {
+    return NextResponse.next();
+  }
+
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Basic ")) {
     return new NextResponse("Authentication required", {
