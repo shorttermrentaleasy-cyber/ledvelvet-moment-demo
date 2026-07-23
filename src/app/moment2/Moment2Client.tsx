@@ -354,7 +354,7 @@ export default function Moment2() {
     try {
       const result = await signIn("email", {
         email,
-        callbackUrl: "/moment2",
+        callbackUrl: "/auth/complete",
         redirect: false,
       });
 
@@ -374,7 +374,7 @@ export default function Moment2() {
   useEffect(() => {
     let alive = true;
 
-    (async () => {
+    async function loadAccount() {
       try {
         const response = await fetch("/api/account/summary", { cache: "no-store" });
         const payload = await response.json();
@@ -384,6 +384,8 @@ export default function Moment2() {
         if (response.ok && payload?.authenticated && payload?.profile) {
           setAccount(payload.profile);
           setUser({ email: payload.profile.email });
+          setLoginOpen(false);
+          setLoginSent(false);
         } else {
           setAccount(null);
           setUser({ email: null });
@@ -395,10 +397,34 @@ export default function Moment2() {
       } finally {
         if (alive) setAccountLoading(false);
       }
-    })();
+    }
+
+    const onAuthCompleted = () => {
+      void loadAccount();
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "lv_auth_completed_at") onAuthCompleted();
+    };
+    const onFocus = () => {
+      void loadAccount();
+    };
+
+    let authChannel: BroadcastChannel | null = null;
+    try {
+      authChannel = new BroadcastChannel("ledvelvet-auth");
+      authChannel.addEventListener("message", onAuthCompleted);
+    } catch {}
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
+    void loadAccount();
 
     return () => {
       alive = false;
+      authChannel?.removeEventListener("message", onAuthCompleted);
+      authChannel?.close();
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
   const [cart, setCart] = useState<CartItem[]>([]);
