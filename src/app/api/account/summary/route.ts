@@ -16,9 +16,7 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   const email = (session?.user?.email || "").toLowerCase().trim();
 
-  if (!email) {
-    return Response.json({ ok: true, authenticated: false });
-  }
+  if (!email) return Response.json({ ok: true, authenticated: false });
 
   const isAdmin = getAllowedAdmins().includes(email);
   const url = process.env.SUPABASE_URL;
@@ -32,45 +30,45 @@ export async function GET() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: member, error } = await supabase
+  const { data: rows, error } = await supabase
     .from("members")
     .select("id, first_name, last_name, email, membership_group, status, membership_expires_at, legacy_barcode")
     .ilike("email", email)
-    .maybeSingle();
+    .order("first_name", { ascending: true })
+    .order("last_name", { ascending: true });
 
   if (error) {
     return Response.json({ ok: false, error: "Impossibile leggere il profilo socio." }, { status: 500 });
   }
 
-  const isMember = Boolean(member);
+  const members = (rows || []).map((member) => ({
+    id: member.id,
+    fullName: [member.first_name, member.last_name].filter(Boolean).join(" ").trim() || email,
+    group: member.membership_group,
+    status: member.status,
+    expiresAt: member.membership_expires_at,
+    barcode: member.legacy_barcode,
+  }));
+  const isMember = members.length > 0;
+  const singleMember = members.length === 1 ? members[0] : null;
   const qualification = isAdmin && isMember
     ? "Amministratore e socio"
     : isAdmin
       ? "Amministratore"
       : "Socio";
 
-  const fullName = member
-    ? [member.first_name, member.last_name].filter(Boolean).join(" ").trim()
-    : (session?.user?.name || email);
-
   return Response.json({
     ok: true,
     authenticated: true,
     profile: {
       email,
-      fullName,
+      fullName: singleMember?.fullName || session?.user?.name || email,
       qualification,
       isAdmin,
       isMember,
-      member: member
-        ? {
-            id: member.id,
-            group: member.membership_group,
-            status: member.status,
-            expiresAt: member.membership_expires_at,
-            barcode: member.legacy_barcode,
-          }
-        : null,
+      member: singleMember,
+      members,
+      requiresMemberChoice: members.length > 1,
     },
   });
 }
