@@ -402,8 +402,10 @@ export default function Moment2() {
         return;
       }
 
-      const memberWindow = window.open(result.href, "_blank", "noopener,noreferrer");
-      if (!memberWindow) {
+      const memberWindow = window.open(result.href, "_blank");
+      if (memberWindow) {
+        memberWindow.opener = null;
+      } else {
         window.location.href = result.href;
       }
       setSelectedMemberBarcode(null);
