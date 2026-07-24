@@ -226,7 +226,7 @@ export default async function LVPeopleHomePage() {
               <div className="text-sm text-white/60">QR tessera</div>
               {qrValue ? (
                 <>
-                  <div className="mt-3 rounded-2xl bg-white p-4">
+                  <div className="mt-3">
                     <MemberQrCard value={qrValue} revoked={false} />
                   </div>
                   <div className="mt-3 font-mono text-sm text-white break-all">{qrValue}</div>
@@ -242,7 +242,8 @@ export default async function LVPeopleHomePage() {
             <div className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-5">
               <p className="text-sm font-semibold text-amber-100">La tessera è emessa ma non ancora attiva.</p>
               <p className="mt-1 text-sm text-white/70">
-                Completa il pagamento su Wallyfor per attivarla e aggiornare la scadenza.
+                La quota associativa da pagare è di 3 €. Completa il pagamento su Wallyfor per
+                attivare la tessera e aggiornare la scadenza.
               </p>
               <a
                 href={activationUrl}
@@ -250,7 +251,7 @@ export default async function LVPeopleHomePage() {
                 rel="noopener noreferrer"
                 className="mt-4 inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
               >
-                Paga e attiva la tessera – 3 €
+                Paga 3 € e attiva la tessera
               </a>
             </div>
           ) : null}
