@@ -382,7 +382,10 @@ export default function Moment2() {
 
     async function loadAccount() {
       try {
-        if (!accountSyncStarted.current) {
+        let response = await fetch("/api/account/summary", { cache: "no-store" });
+        let payload = await response.json();
+
+        if (response.ok && payload?.authenticated && !accountSyncStarted.current) {
           accountSyncStarted.current = true;
           await fetch("/api/account/wallyfor-refresh", {
             method: "POST",
@@ -390,10 +393,9 @@ export default function Moment2() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({}),
           }).catch(() => null);
+          response = await fetch("/api/account/summary", { cache: "no-store" });
+          payload = await response.json();
         }
-
-        const response = await fetch("/api/account/summary", { cache: "no-store" });
-        const payload = await response.json();
 
         if (!alive) return;
 
