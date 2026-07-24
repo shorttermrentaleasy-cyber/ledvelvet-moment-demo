@@ -31,23 +31,25 @@ export async function GET() {
   });
 
   const { data: rows, error } = await supabase
-    .from("members")
-    .select("id, first_name, last_name, email, membership_group, status, membership_expires_at, legacy_barcode")
+    .from("wallyfor_members")
+    .select("barcode, first_name, last_name, email, membership_group, status, membership_expires_at")
     .ilike("email", email)
     .order("first_name", { ascending: true })
-    .order("last_name", { ascending: true });
+    .order("last_name", { ascending: true })
+    .eq("source", "wallyfor_api")
+    .eq("is_present", true);
 
   if (error) {
     return Response.json({ ok: false, error: "Impossibile leggere il profilo socio." }, { status: 500 });
   }
 
   const members = (rows || []).map((member) => ({
-    id: member.id,
+    id: member.barcode,
     fullName: [member.first_name, member.last_name].filter(Boolean).join(" ").trim() || email,
     group: member.membership_group,
     status: member.status,
     expiresAt: member.membership_expires_at,
-    barcode: member.legacy_barcode,
+    barcode: member.barcode,
   }));
   const isMember = members.length > 0;
   const singleMember = members.length === 1 ? members[0] : null;
