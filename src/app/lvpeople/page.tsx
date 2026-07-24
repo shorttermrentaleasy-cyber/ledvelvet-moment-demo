@@ -23,6 +23,11 @@ type MemberRow = {
   legacy_barcode: string | null;
 };
 
+type WallyforMembershipRow = {
+  barcode: string;
+  status: string | null;
+};
+
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
@@ -85,19 +90,71 @@ export default async function LVPeopleHomePage() {
             <p className="mt-2 font-mono text-sm text-white">{email}</p>
 
             <p className="mt-4 text-white/70 text-sm">
-              Se questa è un’email corretta, lo staff può importarti come socio (legacy) o associare il tuo account.
+              Per diventare socio, invia la richiesta attraverso il percorso ufficiale Wallyfor.
             </p>
+
+            <a
+              href="/become-member?from=/lvpeople"
+              className="mt-5 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-[#8d003f] to-[#e00072] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-fuchsia-950/40 transition hover:brightness-110"
+            >
+              Diventa socio
+            </a>
           </div>
         </div>
       </main>
     );
   }
 
-  const wallyforStatus = member.status?.trim() || "Stato non disponibile";
+  const memberBarcode = member.legacy_barcode?.trim() || null;
+  let wallyforMembership: WallyforMembershipRow | null = null;
+
+  if (memberBarcode) {
+    const { data } = await supabase
+      .from("wallyfor_members")
+      .select("barcode, status")
+      .eq("barcode", memberBarcode)
+      .eq("source", "wallyfor_api")
+      .eq("is_present", true)
+      .maybeSingle<WallyforMembershipRow>();
+
+    wallyforMembership = data;
+  }
+
+  if (!wallyforMembership) {
+    return (
+      <main className="min-h-screen bg-[#080008] p-6 text-white">
+        <div className="mx-auto max-w-2xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold">LV People</h1>
+              <p className="mt-1 text-sm text-white/70">La tua tessera e i tuoi accessi LEDVELVET.</p>
+            </div>
+            <LVPeopleActions />
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-5">
+            <h2 className="text-lg font-semibold">Nessuna tessera Wallyfor associata</h2>
+            <p className="mt-3 text-sm text-white/70">
+              Per questa email non risulta una tessera presente nell’anagrafica ufficiale Wallyfor.
+              Un eventuale vecchio record interno non può essere usato per mostrare il QR o avviare il pagamento.
+            </p>
+            <a
+              href="/become-member?from=/lvpeople"
+              className="mt-5 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-[#8d003f] to-[#e00072] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-fuchsia-950/40 transition hover:brightness-110"
+            >
+              Diventa socio
+            </a>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const wallyforStatus = wallyforMembership.status?.trim() || "Stato non disponibile";
   const normalizedStatus = wallyforStatus.toUpperCase();
   const isWallyforMembershipActive = normalizedStatus === "ATTIVA";
   const isWallyforMembershipInactive = normalizedStatus === "NON ATTIVA";
-  const qrValue = member.legacy_barcode?.trim() || null;
+  const qrValue = wallyforMembership.barcode.trim() || null;
   const activationUrl = qrValue
     ? `https://wallyfor.com/rinnovi/step3.php?idcode=5355&msg=${encodeURIComponent(qrValue)}&imp=`
     : "https://wallyfor.com/rinnovi/index.php?idcode=5355";
