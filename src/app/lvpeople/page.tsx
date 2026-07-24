@@ -23,22 +23,6 @@ type MemberRow = {
   legacy_barcode: string | null;
 };
 
-type MemberCardRow = {
-  id: string;
-  member_id: string;
-  qr_secret: string;
-  revoked: boolean;
-  issued_at: string;
-};
-
-type MembershipRow = {
-  id: string;
-  member_id: string;
-  status: "pending" | "active" | "expired";
-  start_date: string;
-  end_date: string | null;
-};
-
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
@@ -50,12 +34,6 @@ function getSupabaseAdmin() {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-function computeMemberStatus(args: { legacy: boolean; hasActiveMembership: boolean }) {
-  if (args.legacy) return "LEGACY" as const;
-  if (args.hasActiveMembership) return "ATTIVO" as const;
-  return "SCADUTO" as const;
 }
 
 export default async function LVPeopleHomePage() {
@@ -77,7 +55,7 @@ export default async function LVPeopleHomePage() {
 
   if (memberErr) {
     return (
-      <main className="min-h-screen bg-black text-white p-6">
+      <main className="min-h-screen bg-[#080008] text-white p-6">
         <div className="max-w-2xl mx-auto">
           <h1 className="text-2xl font-semibold">LV People</h1>
           <p className="mt-4 text-red-300">Errore lettura socio da Supabase: {memberErr.message}</p>
@@ -92,17 +70,17 @@ export default async function LVPeopleHomePage() {
 
   if (!member) {
     return (
-      <main className="min-h-screen bg-black text-white p-6">
+      <main className="min-h-screen bg-[#080008] text-white p-6">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-semibold">LV People</h1>
-              <p className="mt-1 text-white/70 text-sm">Area socio (MVP) – tessera e storico accessi.</p>
+              <p className="mt-1 text-white/70 text-sm">La tua tessera e i tuoi accessi LEDVELVET.</p>
             </div>
             <LVPeopleActions />
           </div>
 
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+          <div className="mt-6 rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-5">
             <p className="text-white/80">Non risulto registrato come socio LV People per questa email:</p>
             <p className="mt-2 font-mono text-sm text-white">{email}</p>
 
@@ -115,32 +93,17 @@ export default async function LVPeopleHomePage() {
     );
   }
 
-  const { data: card, error: cardErr } = await supabase
-    .from("member_cards")
-    .select("id, member_id, qr_secret, revoked, issued_at")
-    .eq("member_id", member.id)
-    .order("issued_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<MemberCardRow>();
-
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: activeMembership, error: msErr } = await supabase
-    .from("memberships")
-    .select("id, member_id, status, start_date, end_date")
-    .eq("member_id", member.id)
-    .eq("status", "active")
-    .or(`end_date.is.null,end_date.gte.${today}`)
-    .order("start_date", { ascending: false })
-    .limit(1)
-    .maybeSingle<MembershipRow>();
-
-  const hasActiveMembership = !!activeMembership;
-  const status = computeMemberStatus({ legacy: member.legacy, hasActiveMembership });
-  const isWallyforMembershipInactive = member.status?.trim().toUpperCase() === "NON ATTIVA";
+  const wallyforStatus = member.status?.trim() || "Stato non disponibile";
+  const normalizedStatus = wallyforStatus.toUpperCase();
+  const isWallyforMembershipActive = normalizedStatus === "ATTIVA";
+  const isWallyforMembershipInactive = normalizedStatus === "NON ATTIVA";
+  const qrValue = member.legacy_barcode?.trim() || null;
 
   return (
-    <main className="min-h-screen bg-black text-white p-6">
-      <div className="max-w-3xl mx-auto">
+    <main className="min-h-screen bg-[#080008] text-white p-6">
+      <div className="max-w-3xl mx-auto relative">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(170,0,66,0.30),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(255,0,126,0.16),transparent_42%)]" />
+        <div className="relative z-10">
         <header className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">LV People</h1>
@@ -150,22 +113,20 @@ export default async function LVPeopleHomePage() {
           <div className="flex items-center gap-3">
             <span
               className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                status === "ATTIVO"
-                  ? "border-white/30 bg-white/10"
-                  : status === "LEGACY"
-                  ? "border-white/20 bg-white/5"
-                  : "border-red-400/30 bg-red-400/10 text-red-200"
+                isWallyforMembershipActive
+                  ? "border-emerald-300/40 bg-emerald-300/10 text-emerald-100"
+                  : "border-fuchsia-300/30 bg-fuchsia-300/10 text-fuchsia-100"
               }`}
-              title="Stato socio"
+              title="Stato tessera Wallyfor"
             >
-              {status}
+              {wallyforStatus}
             </span>
 
             <LVPeopleActions />
           </div>
         </header>
 
-        <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
+        <section className="mt-6 rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-6">
           <h2 className="text-lg font-semibold">La mia tessera</h2>
 
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -184,8 +145,6 @@ export default async function LVPeopleHomePage() {
       <span className="text-white/50">Telefono:</span> {member.phone || "—"}
     </div>
 
-    {/* 👇 NUOVI CAMPI */}
-
     <div className="mt-1 text-sm text-white/70 break-words">
       <span className="text-white/50">Gruppo:</span> {member.membership_group || "—"}
     </div>
@@ -203,44 +162,18 @@ export default async function LVPeopleHomePage() {
     </div>
   </div>
 
-            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-              <div className="text-sm text-white/60">Tessera</div>
-
-              {cardErr ? (
-                <p className="mt-2 text-sm text-red-300">Errore lettura tessera: {cardErr.message}</p>
-              ) : !card ? (
-                <div className="mt-2 text-sm text-white/70">
-                  Nessuna tessera associata a questo socio.
-                  <div className="mt-2 text-xs text-white/50">(MVP: la tessera viene creata in fase import / onboarding.)</div>
-                </div>
-              ) : card.revoked ? (
-                <div className="mt-2">
-                  <div className="text-sm text-red-200 font-semibold">Tessera revocata</div>
-                  <div className="mt-2 font-mono text-sm text-white/70 break-all">{card.qr_secret}</div>
-                </div>
-              ) : (
+            <div className="rounded-xl border border-fuchsia-300/15 bg-black/30 p-4">
+              <div className="text-sm text-white/60">QR tessera</div>
+              {qrValue ? (
                 <>
-                  <MemberQrCard value={card.qr_secret} revoked={card.revoked} />
-
-                  <div className="mt-2">
-                    <div className="font-mono text-sm text-white break-all">{card.qr_secret}</div>
-                    <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-white/60">
-                      QR pronto: mostra questo codice/QR all’ingresso.
-                    </div>
+                  <div className="mt-3 rounded-2xl bg-white p-4">
+                    <MemberQrCard value={qrValue} revoked={false} />
                   </div>
+                  <div className="mt-3 font-mono text-sm text-white break-all">{qrValue}</div>
+                  <p className="mt-2 text-xs text-white/55">Mostra questo QR all’ingresso.</p>
                 </>
-              )}
-
-              {msErr ? (
-                <p className="mt-3 text-xs text-red-300">Errore lettura membership: {msErr.message}</p>
               ) : (
-                <p className="mt-3 text-xs text-white/50">
-                  {member.legacy
-                    ? "Sei socio legacy (fase transitoria)."
-                    : hasActiveMembership
-                    ? "Membership attiva."
-                    : "Nessuna membership attiva."}
-                </p>
+                <p className="mt-3 text-sm text-white/65">QR non disponibile: il barcode non è presente in Wallyfor.</p>
               )}
             </div>
           </div>
@@ -262,10 +195,10 @@ export default async function LVPeopleHomePage() {
             </div>
           ) : null}
 
-          <div className="mt-6 flex items-center gap-3">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <a
               href="/lvpeople/accessi"
-              className="inline-flex items-center justify-center rounded-xl bg-white text-black px-4 py-2 text-sm font-semibold hover:opacity-90 transition"
+              className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-[#8d003f] to-[#e00072] text-white px-4 py-2 text-sm font-semibold shadow-lg shadow-fuchsia-950/40 hover:brightness-110 transition"
             >
               Vedi storico accessi
             </a>
@@ -274,13 +207,7 @@ export default async function LVPeopleHomePage() {
           </div>
         </section>
 
-        <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h2 className="text-lg font-semibold">Nota</h2>
-          <p className="mt-2 text-sm text-white/70">
-            Questo MVP usa l’email della sessione per trovare il socio in Supabase. In futuro separiamo login admin vs login soci
-            senza buttare via nulla.
-          </p>
-        </section>
+        </div>
       </div>
     </main>
   );
