@@ -107,7 +107,7 @@ export default async function LVPeopleHomePage() {
         <header className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">LV People</h1>
-            <p className="mt-1 text-white/70 text-sm">Area socio (MVP) – tessera e storico accessi.</p>
+            <p className="mt-1 text-white/70 text-sm">La tua tessera e i tuoi accessi LEDVELVET.</p>
           </div>
 
           <div className="flex items-center gap-3">
