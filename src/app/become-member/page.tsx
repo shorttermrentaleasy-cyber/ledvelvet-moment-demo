@@ -58,12 +58,12 @@ export default function BecomeMemberPage({ searchParams }: Props) {
               </div>
 
               <h1 className="mt-3 text-3xl md:text-5xl font-semibold tracking-tight text-white">
-                Diventa socio
+                Entra in LV People
               </h1>
 
               <p className="mt-4 max-w-3xl text-sm md:text-base text-white/70 leading-relaxed">
                 Entra nella community LEDVELVET, partecipa alle attività associative e ricevi
-                la tua tessera digitale personale. La quota associativa annuale è di 3 €.
+                la tua tessera digitale personale.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
@@ -71,7 +71,7 @@ export default function BecomeMemberPage({ searchParams }: Props) {
                   Tessera digitale
                 </div>
                 <div className="inline-flex items-center rounded-full border border-[#930b0c]/30 bg-[#930b0c]/10 px-4 py-2 text-[11px] tracking-[0.18em] uppercase text-white/75">
-                  Quota annuale 3 €
+                  Adesione annuale
                 </div>
               </div>
             </div>
@@ -124,11 +124,11 @@ export default function BecomeMemberPage({ searchParams }: Props) {
 
               <div className="mt-7 rounded-[24px] border border-white/10 bg-black/35 p-5 md:p-7 text-center">
                 <h2 className="text-xl md:text-2xl font-semibold text-white">
-                  Richiedi la tessera
+                  Unisciti alla community
                 </h2>
                 <p className="mx-auto mt-3 max-w-2xl text-sm md:text-base text-white/70 leading-relaxed">
-                  Apri la piattaforma ufficiale Wallyfor, compila i tuoi dati e paga la quota
-                  associativa annuale di 3 € tramite Stripe. La tessera sarà creata direttamente
+                  Apri la piattaforma ufficiale Wallyfor, compila i tuoi dati e completa
+                  l’adesione tramite Stripe. La tessera sarà creata direttamente
                   da Wallyfor: LEDVELVET non gestisce i dati della carta.
                 </p>
                 <a
@@ -137,7 +137,7 @@ export default function BecomeMemberPage({ searchParams }: Props) {
                   rel="noopener noreferrer"
                   className="mt-6 inline-flex items-center justify-center rounded-full bg-[#930b0c] px-7 py-3.5 text-sm font-semibold tracking-wide text-white shadow-[0_12px_35px_rgba(147,11,12,0.35)] transition hover:bg-[#b10f11] hover:scale-[1.01]"
                 >
-                  Diventa socio e paga 3 € ↗
+                  Unisciti a LV People ↗
                 </a>
                 <p className="mt-3 text-xs text-white/45">
                   Richiesta e pagamento sicuro si apriranno in una nuova scheda.
