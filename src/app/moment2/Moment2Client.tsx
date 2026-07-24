@@ -387,7 +387,6 @@ export default function Moment2() {
 
     setMemberVerifyBusy(true);
     setMemberVerifyError(null);
-    const memberWindow = window.open("", "_blank");
 
     try {
       const response = await fetch("/api/account/member-verify", {
@@ -399,21 +398,17 @@ export default function Moment2() {
       const result = await response.json().catch(() => ({}));
 
       if (!response.ok || !result?.href) {
-        memberWindow?.close();
-        setMemberVerifyError(result?.error || "Verifica non riuscita.");
+        setMemberVerifyError(result?.error || "Cellulare non corretto.");
         return;
       }
 
-      if (memberWindow) {
-        memberWindow.opener = null;
-        memberWindow.location.href = result.href;
-      } else {
+      const memberWindow = window.open(result.href, "_blank", "noopener,noreferrer");
+      if (!memberWindow) {
         window.location.href = result.href;
       }
       setSelectedMemberBarcode(null);
       setMemberPhone("");
     } catch {
-      memberWindow?.close();
       setMemberVerifyError("Verifica non riuscita. Riprova.");
     } finally {
       setMemberVerifyBusy(false);
