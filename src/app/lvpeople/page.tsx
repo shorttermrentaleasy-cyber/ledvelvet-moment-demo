@@ -1,4 +1,5 @@
 import MemberQrCard from "./MemberQrCard";
+import MemberWallyforRefresh from "./MemberWallyforRefresh";
 import LVPeopleActions from "./LVPeopleActions";
 import React from "react";
 import { redirect } from "next/navigation";
@@ -161,6 +162,7 @@ export default async function LVPeopleHomePage() {
 
   return (
     <main className="min-h-screen bg-[#080008] text-white p-6">
+      {qrValue ? <MemberWallyforRefresh barcode={qrValue} /> : null}
       <div className="max-w-3xl mx-auto relative">
         <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(170,0,66,0.30),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(255,0,126,0.16),transparent_42%)]" />
         <div className="relative z-10">
