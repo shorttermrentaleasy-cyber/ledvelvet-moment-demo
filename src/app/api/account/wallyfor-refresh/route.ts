@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     const lastUpdate = cached?.updated_at ? Date.parse(cached.updated_at) : 0;
-    if (lastUpdate && Date.now() - lastUpdate < REFRESH_COOLDOWN_MS) {
+    if (requestedBarcode && lastUpdate && Date.now() - lastUpdate < REFRESH_COOLDOWN_MS) {
       return Response.json({ ok: true, changed: false, skipped: true });
     }
 
