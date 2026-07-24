@@ -1048,7 +1048,10 @@ export default function Moment2() {
 
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3 min-w-0 overflow-visible">
           {/* LEFT */}
-         <Link href="/moment2#home" className="flex items-center gap-3 min-w-0">
+         <Link
+           href="/moment2#home"
+           className="flex items-center gap-3 min-w-0 min-[1180px]:shrink-0"
+         >
   <img
     src={brand.logo}
     alt="LedVelvet"
@@ -1057,7 +1060,7 @@ export default function Moment2() {
 
   <div className="leading-tight min-w-0">
     <div className="text-sm font-semibold truncate">LedVelvet</div>
-    <div className="text-xs text-white/60 tracking-[0.18em] uppercase truncate">
+    <div className="text-xs text-white/60 tracking-[0.18em] uppercase truncate min-[1180px]:whitespace-nowrap">
       ETHEREAL CLUBBING
     </div>
   </div>
@@ -1065,7 +1068,7 @@ export default function Moment2() {
         
 
           {/* DESKTOP MENU */}
-<nav className="hidden lg:flex items-center gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
+<nav className="hidden lg:flex items-center gap-6 min-[1280px]:gap-8 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
   <a href="#home" className="hover:text-[var(--text)] whitespace-nowrap">Home</a>
   <a href="#eventi" className="hover:text-[var(--text)] whitespace-nowrap">Upcoming</a>
   <a href="#past" className="hover:text-[var(--text)] whitespace-nowrap">Past</a>
