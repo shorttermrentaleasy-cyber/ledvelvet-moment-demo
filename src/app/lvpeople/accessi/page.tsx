@@ -139,7 +139,6 @@ export default async function LVPeopleAccessiPage() {
   const normalizedStatus = status.toUpperCase();
   const isActive = normalizedStatus === "ATTIVA";
 
-  // 3) Wallyfor raw: per barcode (se presente) altrimenti per email
   let wally: WallyRow | null = null;
   if ((member.legacy_barcode || "").trim()) {
     const { data } = await supabase
