@@ -27,11 +27,8 @@ export default function MemberQrCard({
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-4">
-      <div className="text-sm text-white/60">QR Tessera</div>
-      <div className="mt-3 bg-white inline-block p-3 rounded-lg">
-        <QRCode value={value} size={180} />
-      </div>
+    <div className="inline-flex rounded-xl bg-white p-3">
+      <QRCode value={value} size={180} />
     </div>
   );
 }
