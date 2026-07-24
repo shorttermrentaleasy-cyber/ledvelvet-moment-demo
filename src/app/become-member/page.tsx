@@ -61,81 +61,113 @@ export default function BecomeMemberPage({ searchParams }: Props) {
                 Diventa socio
               </h1>
 
-              <p className="mt-4 max-w-2xl text-sm md:text-base text-white/70 leading-relaxed">
-                Entra nel cerchio LedVelvet e accedi al percorso di adesione.
-                Completa qui sotto la tua registrazione attraverso la piattaforma dedicata.
+              <p className="mt-4 max-w-3xl text-sm md:text-base text-white/70 leading-relaxed">
+                Entra nella community LEDVELVET, partecipa alle attività associative e ricevi
+                la tua tessera digitale personale. La quota associativa annuale è di 3 €.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
                 <div className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.18em] uppercase text-white/65">
-                  Flusso ufficiale di adesione
+                  Tessera digitale
                 </div>
                 <div className="inline-flex items-center rounded-full border border-[#930b0c]/30 bg-[#930b0c]/10 px-4 py-2 text-[11px] tracking-[0.18em] uppercase text-white/75">
-                  Gestito con Wally
+                  Quota annuale 3 €
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="grid lg:grid-cols-[1.25fr_0.75fr] gap-0">
-            <div className="p-3 md:p-4 bg-black/20 border-b lg:border-b-0 lg:border-r border-white/10">
-              <div className="rounded-[22px] overflow-hidden border border-white/10 bg-black shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <iframe
-                  src={WALLY_IFRAME_URL}
-                  title="LedVelvet Membership"
-                  className="w-full bg-black"
-                  style={{ height: "1170px", border: "0" }}
-                  loading="lazy"
-                  referrerPolicy="strict-origin-when-cross-origin"
-                />
+          <div className="px-5 md:px-8 py-7 md:py-10">
+            <div className="mx-auto max-w-5xl">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <div className="text-[11px] tracking-[0.18em] uppercase text-white/45">
+                    Community
+                  </div>
+                  <p className="mt-2 text-sm text-white/75 leading-relaxed">
+                    Entri a far parte dell’associazione LEDVELVET e della sua community.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <div className="text-[11px] tracking-[0.18em] uppercase text-white/45">
+                    Attività
+                  </div>
+                  <p className="mt-2 text-sm text-white/75 leading-relaxed">
+                    Puoi partecipare alle iniziative e alle attività riservate ai soci,
+                    secondo le regole associative.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <div className="text-[11px] tracking-[0.18em] uppercase text-white/45">
+                    Tessera digitale
+                  </div>
+                  <p className="mt-2 text-sm text-white/75 leading-relaxed">
+                    Ricevi una tessera personale digitale, gestibile anche dal tuo Wallet.
+                  </p>
+                </div>
               </div>
-            </div>
 
-            <div className="bg-black/20 px-5 md:px-8 py-6 md:py-8">
-              <div className="text-[11px] tracking-[0.22em] uppercase text-white/45">
-                Informazioni
+              <div className="mt-5 rounded-2xl border border-[#930b0c]/45 bg-[#930b0c]/15 p-5 md:p-6">
+                <div className="text-[11px] tracking-[0.2em] uppercase text-red-200/80">
+                  Cosa significa diventare socio
+                </div>
+                <p className="mt-3 text-sm md:text-base text-white/85 leading-relaxed">
+                  Diventare socio significa aderire all’associazione e sostenerne le attività.
+                  <strong className="font-semibold text-white">
+                    {" "}Non significa diventare proprietario di LEDVELVET, acquistare quote
+                    della società o avere diritto agli utili.
+                  </strong>
+                </p>
               </div>
 
-              <h2 className="mt-3 text-xl md:text-2xl font-semibold text-white">
-                Adesione e tessera digitale
-              </h2>
-
-              <p className="mt-4 text-sm md:text-base text-white/72 leading-relaxed">
-                LedVelvet utilizza Wally come piattaforma operativa per la registrazione dei soci
-                e la gestione della tessera. Questo significa che il percorso che completi qui
-                fa parte del processo ufficiale di adesione.
-              </p>
-
-              <div className="mt-6 space-y-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-[11px] tracking-[0.18em] uppercase text-white/45">
-                    Registrazione
-                  </div>
-                  <p className="mt-2 text-sm text-white/75 leading-relaxed">
-                    Compila i tuoi dati attraverso il modulo Wally integrato per inviare la tua richiesta di adesione.
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-[11px] tracking-[0.18em] uppercase text-white/45">
-                    Tessera associativa
-                  </div>
-                  <p className="mt-2 text-sm text-white/75 leading-relaxed">
-                    Una volta approvata la richiesta, la tua tessera e il relativo flusso di accesso saranno gestiti nello stesso ecosistema.
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-[11px] tracking-[0.18em] uppercase text-white/45">
-                    Nota
-                  </div>
-                  <p className="mt-2 text-sm text-white/75 leading-relaxed">
-                    LV PEOPLE fa parte della struttura associativa dell’associazione. Accesso, validazione ed eventuali benefici futuri restano soggetti alle regole associative e al ciclo annuale.
-                  </p>
-                </div>
+              <div className="mt-7 rounded-[24px] border border-white/10 bg-black/35 p-5 md:p-7 text-center">
+                <h2 className="text-xl md:text-2xl font-semibold text-white">
+                  Richiedi la tessera
+                </h2>
+                <p className="mx-auto mt-3 max-w-2xl text-sm md:text-base text-white/70 leading-relaxed">
+                  Compila i dati sulla piattaforma ufficiale Wallyfor e paga la quota annuale
+                  di 3 € tramite Stripe. Per completare correttamente il pagamento, apri il
+                  percorso in una nuova scheda.
+                </p>
+                <a
+                  href={WALLY_IFRAME_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-6 inline-flex items-center justify-center rounded-full bg-[#930b0c] px-7 py-3.5 text-sm font-semibold tracking-wide text-white shadow-[0_12px_35px_rgba(147,11,12,0.35)] transition hover:bg-[#b10f11] hover:scale-[1.01]"
+                >
+                  Inizia la richiesta e paga 3 € ↗
+                </a>
+                <p className="mt-3 text-xs text-white/45">
+                  Wallyfor e il pagamento sicuro Stripe si apriranno in una nuova scheda.
+                </p>
               </div>
 
               <div className="mt-8">
+                <div className="mb-4 text-center">
+                  <div className="text-[11px] tracking-[0.22em] uppercase text-white/45">
+                    Modulo di adesione
+                  </div>
+                  <p className="mt-2 text-sm text-white/60">
+                    Puoi consultare il modulo anche qui sotto. Per arrivare fino al pagamento,
+                    usa il pulsante qui sopra e completa il percorso nella nuova scheda.
+                  </p>
+                </div>
+
+                <div className="rounded-[22px] overflow-hidden border border-white/10 bg-black shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                  <iframe
+                    src={WALLY_IFRAME_URL}
+                    title="LedVelvet Membership"
+                    className="w-full bg-black"
+                    style={{ height: "1170px", border: "0" }}
+                    loading="lazy"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-7 text-center">
                 <Link
                   href={from}
                   className="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-5 py-3 text-xs tracking-[0.18em] uppercase text-white/80 hover:bg-white/10 hover:border-white/30 hover:text-white transition"
