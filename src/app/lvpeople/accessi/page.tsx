@@ -15,6 +15,9 @@ type MemberRow = {
   legacy: boolean;
   legacy_barcode: string | null;
   created_at: string;
+  membership_group: string | null;
+  status: string | null;
+  membership_expires_at: string | null;
 };
 
 type WallyRow = {
@@ -83,12 +86,6 @@ function getRawField(raw: any, key: string) {
   return v === null || v === undefined ? "" : String(v).trim();
 }
 
-function computeMemberStatus(args: { legacy: boolean; hasActiveMembership: boolean }) {
-  if (args.legacy) return "LEGACY" as const;
-  if (args.hasActiveMembership) return "ATTIVO" as const;
-  return "SCADUTO" as const;
-}
-
 function pickEvent(a: AccessRow) {
   const evAny = (a as any).events as EventEmbed;
   if (!evAny) return null;
@@ -114,15 +111,15 @@ export default async function LVPeopleAccessiPage() {
   // 1) trova socio (LV People usa members)
   const { data: member, error: memberErr } = await supabase
     .from("members")
-    .select("id, first_name, last_name, email, phone, legacy, legacy_barcode, created_at")
+    .select("id, first_name, last_name, email, phone, legacy, legacy_barcode, created_at, membership_group, status, membership_expires_at")
     .ilike("email", email)
     .maybeSingle<MemberRow>();
 
   if (memberErr) {
     return (
-      <main className="min-h-screen bg-[#070812] text-white p-6">
+      <main className="min-h-screen bg-[#080008] text-white p-6">
         <div className="max-w-5xl mx-auto">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <div className="rounded-3xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-6">
             <div className="text-xl font-semibold">LV People — Accessi</div>
             <div className="mt-3 text-red-200 text-sm">Errore: {memberErr.message}</div>
             <a href="/lvpeople" className="mt-4 inline-block text-sm text-white/70 hover:text-white">
@@ -138,20 +135,9 @@ export default async function LVPeopleAccessiPage() {
     redirect("/lvpeople");
   }
 
-  // 2) membership attiva (se esiste)
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: activeMembership } = await supabase
-    .from("memberships")
-    .select("id, member_id, status, start_date, end_date")
-    .eq("member_id", member.id)
-    .eq("status", "active")
-    .or(`end_date.is.null,end_date.gte.${today}`)
-    .order("start_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const hasActiveMembership = !!activeMembership;
-  const status = computeMemberStatus({ legacy: member.legacy, hasActiveMembership });
+  const status = member.status?.trim() || "Stato non disponibile";
+  const normalizedStatus = status.toUpperCase();
+  const isActive = normalizedStatus === "ATTIVA";
 
   // 3) Wallyfor raw: per barcode (se presente) altrimenti per email
   let wally: WallyRow | null = null;
@@ -173,10 +159,10 @@ export default async function LVPeopleAccessiPage() {
 
   const raw = wally?.raw || null;
 
-  const codiceGruppo = getRawField(raw, "codiceGruppo") || "— (placeholder)";
-  const validita = getRawField(raw, "Anno validità tessera") || wally?.status || "—";
+  const codiceGruppo = member.membership_group || getRawField(raw, "codiceGruppo") || "—";
+  const validita = status;
   const emissione = getRawField(raw, "Emissione") || "—";
-  const scadenza = getRawField(raw, "Scadenza") || "—";
+  const scadenza = member.membership_expires_at || getRawField(raw, "Scadenza") || "—";
   const barcode = wally?.barcode || (member.legacy_barcode || "") || "—";
 
   // anagrafica (da raw)
@@ -234,14 +220,14 @@ export default async function LVPeopleAccessiPage() {
 
   return (
     <main className="min-h-screen text-white">
-      <div className="min-h-screen bg-[#070812] relative overflow-hidden">
+      <div className="min-h-screen bg-[#080008] relative overflow-hidden">
         <div
           className="pointer-events-none absolute -top-40 -left-40 h-[520px] w-[520px] rounded-full blur-2xl opacity-60"
           style={{ background: "radial-gradient(circle, rgba(255,0,199,0.22), transparent 62%)" }}
         />
         <div
           className="pointer-events-none absolute -bottom-48 -right-48 h-[680px] w-[680px] rounded-full blur-2xl opacity-60"
-          style={{ background: "radial-gradient(circle, rgba(0,255,209,0.18), transparent 62%)" }}
+          style={{ background: "radial-gradient(circle, rgba(255,0,126,0.18), transparent 62%)" }}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black" />
 
@@ -251,7 +237,7 @@ export default async function LVPeopleAccessiPage() {
               <div>
                 <div className="text-xs tracking-[0.26em] uppercase text-white/60">LV People</div>
                 <h1 className="mt-1 text-2xl font-semibold">Eventi partecipati</h1>
-                <p className="mt-1 text-sm text-white/65">Timeline personale (past inclusi) + profilo tessera.</p>
+                <p className="mt-1 text-sm text-white/65">Il tuo profilo e lo storico degli eventi.</p>
               </div>
 
               <a
@@ -262,8 +248,8 @@ export default async function LVPeopleAccessiPage() {
               </a>
             </header>
 
-            {/* TOP (lasciato com’è) */}
-            <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_20px_80px_rgba(0,0,0,0.60)] overflow-hidden">
+            
+            <section className="mt-6 rounded-3xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 backdrop-blur-md shadow-[0_20px_80px_rgba(0,0,0,0.60)] overflow-hidden">
               <div className="p-6">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
@@ -275,12 +261,12 @@ export default async function LVPeopleAccessiPage() {
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-4">
                         <div className="text-xs tracking-[0.22em] uppercase text-white/55">Gruppo</div>
                         <div className="mt-1 text-sm font-semibold text-white/90">{codiceGruppo}</div>
                         <div className="mt-1 text-xs text-white/55">Validità: {validita}</div>
                       </div>
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-4">
                         <div className="text-xs tracking-[0.22em] uppercase text-white/55">Tessera</div>
                         <div className="mt-1 text-xs text-white/60">Barcode:</div>
                         <div className="mt-1 font-mono text-xs text-white break-all">{barcode}</div>
@@ -291,7 +277,7 @@ export default async function LVPeopleAccessiPage() {
                     </div>
 
                     <div className="mt-4 rounded-2xl border border-white/10 bg-black/15 p-4">
-                      <div className="text-xs tracking-[0.22em] uppercase text-white/55">Anagrafica (da Wallyfor raw)</div>
+                      <div className="text-xs tracking-[0.22em] uppercase text-white/55">Dati personali</div>
                       <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                         <div className="text-white/70">
                           Sesso: <span className="text-white/90">{sesso}</span>
@@ -321,7 +307,6 @@ export default async function LVPeopleAccessiPage() {
                           Consenso promo: <span className="text-white/90">{consensoPromo}</span>
                         </div>
                       </div>
-                      <div className="mt-3 text-xs text-white/45">Se qualche campo è vuoto dipende dall’export Wallyfor (raw).</div>
                     </div>
                   </div>
 
@@ -334,7 +319,7 @@ export default async function LVPeopleAccessiPage() {
                           <span
                             className={[
                               "h-2 w-2 rounded-full",
-                              status === "ATTIVO" ? "bg-emerald-300" : status === "LEGACY" ? "bg-cyan-300" : "bg-rose-300",
+                              isActive ? "bg-emerald-300" : "bg-rose-300",
                             ].join(" ")}
                           />
                           <span className="text-sm font-semibold">{status}</span>
@@ -349,37 +334,33 @@ export default async function LVPeopleAccessiPage() {
                       </div>
 
                       <div className="text-xs text-white/45 text-right">
-                        <div>Place order: coming soon</div>
-                        <div className="mt-1">Fonte anagrafica: Wallyfor raw</div>
+                        <div>Dati aggiornati da Wallyfor</div>
                       </div>
                     </div>
 
                     <div className="mt-5 grid grid-cols-2 gap-4 max-w-sm">
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                      <div className="rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-4 text-center">
                         <div className="text-xs tracking-[0.22em] uppercase text-white/55">Accessi</div>
                         <div className="mt-2 text-3xl font-extrabold">{accessCount}</div>
                       </div>
 
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                      <div className="rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-4 text-center">
                         <div className="text-xs tracking-[0.22em] uppercase text-white/55">Lista</div>
                         <div className="mt-2 text-3xl font-extrabold">{listaCount}</div>
                       </div>
                     </div>
 
-                    <div className="mt-6 text-xs text-white/50">
-                      Nota: nome evento / luogo / data arrivano dal join <span className="font-mono">checkins → events</span>.
-                    </div>
                   </div>
                 </div>
               </div>
             </section>
 
-            {/* TIMELINE (qui il fix vero) */}
-            <section className="mt-6 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md shadow-[0_20px_80px_rgba(0,0,0,0.60)] overflow-hidden">
+            
+            <section className="mt-6 rounded-3xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 backdrop-blur-md shadow-[0_20px_80px_rgba(0,0,0,0.60)] overflow-hidden">
               <div className="p-6 border-b border-white/10">
                 <div className="text-xs tracking-[0.26em] uppercase text-white/55">Timeline</div>
-                <h2 className="mt-2 text-xl font-semibold">Eventi partecipati (past inclusi)</h2>
-                <p className="mt-1 text-sm text-white/65">Nome evento · luogo · data evento · check-in · esito · motivo · metodo</p>
+                <h2 className="mt-2 text-xl font-semibold">Eventi partecipati</h2>
+                <p className="mt-1 text-sm text-white/65">Data, luogo ed esito dei tuoi accessi.</p>
               </div>
 
               <div className="p-6">
@@ -407,7 +388,7 @@ export default async function LVPeopleAccessiPage() {
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 min-w-0">
-                                <span className="h-2 w-2 rounded-full bg-cyan-300 shrink-0" />
+                                <span className="h-2 w-2 rounded-full bg-fuchsia-300 shrink-0" />
                                 <div className="font-semibold truncate">{evName}</div>
                               </div>
 
@@ -468,9 +449,6 @@ export default async function LVPeopleAccessiPage() {
               </div>
             </section>
 
-            <div className="mt-6 text-xs text-white/35">
-              Debug: join checkins→events (name/start_at/venue/city) + checkin_at/created_at come fallback.
-            </div>
           </div>
         </div>
       </div>
