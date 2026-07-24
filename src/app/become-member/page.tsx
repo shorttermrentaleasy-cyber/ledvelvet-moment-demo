@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-const WALLY_IFRAME_URL =
+const WALLY_JOIN_URL =
   "https://wallyfor.com/iframepass/index.php?ref=1d7439beb34f751e1db481e40592079e&agenteget=";
 
 type Props = {
@@ -127,44 +127,21 @@ export default function BecomeMemberPage({ searchParams }: Props) {
                   Richiedi la tessera
                 </h2>
                 <p className="mx-auto mt-3 max-w-2xl text-sm md:text-base text-white/70 leading-relaxed">
-                  Compila i dati sulla piattaforma ufficiale Wallyfor e paga la quota annuale
-                  di 3 € tramite Stripe. Per completare correttamente il pagamento, apri il
-                  percorso in una nuova scheda.
+                  Apri la piattaforma ufficiale Wallyfor, compila i tuoi dati e paga la quota
+                  associativa annuale di 3 € tramite Stripe. La tessera sarà creata direttamente
+                  da Wallyfor: LEDVELVET non gestisce i dati della carta.
                 </p>
                 <a
-                  href={WALLY_IFRAME_URL}
+                  href={WALLY_JOIN_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-6 inline-flex items-center justify-center rounded-full bg-[#930b0c] px-7 py-3.5 text-sm font-semibold tracking-wide text-white shadow-[0_12px_35px_rgba(147,11,12,0.35)] transition hover:bg-[#b10f11] hover:scale-[1.01]"
                 >
-                  Inizia la richiesta e paga 3 € ↗
+                  Diventa socio e paga 3 € ↗
                 </a>
                 <p className="mt-3 text-xs text-white/45">
-                  Wallyfor e il pagamento sicuro Stripe si apriranno in una nuova scheda.
+                  Richiesta e pagamento sicuro si apriranno in una nuova scheda.
                 </p>
-              </div>
-
-              <div className="mt-8">
-                <div className="mb-4 text-center">
-                  <div className="text-[11px] tracking-[0.22em] uppercase text-white/45">
-                    Modulo di adesione
-                  </div>
-                  <p className="mt-2 text-sm text-white/60">
-                    Puoi consultare il modulo anche qui sotto. Per arrivare fino al pagamento,
-                    usa il pulsante qui sopra e completa il percorso nella nuova scheda.
-                  </p>
-                </div>
-
-                <div className="rounded-[22px] overflow-hidden border border-white/10 bg-black shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                  <iframe
-                    src={WALLY_IFRAME_URL}
-                    title="LedVelvet Membership"
-                    className="w-full bg-black"
-                    style={{ height: "1170px", border: "0" }}
-                    loading="lazy"
-                    referrerPolicy="strict-origin-when-cross-origin"
-                  />
-                </div>
               </div>
 
               <div className="mt-7 text-center">
@@ -183,7 +160,7 @@ export default function BecomeMemberPage({ searchParams }: Props) {
               LedVelvet • Ethereal Clubbing
             </div>
             <div className="text-xs tracking-[0.18em] uppercase text-white/35">
-              Flusso di adesione tramite Wally
+              Adesione ufficiale tramite Wallyfor
             </div>
           </div>
         </div>
