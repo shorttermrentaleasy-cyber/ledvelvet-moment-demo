@@ -80,6 +80,20 @@ function fmtDateTimeIT(iso: string | null | undefined) {
   });
 }
 
+function fmtDateIT(value: string | null | undefined) {
+  if (!value) return "—";
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 function getRawField(raw: any, key: string) {
   if (!raw || typeof raw !== "object") return "";
   const v = raw[key];
@@ -160,20 +174,9 @@ export default async function LVPeopleAccessiPage() {
 
   const codiceGruppo = member.membership_group || getRawField(raw, "codiceGruppo") || "—";
   const validita = status;
-  const emissione = getRawField(raw, "Emissione") || "—";
-  const scadenza = member.membership_expires_at || getRawField(raw, "Scadenza") || "—";
+  const dataPrimaIscrizione = fmtDateIT(getRawField(raw, "data_prima_iscrizione"));
+  const scadenza = fmtDateIT(member.membership_expires_at || getRawField(raw, "scadenza"));
   const barcode = wally?.barcode || (member.legacy_barcode || "") || "—";
-
-  // anagrafica (da raw)
-  const sesso = getRawField(raw, "Sesso") || "—";
-  const dataNascita = getRawField(raw, "Data di nascita") || "—";
-  const comune = getRawField(raw, "Comune") || "—";
-  const provincia = getRawField(raw, "Provincia") || "—";
-  const indirizzo = getRawField(raw, "Indirizzo") || "—";
-  const comuneNascita = getRawField(raw, "Comunedinascita") || "—";
-  const provNascita = getRawField(raw, "Provinciadinascita") || "—";
-  const cf = getRawField(raw, "Codice fiscale") || "—";
-  const consensoPromo = getRawField(raw, "Consenso invio promo") || "—";
 
   // 4) carica ultimi accessi (past inclusi)
   const { data: accessData } = await supabase
@@ -270,40 +273,7 @@ export default async function LVPeopleAccessiPage() {
                         <div className="mt-1 text-xs text-white/60">Barcode:</div>
                         <div className="mt-1 font-mono text-xs text-white break-all">{barcode}</div>
                         <div className="mt-2 text-xs text-white/55">
-                          Emissione: {emissione} · Scadenza: {scadenza}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/15 p-4">
-                      <div className="text-xs tracking-[0.22em] uppercase text-white/55">Dati personali</div>
-                      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                        <div className="text-white/70">
-                          Sesso: <span className="text-white/90">{sesso}</span>
-                        </div>
-                        <div className="text-white/70">
-                          Data nascita: <span className="text-white/90">{dataNascita}</span>
-                        </div>
-                        <div className="text-white/70">
-                          Comune: <span className="text-white/90">{comune}</span>
-                        </div>
-                        <div className="text-white/70">
-                          Provincia: <span className="text-white/90">{provincia}</span>
-                        </div>
-                        <div className="text-white/70">
-                          Indirizzo: <span className="text-white/90">{indirizzo}</span>
-                        </div>
-                        <div className="text-white/70">
-                          Comune nascita: <span className="text-white/90">{comuneNascita}</span>
-                        </div>
-                        <div className="text-white/70">
-                          Prov. nascita: <span className="text-white/90">{provNascita}</span>
-                        </div>
-                        <div className="text-white/70">
-                          CF: <span className="text-white/90">{cf}</span>
-                        </div>
-                        <div className="text-white/70">
-                          Consenso promo: <span className="text-white/90">{consensoPromo}</span>
+                          Prima iscrizione: {dataPrimaIscrizione} · Scadenza: {scadenza}
                         </div>
                       </div>
                     </div>
