@@ -1,7 +1,10 @@
 import MemberQrCard from "./MemberQrCard";
 import MemberWallyforRefresh from "./MemberWallyforRefresh";
+import MemberChoiceVerification from "./MemberChoiceVerification";
 import LVPeopleActions from "./LVPeopleActions";
 import React from "react";
+import { createHmac, timingSafeEqual } from "crypto";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
@@ -28,6 +31,18 @@ type WallyforMembershipRow = {
   barcode: string;
   status: string | null;
 };
+
+function hasMemberAccess(email: string, barcode: string) {
+  const value = cookies().get("lv_member_access")?.value || "";
+  const separator = value.lastIndexOf(".");
+  if (separator < 1 || value.slice(0, separator) !== barcode || !process.env.NEXTAUTH_SECRET) return false;
+  const received = value.slice(separator + 1);
+  const expected = createHmac("sha256", process.env.NEXTAUTH_SECRET)
+    .update(`${email}:${barcode}`)
+    .digest("hex");
+  return received.length === expected.length &&
+    timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+}
 
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL;
@@ -60,14 +75,31 @@ export default async function LVPeopleHomePage({
   const supabase = getSupabaseAdmin();
 
   const { data: memberRows, error: memberErr } = await supabase
-    .from("members")
-    .select("id, first_name, last_name, email, phone, legacy, language, created_at, membership_group, status, membership_expires_at, legacy_barcode")
+    .from("wallyfor_members")
+    .select("barcode, first_name, last_name, email, phone, membership_group, status, membership_expires_at, last_seen_at")
     .ilike("email", email)
+    .eq("source", "wallyfor_api")
+    .eq("is_present", true)
     .order("first_name", { ascending: true })
     .order("last_name", { ascending: true });
 
-  const members = (memberRows || []) as MemberRow[];
-  const member = selectedBarcode
+  const members = (memberRows || []).map((row) => ({
+    id: row.barcode,
+    first_name: row.first_name || "",
+    last_name: row.last_name || "",
+    email: row.email,
+    phone: row.phone,
+    legacy: false,
+    language: null,
+    created_at: row.last_seen_at || "",
+    membership_group: row.membership_group,
+    status: row.status,
+    membership_expires_at: row.membership_expires_at,
+    legacy_barcode: row.barcode,
+  })) as MemberRow[];
+  const selectedIsAllowed = members.length === 1 ||
+    (selectedBarcode ? hasMemberAccess(email, selectedBarcode) : false);
+  const member = selectedBarcode && selectedIsAllowed
     ? members.find((candidate) => candidate.legacy_barcode === selectedBarcode) || null
     : members.length === 1
       ? members[0]
@@ -107,18 +139,11 @@ export default async function LVPeopleHomePage({
             </p>
             <div className="mt-5 space-y-3">
               {members.map((candidate) => (
-                <a
+                <MemberChoiceVerification
                   key={candidate.id}
-                  href={`/lvpeople?barcode=${encodeURIComponent(candidate.legacy_barcode || "")}`}
-                  className="block rounded-xl border border-white/10 bg-black/25 p-4 transition hover:border-fuchsia-300/30 hover:bg-white/5"
-                >
-                  <span className="block font-semibold">
-                    {candidate.first_name} {candidate.last_name}
-                  </span>
-                  <span className="mt-1 block text-xs text-white/55">
-                    Tessera …{(candidate.legacy_barcode || "").slice(-5)}
-                  </span>
-                </a>
+                  barcode={candidate.legacy_barcode || ""}
+                  name={`${candidate.first_name} ${candidate.last_name}`.trim()}
+                />
               ))}
             </div>
           </section>
