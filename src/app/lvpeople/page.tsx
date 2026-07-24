@@ -42,9 +42,15 @@ function getSupabaseAdmin() {
   });
 }
 
-export default async function LVPeopleHomePage() {
+export default async function LVPeopleHomePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ barcode?: string }>;
+}) {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email?.toLowerCase().trim();
+  const params = await searchParams;
+  const selectedBarcode = String(params?.barcode || "").trim();
 
   // ✅ CHANGE: entrypoint separato per LV People
   if (!email) {
@@ -53,11 +59,19 @@ export default async function LVPeopleHomePage() {
 
   const supabase = getSupabaseAdmin();
 
-  const { data: member, error: memberErr } = await supabase
+  const { data: memberRows, error: memberErr } = await supabase
     .from("members")
     .select("id, first_name, last_name, email, phone, legacy, language, created_at, membership_group, status, membership_expires_at, legacy_barcode")
     .ilike("email", email)
-    .maybeSingle<MemberRow>();
+    .order("first_name", { ascending: true })
+    .order("last_name", { ascending: true });
+
+  const members = (memberRows || []) as MemberRow[];
+  const member = selectedBarcode
+    ? members.find((candidate) => candidate.legacy_barcode === selectedBarcode) || null
+    : members.length === 1
+      ? members[0]
+      : null;
 
   if (memberErr) {
     return (
@@ -69,6 +83,45 @@ export default async function LVPeopleHomePage() {
             Controlla che esistano le tabelle LV People in Supabase e che le env vars SUPABASE_URL /
             SUPABASE_SERVICE_ROLE siano impostate su Vercel e in locale.
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (members.length > 1 && !member) {
+    return (
+      <main className="min-h-screen bg-[#080008] p-6 text-white">
+        <div className="mx-auto max-w-2xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold">LV People</h1>
+              <p className="mt-1 text-sm text-white/70">Questa email è associata a più soci.</p>
+            </div>
+            <LVPeopleActions />
+          </div>
+
+          <section className="mt-6 rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-6">
+            <h2 className="text-lg font-semibold">Scegli la tua tessera</h2>
+            <p className="mt-2 text-sm text-white/65">
+              Seleziona il nominativo corretto. Ogni scheda verrà aperta usando esclusivamente il suo barcode.
+            </p>
+            <div className="mt-5 space-y-3">
+              {members.map((candidate) => (
+                <a
+                  key={candidate.id}
+                  href={`/lvpeople?barcode=${encodeURIComponent(candidate.legacy_barcode || "")}`}
+                  className="block rounded-xl border border-white/10 bg-black/25 p-4 transition hover:border-fuchsia-300/30 hover:bg-white/5"
+                >
+                  <span className="block font-semibold">
+                    {candidate.first_name} {candidate.last_name}
+                  </span>
+                  <span className="mt-1 block text-xs text-white/55">
+                    Tessera …{(candidate.legacy_barcode || "").slice(-5)}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </section>
         </div>
       </main>
     );
