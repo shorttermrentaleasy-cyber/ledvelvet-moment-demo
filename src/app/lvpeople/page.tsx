@@ -98,6 +98,9 @@ export default async function LVPeopleHomePage() {
   const isWallyforMembershipActive = normalizedStatus === "ATTIVA";
   const isWallyforMembershipInactive = normalizedStatus === "NON ATTIVA";
   const qrValue = member.legacy_barcode?.trim() || null;
+  const activationUrl = qrValue
+    ? `https://wallyfor.com/rinnovi/step3.php?idcode=5355&msg=${encodeURIComponent(qrValue)}&imp=`
+    : "https://wallyfor.com/rinnovi/index.php?idcode=5355";
 
   return (
     <main className="min-h-screen bg-[#080008] text-white p-6">
@@ -185,7 +188,7 @@ export default async function LVPeopleHomePage() {
                 Completa il pagamento su Wallyfor per attivarla e aggiornare la scadenza.
               </p>
               <a
-                href="https://wallyfor.com/rinnovi/index.php?idcode=5355"
+                href={activationUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-4 inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
