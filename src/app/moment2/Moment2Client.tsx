@@ -8,19 +8,24 @@ import { signIn, signOut } from "next-auth/react";
 
 type Level = "BASE" | "VIP" | "FOUNDER";
 
+type AccountMember = {
+  id: string;
+  fullName: string;
+  group: string | null;
+  status: string | null;
+  expiresAt: string | null;
+  barcode: string | null;
+};
+
 type AccountProfile = {
   email: string;
   fullName: string;
   qualification: "Amministratore" | "Socio" | "Amministratore e socio";
   isAdmin: boolean;
   isMember: boolean;
-  member: {
-    id: string;
-    group: string | null;
-    status: string | null;
-    expiresAt: string | null;
-    barcode: string | null;
-  } | null;
+  member: AccountMember | null;
+  members: AccountMember[];
+  requiresMemberChoice: boolean;
 };
 
 type Product = {
@@ -342,6 +347,7 @@ export default function Moment2() {
   const [loginSending, setLoginSending] = useState(false);
   const [loginSent, setLoginSent] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const accountSyncStarted = useRef(false);
 
   async function submitHomepageLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -376,6 +382,16 @@ export default function Moment2() {
 
     async function loadAccount() {
       try {
+        if (!accountSyncStarted.current) {
+          accountSyncStarted.current = true;
+          await fetch("/api/account/wallyfor-refresh", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          }).catch(() => null);
+        }
+
         const response = await fetch("/api/account/summary", { cache: "no-store" });
         const payload = await response.json();
 
@@ -1154,6 +1170,28 @@ export default function Moment2() {
                       <div>
                         <div className="text-white/45">Tessera</div>
                         <div className="mt-1 text-white/90 truncate" title={account.member.barcode || ""}>{account.member.barcode || "—"}</div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {account.requiresMemberChoice ? (
+                    <div className="p-4 border-t border-white/10">
+                      <div className="text-xs font-semibold text-white">Scegli la tessera</div>
+                      <div className="mt-2 space-y-2">
+                        {account.members.map((member) => (
+                          <Link
+                            key={member.id}
+                            href={`/lvpeople?barcode=${encodeURIComponent(member.barcode || "")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block rounded-xl border border-white/10 px-3 py-2.5 hover:bg-white/10"
+                          >
+                            <span className="block text-sm font-semibold text-white">{member.fullName}</span>
+                            <span className="mt-1 block text-[11px] text-white/55">
+                              Tessera …{(member.barcode || "").slice(-5)}
+                            </span>
+                          </Link>
+                        ))}
                       </div>
                     </div>
                   ) : null}
