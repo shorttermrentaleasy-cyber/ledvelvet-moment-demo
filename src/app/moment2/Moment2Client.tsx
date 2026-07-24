@@ -347,6 +347,10 @@ export default function Moment2() {
   const [loginSending, setLoginSending] = useState(false);
   const [loginSent, setLoginSent] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [selectedMemberBarcode, setSelectedMemberBarcode] = useState<string | null>(null);
+  const [memberPhone, setMemberPhone] = useState("");
+  const [memberVerifyError, setMemberVerifyError] = useState<string | null>(null);
+  const [memberVerifyBusy, setMemberVerifyBusy] = useState(false);
   const accountSyncStarted = useRef(false);
 
   async function submitHomepageLogin(event: React.FormEvent<HTMLFormElement>) {
@@ -374,6 +378,45 @@ export default function Moment2() {
       setLoginError("Non è stato possibile inviare il link. Riprova tra poco.");
     } finally {
       setLoginSending(false);
+    }
+  }
+
+  async function verifyAccountMember(event: React.FormEvent<HTMLFormElement>, member: AccountMember) {
+    event.preventDefault();
+    if (!member.barcode || !memberPhone.trim() || memberVerifyBusy) return;
+
+    setMemberVerifyBusy(true);
+    setMemberVerifyError(null);
+    const memberWindow = window.open("", "_blank");
+
+    try {
+      const response = await fetch("/api/account/member-verify", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barcode: member.barcode, phone: memberPhone }),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || !result?.href) {
+        memberWindow?.close();
+        setMemberVerifyError(result?.error || "Verifica non riuscita.");
+        return;
+      }
+
+      if (memberWindow) {
+        memberWindow.opener = null;
+        memberWindow.location.href = result.href;
+      } else {
+        window.location.href = result.href;
+      }
+      setSelectedMemberBarcode(null);
+      setMemberPhone("");
+    } catch {
+      memberWindow?.close();
+      setMemberVerifyError("Verifica non riuscita. Riprova.");
+    } finally {
+      setMemberVerifyBusy(false);
     }
   }
 
@@ -1180,26 +1223,69 @@ export default function Moment2() {
                     <div className="p-4 border-t border-white/10">
                       <div className="text-xs font-semibold text-white">Scegli la tessera</div>
                       <div className="mt-2 space-y-2">
-                        {account.members.map((member) => (
-                          <Link
-                            key={member.id}
-                            href={`/lvpeople?barcode=${encodeURIComponent(member.barcode || "")}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block rounded-xl border border-white/10 px-3 py-2.5 hover:bg-white/10"
-                          >
-                            <span className="block text-sm font-semibold text-white">{member.fullName}</span>
-                            <span className="mt-1 block text-[11px] text-white/55">
-                              Tessera …{(member.barcode || "").slice(-5)}
-                            </span>
-                          </Link>
-                        ))}
+                        {account.members.map((member) =>
+                          selectedMemberBarcode === member.barcode ? (
+                            <form
+                              key={member.id}
+                              onSubmit={(event) => void verifyAccountMember(event, member)}
+                              className="rounded-xl border border-fuchsia-300/25 bg-white/5 p-3"
+                            >
+                              <div className="text-sm font-semibold text-white">{member.fullName}</div>
+                              <div className="mt-1 text-[11px] text-white/55">
+                                Tessera …{(member.barcode || "").slice(-5)}
+                              </div>
+                              <label className="mt-3 block text-xs text-white/65">Inserisci il cellulare associato</label>
+                              <input
+                                value={memberPhone}
+                                onChange={(event) => setMemberPhone(event.target.value)}
+                                inputMode="tel"
+                                autoComplete="tel"
+                                autoFocus
+                                required
+                                className="mt-2 w-full rounded-lg border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none focus:border-fuchsia-300/50"
+                              />
+                              {memberVerifyError ? <p className="mt-2 text-xs text-red-300">{memberVerifyError}</p> : null}
+                              <div className="mt-3 flex gap-2">
+                                <button disabled={memberVerifyBusy} className="rounded-lg bg-[var(--red-accent)] px-3 py-2 text-xs font-semibold text-black disabled:opacity-60">
+                                  {memberVerifyBusy ? "Verifica…" : "Apri tessera"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedMemberBarcode(null);
+                                    setMemberPhone("");
+                                    setMemberVerifyError(null);
+                                  }}
+                                  className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/75"
+                                >
+                                  Annulla
+                                </button>
+                              </div>
+                            </form>
+                          ) : (
+                            <button
+                              key={member.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedMemberBarcode(member.barcode);
+                                setMemberPhone("");
+                                setMemberVerifyError(null);
+                              }}
+                              className="block w-full rounded-xl border border-white/10 px-3 py-2.5 text-left hover:bg-white/10"
+                            >
+                              <span className="block text-sm font-semibold text-white">{member.fullName}</span>
+                              <span className="mt-1 block text-[11px] text-white/55">
+                                Tessera …{(member.barcode || "").slice(-5)}
+                              </span>
+                            </button>
+                          )
+                        )}
                       </div>
                     </div>
                   ) : null}
 
                   <div className="p-2 border-t border-white/10">
-                    {account.isMember ? (
+                    {account.isMember && !account.requiresMemberChoice ? (
                       <Link
                         href="/lvpeople"
                         target="_blank"
