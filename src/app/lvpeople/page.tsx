@@ -136,6 +136,7 @@ export default async function LVPeopleHomePage() {
 
   const hasActiveMembership = !!activeMembership;
   const status = computeMemberStatus({ legacy: member.legacy, hasActiveMembership });
+  const isWallyforMembershipInactive = member.status?.trim().toUpperCase() === "NON ATTIVA";
 
   return (
     <main className="min-h-screen bg-black text-white p-6">
@@ -243,6 +244,23 @@ export default async function LVPeopleHomePage() {
               )}
             </div>
           </div>
+
+          {isWallyforMembershipInactive ? (
+            <div className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-5">
+              <p className="text-sm font-semibold text-amber-100">La tessera è emessa ma non ancora attiva.</p>
+              <p className="mt-1 text-sm text-white/70">
+                Completa il pagamento su Wallyfor per attivarla e aggiornare la scadenza.
+              </p>
+              <a
+                href="https://wallyfor.com/rinnovi/index.php?idcode=5355"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
+              >
+                Paga e attiva la tessera – 3 €
+              </a>
+            </div>
+          ) : null}
 
           <div className="mt-6 flex items-center gap-3">
             <a
