@@ -56,8 +56,6 @@ export default async function AdminHomePage() {
   <Card title="DeepDive" desc="Experience / contenuti evento" href="/admin/deepdive" />
   <Card title="Sponsors" desc="Crea e gestisci sponsor" href="/admin/sponsors" />
 
-  <Card title="DoorCheck" desc="Scanner accessi staff" href="/doorcheck" />
-
   <Card
     title="Door Gates"
     desc="Configurazione gate, email Xceed e ruoli ingresso"
@@ -76,12 +74,6 @@ export default async function AdminHomePage() {
     title="Ambient Playlist (Hero)"
     desc="Gestione musica ambient Hero (Airtable)"
     href="https://airtable.com/appkpUBdMSN1oY4TI/pagCqw9rn03EsYAfo"
-  />
-
-  <Card
-    title="Door API Key"
-    desc="Gestione chiave DoorCheck (admin)"
-    href="/admin/settings/door-api"
   />
 
   <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
