@@ -77,6 +77,9 @@ function readonlyClass() {
 function sectionCard() {
   return "border border-white/10 bg-[var(--surface2)] p-4";
 }
+function advancedCard() {
+  return "border border-white/10 bg-[var(--surface2)]";
+}
 
 function SelectField({
   label,
@@ -100,11 +103,7 @@ function SelectField({
           </option>
         ))}
       </select>
-      {options.length === 0 ? (
-        <div className="mt-1 text-[11px] text-white/50">
-          (Aggiungi le opzioni negli array in cima al file: ATMOS_*_OPTIONS)
-        </div>
-      ) : null}
+      {options.length === 0 ? <div className="mt-1 text-[11px] text-white/50">Nessuna opzione disponibile.</div> : null}
     </div>
   );
 }
@@ -329,49 +328,29 @@ export default function AdminDeepDiveEditPage() {
               </div>
 
               <div className={sectionCard() + " space-y-3"}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Atmosfera (facoltativa)</div>
-
-                <SelectField
-                  label="atmosphere_sound"
-                  value={form.atmosphere_sound}
-                  onChange={(v) => setForm({ ...form, atmosphere_sound: v })}
-                  options={ATMOS_SOUND_OPTIONS}
-                />
-
-                <SelectField
-                  label="atmosphere_light"
-                  value={form.atmosphere_light}
-                  onChange={(v) => setForm({ ...form, atmosphere_light: v })}
-                  options={ATMOS_LIGHT_OPTIONS}
-                />
-
-                <SelectField
-                  label="atmosphere_energy"
-                  value={form.atmosphere_energy}
-                  onChange={(v) => setForm({ ...form, atmosphere_energy: v })}
-                  options={ATMOS_ENERGY_OPTIONS}
-                />
-              </div>
-
-              <div className={sectionCard() + " space-y-3"}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Hero</div>
+                <div>
+                  <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Video o immagine principale</div>
+                  <div className="mt-1 text-xs text-[var(--muted)]">
+                    È il contenuto che apre l’Experience. Il reel breve si gestisce dal pulsante “Gestisci media”.
+                  </div>
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="md:col-span-1">
-                    <div className="text-xs text-[var(--muted)] mb-1">hero_media_type</div>
+                    <div className="text-xs text-[var(--muted)] mb-1">Tipo di contenuto</div>
                     <select
                       className={inputClass()}
                       value={form.hero_media_type || "image"}
                       onChange={(e) => setForm({ ...form, hero_media_type: e.target.value })}
                     >
-                      <option value="image">image</option>
-                      <option value="youtube">youtube</option>
-                      <option value="mp4">mp4</option>
+                      <option value="image">Immagine</option>
+                      <option value="youtube">Video YouTube</option>
+                      <option value="mp4">Video MP4</option>
                     </select>
                   </div>
 
                   <div className="md:col-span-2">
-                    <div className="text-xs text-[var(--muted)] mb-1">hero_youtube_url</div>
+                    <div className="text-xs text-[var(--muted)] mb-1">Link YouTube</div>
                     <input
                       className={inputClass()}
                       value={form.hero_youtube_url || ""}
@@ -382,7 +361,7 @@ export default function AdminDeepDiveEditPage() {
                 </div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">hero_mp4_url</div>
+                  <div className="text-xs text-[var(--muted)] mb-1">Link video MP4</div>
                   <input
                     className={inputClass()}
                     value={form.hero_mp4_url || ""}
@@ -391,110 +370,95 @@ export default function AdminDeepDiveEditPage() {
                   />
                 </div>
 
-                <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">hero_media_note</div>
-                  <input
-                    className={inputClass()}
-                    value={form.hero_media_note || ""}
-                    onChange={(e) => setForm({ ...form, hero_media_note: e.target.value })}
-                  />
-                </div>
-
-                <div className="text-xs text-[var(--muted)]">
-                  Attachments gestiti in Airtable.
-                  <div className="mt-1 text-white/70 break-all">hero_image url: {data.hero_image_url || "—"}</div>
-                  <div className="mt-1 text-white/70">gallery count: {data.gallery_count ?? 0}</div>
+                <div className="border-t border-white/10 pt-3 text-xs text-[var(--muted)]">
+                  <span className="text-white/80">Gallery:</span>{" "}
+                  {data.gallery_count ? `${data.gallery_count} immagini collegate` : "nessuna immagine collegata"}
+                  <span className="ml-2">Per aggiungerle o modificarle usa “Gestisci media”.</span>
                 </div>
               </div>
 
-              <div className={sectionCard() + " space-y-3"}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Racconto dell’evento (facoltativo)</div>
+              <details className={advancedCard()}>
+                <summary className="cursor-pointer list-none px-4 py-4 flex items-center justify-between gap-3">
+                  <span>
+                    <span className="block text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Opzioni avanzate</span>
+                    <span className="mt-1 block text-sm">Racconto, atmosfera e impostazioni tecniche facoltative</span>
+                  </span>
+                  <span className="text-xs text-[var(--muted)]">Apri</span>
+                </summary>
 
-                <div>
-                    <div className="text-xs text-[var(--muted)] mb-1">Concept</div>
-                  <textarea className={textareaClass()} value={form.concept || ""} onChange={(e) => setForm({ ...form, concept: e.target.value })} />
-                </div>
+                <div className="border-t border-white/10 p-4 space-y-6">
+                  <div className="space-y-3">
+                    <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Racconto dell’evento</div>
 
-                <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">Il luogo</div>
-                  <textarea
-                    className={textareaClass()}
-                    value={form.place_story || ""}
-                    onChange={(e) => setForm({ ...form, place_story: e.target.value })}
-                  />
-                </div>
+                    <div>
+                      <div className="text-xs text-[var(--muted)] mb-1">Concept</div>
+                      <textarea className={textareaClass()} value={form.concept || ""} onChange={(e) => setForm({ ...form, concept: e.target.value })} />
+                    </div>
 
-                <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">Lineup</div>
-                  <textarea
-                    className={textareaClass()}
-                    value={form.lineup_text || ""}
-                    onChange={(e) => setForm({ ...form, lineup_text: e.target.value })}
-                  />
-                </div>
+                    <div>
+                      <div className="text-xs text-[var(--muted)] mb-1">Il luogo</div>
+                      <textarea className={textareaClass()} value={form.place_story || ""} onChange={(e) => setForm({ ...form, place_story: e.target.value })} />
+                    </div>
 
-                <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">Invito finale</div>
-                  <textarea
-                    className={textareaClass()}
-                    value={form.invite_text || ""}
-                    onChange={(e) => setForm({ ...form, invite_text: e.target.value })}
-                  />
-                </div>
+                    <div>
+                      <div className="text-xs text-[var(--muted)] mb-1">Lineup</div>
+                      <textarea className={textareaClass()} value={form.lineup_text || ""} onChange={(e) => setForm({ ...form, lineup_text: e.target.value })} />
+                    </div>
 
-                <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">Note gallery</div>
-                  <input
-                    className={inputClass()}
-                    value={form.gallery_note || ""}
-                    onChange={(e) => setForm({ ...form, gallery_note: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className={sectionCard() + " space-y-3"}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Impostazioni avanzate</div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-xs text-[var(--muted)] mb-1">sort_order</div>
-                    <input
-                      className={inputClass()}
-                      type="number"
-                      value={form.sort_order ?? ""}
-                      onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
-                      placeholder="(optional)"
-                    />
+                    <div>
+                      <div className="text-xs text-[var(--muted)] mb-1">Invito finale</div>
+                      <textarea className={textareaClass()} value={form.invite_text || ""} onChange={(e) => setForm({ ...form, invite_text: e.target.value })} />
+                    </div>
                   </div>
 
-                  <div>
-                    <div className="text-xs text-[var(--muted)] mb-1">driver_folder_url</div>
-                    <input
-                      className={inputClass()}
-                      value={form.driver_folder_url || ""}
-                      onChange={(e) => setForm({ ...form, driver_folder_url: e.target.value })}
-                      placeholder="https://drive.google.com/…"
-                    />
+                  <div className="space-y-3 border-t border-white/10 pt-5">
+                    <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Atmosfera</div>
+                    <SelectField label="Suono" value={form.atmosphere_sound} onChange={(v) => setForm({ ...form, atmosphere_sound: v })} options={ATMOS_SOUND_OPTIONS} />
+                    <SelectField label="Luce" value={form.atmosphere_light} onChange={(v) => setForm({ ...form, atmosphere_light: v })} options={ATMOS_LIGHT_OPTIONS} />
+                    <SelectField label="Energia" value={form.atmosphere_energy} onChange={(v) => setForm({ ...form, atmosphere_energy: v })} options={ATMOS_ENERGY_OPTIONS} />
+                  </div>
+
+                  <div className="space-y-3 border-t border-white/10 pt-5">
+                    <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Impostazioni tecniche</div>
+                    <div>
+                      <div className="text-xs text-[var(--muted)] mb-1">Note sul contenuto principale</div>
+                      <input className={inputClass()} value={form.hero_media_note || ""} onChange={(e) => setForm({ ...form, hero_media_note: e.target.value })} />
+                    </div>
+                    <div>
+                      <div className="text-xs text-[var(--muted)] mb-1">Note gallery</div>
+                      <input className={inputClass()} value={form.gallery_note || ""} onChange={(e) => setForm({ ...form, gallery_note: e.target.value })} />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-xs text-[var(--muted)] mb-1">Ordine di visualizzazione</div>
+                        <input className={inputClass()} type="number" value={form.sort_order ?? ""} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} placeholder="Facoltativo" />
+                      </div>
+                      <div>
+                        <div className="text-xs text-[var(--muted)] mb-1">Cartella Drive</div>
+                        <input className={inputClass()} value={form.driver_folder_url || ""} onChange={(e) => setForm({ ...form, driver_folder_url: e.target.value })} placeholder="https://drive.google.com/…" />
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </details>
 
-                {msg ? <div className="text-xs text-white/80">✅ {msg}</div> : null}
-                {err ? <div className="text-xs text-red-400">⨯ {err}</div> : null}
-              </div>
+              {msg ? <div className="text-xs text-white/80">✅ {msg}</div> : null}
+              {err ? <div className="text-xs text-red-400">⨯ {err}</div> : null}
             </div>
 
             <div className="space-y-6">
               <div className={sectionCard()}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Readonly (for now)</div>
+                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Informazioni collegate</div>
 
                 <div className="mt-3 space-y-3 text-sm">
                   <div>
-                    <div className="text-xs text-[var(--muted)]">cta_primary_label (from events later)</div>
+                    <div className="text-xs text-[var(--muted)]">Pulsante principale</div>
                     <div className={readonlyClass()}>{data.cta_primary_label || "—"}</div>
                   </div>
 
                   <div>
-                    <div className="text-xs text-[var(--muted)]">cta_secondary_label</div>
+                    <div className="text-xs text-[var(--muted)]">Pulsante secondario</div>
                     <div className={readonlyClass()}>{data.cta_secondary_label || "—"}</div>
                   </div>
                 </div>
@@ -504,22 +468,16 @@ export default function AdminDeepDiveEditPage() {
                 <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Media</div>
                 <div className="mt-3 text-sm space-y-2">
                   <div>
-                    <div className="text-xs text-[var(--muted)]">event_date</div>
+                    <div className="text-xs text-[var(--muted)]">Data evento</div>
                     <div className="text-white/80">{data.event_date || "—"}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-[var(--muted)]">music_mood url</div>
+                    <div className="text-xs text-[var(--muted)]">Audio atmosfera</div>
                     <div className="text-white/70 text-xs break-all">{data.music_mood_url || "—"}</div>
                   </div>
                 </div>
               </div>
 
-              <div className={sectionCard()}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Note</div>
-                <div className="mt-2 text-xs text-[var(--muted)]">
-                  Per evitare errori di “opzione non valida”, le opzioni dei select stanno nel codice (array ATMOS_*_OPTIONS).
-                </div>
-              </div>
             </div>
           </div>
         )}
