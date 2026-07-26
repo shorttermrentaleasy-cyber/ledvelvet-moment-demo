@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
@@ -22,9 +22,56 @@ export default function DeepDiveLineupVideoUploadPage({
 
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [publicUrl, setPublicUrl] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentReel() {
+      if (!slug) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(null);
+
+        const res = await fetch(`/api/admin/deepdive/${encodeURIComponent(slug)}`, {
+          cache: "no-store",
+        });
+        const raw = await res.text();
+        let json: any = {};
+        try {
+          json = raw ? JSON.parse(raw) : {};
+        } catch {
+          json = { raw };
+        }
+
+        if (!res.ok || json?.ok === false) {
+          throw new Error(
+            json?.error || json?.message || json?.raw || `Errore lettura reel (${res.status})`
+          );
+        }
+
+        if (!cancelled) {
+          setPublicUrl(String(json?.deepdive?.lineup_video_url || "").trim());
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Errore lettura reel");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadCurrentReel();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
 
   async function onUploadMp4(file: File) {
     try {
@@ -215,12 +262,12 @@ export default function DeepDiveLineupVideoUploadPage({
                 opacity: uploading ? 0.7 : 1,
               }}
             >
-              {uploading ? "Uploading…" : "Seleziona MP4"}
+              {uploading ? "Caricamento…" : publicUrl ? "Sostituisci MP4" : "Seleziona MP4"}
               <input
                 type="file"
                 accept="video/mp4,video/*"
                 style={{ display: "none" }}
-                disabled={uploading || deleting || !slug}
+                disabled={loading || uploading || deleting || !slug}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   e.currentTarget.value = "";
@@ -229,18 +276,21 @@ export default function DeepDiveLineupVideoUploadPage({
               />
             </label>
 
-            <button
-              type="button"
-              onClick={onDeleteReel}
-              disabled={uploading || deleting || !slug}
-              style={{
-                ...btnDanger,
-                opacity: uploading || deleting || !slug ? 0.65 : 1,
-                cursor: uploading || deleting || !slug ? "not-allowed" : "pointer",
-              }}
-            >
-              {deleting ? "Deleting…" : "Delete Reel"}
-            </button>
+            {publicUrl && (
+              <button
+                type="button"
+                onClick={onDeleteReel}
+                disabled={loading || uploading || deleting || !slug}
+                style={{
+                  ...btnDanger,
+                  opacity: loading || uploading || deleting || !slug ? 0.65 : 1,
+                  cursor:
+                    loading || uploading || deleting || !slug ? "not-allowed" : "pointer",
+                }}
+              >
+                {deleting ? "Eliminazione…" : "Elimina reel"}
+              </button>
+            )}
 
             <Link href="/admin/deepdive" style={btn}>
               ← Back
@@ -251,7 +301,11 @@ export default function DeepDiveLineupVideoUploadPage({
             Limite attuale: <b>40MB</b>. Formato richiesto: <b>.mp4</b>.
           </div>
 
-          {publicUrl ? (
+          {loading ? (
+            <div style={{ marginTop: 22, fontSize: 13, opacity: 0.72 }}>
+              Caricamento reel collegato…
+            </div>
+          ) : publicUrl ? (
             <div style={{ marginTop: 22, display: "grid", gap: 12 }}>
               <video
                 key={publicUrl}
