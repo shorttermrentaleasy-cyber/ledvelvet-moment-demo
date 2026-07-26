@@ -43,7 +43,13 @@ export default function AdminDeepDiveCreatePage() {
         if (!res.ok || !j?.ok) throw new Error(j?.error || "Cannot load events");
 
         if (!alive) return;
-        setEvents(Array.isArray(j.items) ? j.items : []);
+        const loadedEvents = Array.isArray(j.items) ? j.items : [];
+        setEvents(loadedEvents);
+
+        const requestedEventId = new URLSearchParams(window.location.search).get("eventId") || "";
+        if (requestedEventId && loadedEvents.some((event: EventOption) => event.id === requestedEventId)) {
+          setEventId(requestedEventId);
+        }
       } catch (e: any) {
         if (!alive) return;
         setErr(e?.message || "Unexpected error");
@@ -75,8 +81,11 @@ export default function AdminDeepDiveCreatePage() {
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.ok) throw new Error(j?.error || j?.detail || "Create failed");
 
-      // torna lista (o se vuoi, possiamo aprire direttamente l’edit leggendo lo slug dalla record appena creato)
-      router.push("/admin/deepdive?refresh=1");
+      if (j?.slug) {
+        router.push(`/admin/deepdive/${encodeURIComponent(j.slug)}`);
+      } else {
+        router.push("/admin/deepdive?refresh=1");
+      }
       router.refresh();
     } catch (e: any) {
       setErr(e?.message || "Create failed");
