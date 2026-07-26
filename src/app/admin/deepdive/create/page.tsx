@@ -100,9 +100,9 @@ export default function AdminDeepDiveCreatePage() {
             <div className="text-xs tracking-[0.22em] uppercase" style={{ color: palette.muted }}>
               Admin
             </div>
-            <h1 className="text-xl font-semibold">Create Experience</h1>
+            <h1 className="text-xl font-semibold">Crea Experience</h1>
             <p className="mt-1 text-xs" style={{ color: palette.muted }}>
-              Qui scegli solo <b>event_ref</b>. Lo slug lo genera Airtable (formula).
+              Scegli l’evento da raccontare. Potrai aggiungere i contenuti e pubblicare in seguito.
             </p>
           </div>
 
@@ -133,7 +133,7 @@ export default function AdminDeepDiveCreatePage() {
           ) : (
             <>
               <div className="text-xs mb-2" style={{ color: palette.muted }}>
-                Event (event_ref)
+                Evento
               </div>
 
               <select
@@ -157,7 +157,8 @@ export default function AdminDeepDiveCreatePage() {
                   onChange={(e) => setPublished(e.target.checked)}
                 />
                 <label htmlFor="pub" className="text-sm">
-                  Published <span style={{ color: palette.muted }}>(puoi lasciarlo Draft e pubblicare dopo)</span>
+                  Pubblica subito{" "}
+                  <span style={{ color: palette.muted }}>(consigliato solo se i contenuti sono già completi)</span>
                 </label>
               </div>
 
@@ -166,7 +167,7 @@ export default function AdminDeepDiveCreatePage() {
                   href="/admin/deepdive"
                   className="px-5 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
                 >
-                  Cancel
+                  Annulla
                 </Link>
 
                 <button
@@ -174,12 +175,12 @@ export default function AdminDeepDiveCreatePage() {
                   disabled={saving}
                   className="px-6 py-2 rounded-full bg-white text-black text-xs tracking-[0.18em] uppercase disabled:opacity-60"
                 >
-                  {saving ? "Creating…" : "Create"}
+                  {saving ? "Creazione…" : "Crea Experience"}
                 </button>
               </div>
 
               <div className="mt-4 text-[11px]" style={{ color: palette.muted }}>
-                Tip: se non vedi un evento qui, controlla che sia nella tabella EVENTS e che l’API abbia accesso.
+                Se un evento non compare nell’elenco, contatta il supporto tecnico.
               </div>
             </>
           )}
