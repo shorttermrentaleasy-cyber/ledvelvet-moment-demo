@@ -233,8 +233,10 @@ export default function AdminDeepDiveEditPage() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
           <div>
             <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Admin</div>
-            <h1 className="text-xl font-semibold">Edit DeepDive</h1>
-            <p className="mt-1 text-xs text-[var(--muted)] font-mono">{String(slug)}</p>
+            <h1 className="text-xl font-semibold">Modifica Experience</h1>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Approfondimento facoltativo collegato alla scheda dell’evento.
+            </p>
           </div>
 
           <div className="flex gap-2">
@@ -242,7 +244,7 @@ export default function AdminDeepDiveEditPage() {
     href="/admin/deepdive"
     className="px-4 py-2 border border-white/20 text-xs uppercase hover:border-white/40"
   >
-    Back
+    Indietro
   </Link>
 
   <a
@@ -251,14 +253,14 @@ export default function AdminDeepDiveEditPage() {
     rel="noopener noreferrer"
     className="px-4 py-2 border border-white/20 text-xs uppercase hover:border-white/40"
   >
-    Media Manager
+    Gestisci media
   </a>
 
   <button
     onClick={onSave}
     className="px-4 py-2 border border-white/20 text-xs uppercase hover:border-white/40"
   >
-    Save
+    Salva
   </button>
 </div>
 
@@ -283,8 +285,8 @@ export default function AdminDeepDiveEditPage() {
               <div className={sectionCard()}>
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Status</div>
-                    <div className="mt-1 text-sm">Online solo se Published ✅</div>
+                    <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Pubblicazione</div>
+                    <div className="mt-1 text-sm">Se disattivata, l’Experience rimane in bozza.</div>
                   </div>
 
                   <label className="inline-flex items-center gap-2 text-sm">
@@ -293,31 +295,31 @@ export default function AdminDeepDiveEditPage() {
                       checked={Boolean(form.is_published)}
                       onChange={(e) => setForm({ ...form, is_published: e.target.checked })}
                     />
-                    Published
+                    Pubblicata
                   </label>
                 </div>
               </div>
 
               <div className={sectionCard() + " space-y-3"}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Titles</div>
+                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Contenuti principali</div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">Title override (readonly)</div>
+                  <div className="text-xs text-[var(--muted)] mb-1">Titolo dell’evento</div>
                   <div className={readonlyClass()}>{data.title_override || "—"}</div>
                 </div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">DeepDive title (editable, optional)</div>
+                  <div className="text-xs text-[var(--muted)] mb-1">Titolo dell’Experience (facoltativo)</div>
                   <input
                     className={inputClass()}
                     value={form.title_deepdive || ""}
                     onChange={(e) => setForm({ ...form, title_deepdive: e.target.value })}
-                    placeholder="(optional)"
+                    placeholder="Lascia vuoto per usare il titolo dell’evento"
                   />
                 </div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">Subtitle (Experience description)</div>
+                  <div className="text-xs text-[var(--muted)] mb-1">Sottotitolo o breve descrizione</div>
                   <textarea
                     className={textareaClass()}
                     value={form.subtitle || ""}
@@ -327,7 +329,7 @@ export default function AdminDeepDiveEditPage() {
               </div>
 
               <div className={sectionCard() + " space-y-3"}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Atmosphere (single select)</div>
+                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Atmosfera (facoltativa)</div>
 
                 <SelectField
                   label="atmosphere_sound"
@@ -406,15 +408,15 @@ export default function AdminDeepDiveEditPage() {
               </div>
 
               <div className={sectionCard() + " space-y-3"}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Content</div>
+                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Racconto dell’evento (facoltativo)</div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">concept</div>
+                    <div className="text-xs text-[var(--muted)] mb-1">Concept</div>
                   <textarea className={textareaClass()} value={form.concept || ""} onChange={(e) => setForm({ ...form, concept: e.target.value })} />
                 </div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">place_story</div>
+                  <div className="text-xs text-[var(--muted)] mb-1">Il luogo</div>
                   <textarea
                     className={textareaClass()}
                     value={form.place_story || ""}
@@ -423,7 +425,7 @@ export default function AdminDeepDiveEditPage() {
                 </div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">lineup_text</div>
+                  <div className="text-xs text-[var(--muted)] mb-1">Lineup</div>
                   <textarea
                     className={textareaClass()}
                     value={form.lineup_text || ""}
@@ -432,7 +434,7 @@ export default function AdminDeepDiveEditPage() {
                 </div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">invite_text</div>
+                  <div className="text-xs text-[var(--muted)] mb-1">Invito finale</div>
                   <textarea
                     className={textareaClass()}
                     value={form.invite_text || ""}
@@ -441,7 +443,7 @@ export default function AdminDeepDiveEditPage() {
                 </div>
 
                 <div>
-                  <div className="text-xs text-[var(--muted)] mb-1">gallery_note</div>
+                  <div className="text-xs text-[var(--muted)] mb-1">Note gallery</div>
                   <input
                     className={inputClass()}
                     value={form.gallery_note || ""}
@@ -451,7 +453,7 @@ export default function AdminDeepDiveEditPage() {
               </div>
 
               <div className={sectionCard() + " space-y-3"}>
-                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Meta</div>
+                <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Impostazioni avanzate</div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
