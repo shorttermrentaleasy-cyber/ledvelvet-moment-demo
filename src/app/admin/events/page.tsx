@@ -75,6 +75,7 @@ export default async function AdminEventsPage({
     AIRTABLE_BASE_ID,
     AIRTABLE_TABLE_EVENTS,
     AIRTABLE_TABLE_SPONSOR,
+    AIRTABLE_DEEPDIVE_TABLE,
   } = process.env;
 
   if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID || !AIRTABLE_TABLE_EVENTS) {
@@ -127,6 +128,38 @@ export default async function AdminEventsPage({
     const spData = await spRes.json();
     (spData.records || []).forEach((s: any) => {
       sponsorById[s.id] = s.fields?.["Brand Name"] || s.fields?.Name || s.id;
+    });
+  }
+
+  /* -------- fetch EXPERIENCES -------- */
+
+  const experienceByEventId: Record<string, string> = {};
+  const deepdiveTable = AIRTABLE_DEEPDIVE_TABLE || "EVENT_DEEPDIVE";
+
+  const ddRes = await fetch(
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
+      deepdiveTable
+    )}?pageSize=100`,
+    {
+      headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+      cache: "no-store",
+    }
+  );
+
+  if (ddRes.ok) {
+    const ddData = await ddRes.json();
+    (ddData.records || []).forEach((record: AirtableRecord) => {
+      const slug = txt(record.fields?.slug).trim();
+      const eventRefs = Array.isArray(record.fields?.event_ref)
+        ? record.fields.event_ref
+        : [];
+
+      if (!slug) return;
+      eventRefs.forEach((eventId: string) => {
+        if (eventId && !experienceByEventId[eventId]) {
+          experienceByEventId[eventId] = slug;
+        }
+      });
     });
   }
 
@@ -277,6 +310,7 @@ export default async function AdminEventsPage({
 
               const rawDate = getEventDateValue(f);
               const isFeatured = Boolean(f.Featured);
+              const experienceSlug = experienceByEventId[e.id] || "";
 
               return (
                 <tr key={e.id}>
@@ -295,6 +329,16 @@ export default async function AdminEventsPage({
                   <td style={td}>
                     <a href={`/admin/events/edit?id=${e.id}`} style={editBtn}>
                       Edit
+                    </a>
+                    <a
+                      href={
+                        experienceSlug
+                          ? `/admin/deepdive/${encodeURIComponent(experienceSlug)}`
+                          : `/admin/deepdive/create?eventId=${encodeURIComponent(e.id)}`
+                      }
+                      style={experienceBtn}
+                    >
+                      {experienceSlug ? "Gestisci Experience" : "Crea Experience"}
                     </a>
                     <EventsDeleteButtonClient id={e.id} label={eventLabel(f, e.id)} />
                     <EventsDuplicateButtonClient id={e.id} label={eventLabel(f, e.id)} />
@@ -431,6 +475,12 @@ const editBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   marginRight: 6,
+};
+
+const experienceBtn: React.CSSProperties = {
+  ...editBtn,
+  border: "1px solid rgba(0,255,209,0.45)",
+  color: "rgba(0,255,209,0.95)",
 };
 
 const featuredBadge: React.CSSProperties = {
