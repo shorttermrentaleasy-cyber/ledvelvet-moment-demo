@@ -347,6 +347,8 @@ export default function Moment2() {
   const [loginSending, setLoginSending] = useState(false);
   const [loginSent, setLoginSent] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginCode, setLoginCode] = useState("");
+  const [loginCodeBusy, setLoginCodeBusy] = useState(false);
   const [selectedMemberBarcode, setSelectedMemberBarcode] = useState<string | null>(null);
   const [memberPhone, setMemberPhone] = useState("");
   const [memberVerifyError, setMemberVerifyError] = useState<string | null>(null);
@@ -378,6 +380,40 @@ export default function Moment2() {
       setLoginError("Non è stato possibile inviare il link. Riprova tra poco.");
     } finally {
       setLoginSending(false);
+    }
+  }
+
+  async function submitHomepageCode(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = loginEmail.trim();
+    const code = loginCode.replace(/\D/g, "");
+    if (!isValidEmail(email) || code.length !== 8 || loginCodeBusy) return;
+
+    setLoginCodeBusy(true);
+    setLoginError(null);
+
+    try {
+      const params = new URLSearchParams({
+        callbackUrl: "/auth/complete",
+        token: code,
+        email,
+      });
+      const response = await fetch(`/api/auth/callback/email?${params.toString()}`, {
+        credentials: "include",
+        redirect: "follow",
+      });
+      const finalUrl = new URL(response.url, window.location.origin);
+
+      if (!response.ok || finalUrl.searchParams.has("error") || finalUrl.pathname === "/login") {
+        setLoginError("Codice errato, scaduto o già utilizzato.");
+        return;
+      }
+
+      window.location.reload();
+    } catch {
+      setLoginError("Non è stato possibile verificare il codice. Riprova.");
+    } finally {
+      setLoginCodeBusy(false);
     }
   }
 
@@ -2084,14 +2120,49 @@ export default function Moment2() {
           <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4">
             <div className="font-semibold text-emerald-100">Controlla la tua email</div>
             <p className="mt-2 text-sm leading-relaxed text-emerald-100/70">
-              Abbiamo inviato il link a <span className="text-emerald-50">{loginEmail.trim()}</span>.
-              Dopo il clic tornerai direttamente qui.
+              Abbiamo inviato il link e un codice a <span className="text-emerald-50">{loginEmail.trim()}</span>.
+              Apri il link su questo dispositivo oppure inserisci qui il codice ricevuto.
             </p>
+            <form onSubmit={submitHomepageCode} className="mt-4">
+              <label htmlFor="homepage-login-code" className="block text-xs tracking-[0.18em] uppercase text-emerald-100/60">
+                Codice di accesso
+              </label>
+              <input
+                id="homepage-login-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={8}
+                value={loginCode}
+                onChange={(event) => setLoginCode(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                placeholder="00000000"
+                autoFocus
+                className="mt-2 h-12 w-full rounded-2xl border border-white/15 bg-black/25 px-4 text-center text-lg tracking-[0.28em] text-white outline-none placeholder:text-white/25 focus:border-white/35"
+              />
+              {loginError ? (
+                <div className="mt-3 rounded-xl border border-red-300/20 bg-red-300/10 px-3 py-2 text-sm text-red-100">
+                  {loginError}
+                </div>
+              ) : null}
+              <button
+                type="submit"
+                disabled={loginCode.length !== 8 || loginCodeBusy}
+                className={cn(
+                  "mt-3 h-11 w-full rounded-2xl text-xs font-semibold tracking-[0.18em] uppercase transition",
+                  loginCode.length === 8 && !loginCodeBusy
+                    ? "bg-[var(--red-accent)] text-black hover:opacity-90"
+                    : "cursor-not-allowed bg-white/10 text-white/35"
+                )}
+              >
+                {loginCodeBusy ? "Verifica in corso…" : "Accedi con il codice"}
+              </button>
+            </form>
             <button
               type="button"
               onClick={() => {
                 setLoginSent(false);
                 setLoginError(null);
+                setLoginCode("");
               }}
               className="mt-4 text-xs tracking-[0.16em] uppercase text-white/60 hover:text-white"
             >

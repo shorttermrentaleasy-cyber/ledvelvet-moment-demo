@@ -3,6 +3,7 @@ import EmailProvider from "next-auth/providers/email";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@supabase/supabase-js";
+import { randomInt } from "crypto";
 
 function getAllowedAdmins(): string[] {
   return (process.env.ADMIN_EMAILS || "")
@@ -96,9 +97,14 @@ export const authOptions: NextAuthOptions = {
 
   providers: [
     EmailProvider({
+      maxAge: 10 * 60,
+      generateVerificationToken() {
+        return randomInt(10_000_000, 100_000_000).toString();
+      },
       async sendVerificationRequest({ identifier, url }) {
         // ✅ generico (non solo admin)
         const subject = "Il tuo accesso a LEDVELVET";
+        const accessCode = new URL(url).searchParams.get("token") || "";
 
         const html = `
           <!doctype html>
@@ -129,6 +135,15 @@ export const authOptions: NextAuthOptions = {
                               </td>
                             </tr>
                           </table>
+                          <div style="margin:28px auto 0;max-width:430px;border-top:1px solid #2b2b2b;padding-top:24px">
+                            <p style="margin:0;color:#c9c9c9;font-size:14px;line-height:1.6">
+                              Se stai leggendo questa email su un altro dispositivo, inserisci questo codice nel browser dove hai richiesto l’accesso:
+                            </p>
+                            <div style="margin:14px 0 0;color:#ffffff;font-size:30px;line-height:1;font-weight:700;letter-spacing:7px">${accessCode}</div>
+                            <p style="margin:12px 0 0;color:#888888;font-size:12px;line-height:1.5">
+                              Link e codice scadono dopo 10 minuti e possono essere utilizzati una sola volta.
+                            </p>
+                          </div>
                           <p style="margin:28px auto 0;max-width:430px;color:#999999;font-size:13px;line-height:1.6">
                             Se hai lasciato aperta la homepage, dopo il clic l’accesso verrà aggiornato automaticamente. La schermata di conferma proverà poi a chiudersi da sola.
                           </p>
@@ -156,6 +171,11 @@ export const authOptions: NextAuthOptions = {
 
 Apri questo link per confermare il tuo indirizzo email e accedere:
 ${url}
+
+In alternativa, inserisci questo codice nel browser dove hai richiesto l'accesso:
+${accessCode}
+
+Link e codice scadono dopo 10 minuti e possono essere utilizzati una sola volta.
 
 Se hai lasciato aperta la homepage, l’accesso verrà aggiornato automaticamente. Se non hai richiesto tu questa email, puoi ignorarla.`;
 
