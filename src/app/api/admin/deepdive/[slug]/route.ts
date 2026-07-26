@@ -154,6 +154,7 @@ export async function GET(_req: NextRequest, ctx: { params: { slug: string } }) 
           concept: s(f.concept),
           place_story: s(f.place_story),
           lineup_text: s(f.lineup_text),
+          lineup_video_url: s(f.lineup_video_url),
           invite_text: s(f.invite_text),
 
           // show current selected values
