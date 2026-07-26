@@ -2111,7 +2111,7 @@ export default function Moment2() {
         <div className="text-[11px] tracking-[0.24em] uppercase text-white/50">LedVelvet Access</div>
         <h2 id="homepage-login-title" className="mt-2 text-xl font-semibold text-white">Accedi con email</h2>
         <p className="mt-2 text-sm leading-relaxed text-white/60">
-          Inserisci la tua email: riceverai il link personale per entrare.
+          Riceverai un link personale e un codice di 8 cifre. Se leggi l’email su questo dispositivo usa il link; se la leggi altrove, inserisci qui il codice.
         </p>
       </div>
 
@@ -2121,7 +2121,7 @@ export default function Moment2() {
             <div className="font-semibold text-emerald-100">Controlla la tua email</div>
             <p className="mt-2 text-sm leading-relaxed text-emerald-100/70">
               Abbiamo inviato il link e un codice a <span className="text-emerald-50">{loginEmail.trim()}</span>.
-              Apri il link su questo dispositivo oppure inserisci qui il codice ricevuto.
+              Apri il link se stai leggendo l’email su questo dispositivo. Se l’email è aperta su un altro telefono o computer, inserisci qui il codice di 8 cifre.
             </p>
             <form onSubmit={submitHomepageCode} className="mt-4">
               <label htmlFor="homepage-login-code" className="block text-xs tracking-[0.18em] uppercase text-emerald-100/60">
