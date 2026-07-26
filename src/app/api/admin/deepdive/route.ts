@@ -146,6 +146,24 @@ export async function POST(req: NextRequest) {
     const baseId = envOrThrow("AIRTABLE_BASE_ID");
     const deepTable = process.env.AIRTABLE_DEEPDIVE_TABLE || "EVENT_DEEPDIVE";
 
+    const existing = await airtableFetch<{ records: AirtableRecord<DeepDiveFields>[] }>(
+      `${baseId}/${encodeURIComponent(deepTable)}?pageSize=100`
+    );
+    const existingExperience = (existing.records || []).find((record) =>
+      arr(record.fields?.event_ref).includes(eventId)
+    );
+
+    if (existingExperience) {
+      return jsonNoStore(
+        {
+          ok: false,
+          error: "Per questo evento esiste già una Experience.",
+          slug: s(existingExperience.fields?.slug),
+        },
+        409
+      );
+    }
+
     const createUrl = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(deepTable)}`;
 
     const fields: Record<string, any> = {
@@ -167,7 +185,15 @@ export async function POST(req: NextRequest) {
     if (!r.ok) return jsonNoStore({ ok: false, error: "Create failed", detail: txt }, 500);
 
     const created = JSON.parse(txt);
-    return jsonNoStore({ ok: true, id: created?.id, record: created }, 200);
+    return jsonNoStore(
+      {
+        ok: true,
+        id: created?.id,
+        slug: s(created?.fields?.slug),
+        record: created,
+      },
+      200
+    );
   } catch (e: any) {
     return jsonNoStore({ ok: false, error: e?.message || "Unexpected error" }, 500);
   }
