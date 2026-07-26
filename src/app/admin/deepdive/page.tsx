@@ -149,10 +149,10 @@ export default function AdminDeepDiveListPage() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
           <div>
             <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Admin</div>
-            <h1 className="text-xl font-semibold">DeepDive / Experience</h1>
+            <h1 className="text-xl font-semibold">Experience degli eventi</h1>
             <p className="mt-1 text-xs text-[var(--muted)]">
-              Online solo se <span className="text-[var(--text)]">is_published</span> ✅. Lo slug è
-              formula: non si modifica.
+              Approfondimenti facoltativi per raccontare gli eventi. Puoi prepararli come bozza e
+              pubblicarli quando sono completi.
             </p>
           </div>
 
@@ -161,7 +161,7 @@ export default function AdminDeepDiveListPage() {
               href="/admin/deepdive/create"
               className="px-4 py-2 rounded-full bg-white text-black text-xs tracking-[0.18em] uppercase font-semibold"
             >
-              + Create
+              + Crea Experience
             </Link>
 
             <Link
@@ -188,22 +188,21 @@ export default function AdminDeepDiveListPage() {
               <table className="w-full text-sm">
                 <thead className="bg-white/5 text-xs tracking-[0.22em] uppercase text-[var(--muted)]">
                   <tr>
-                    <th className="text-left p-3">Status</th>
+                    <th className="text-left p-3">Stato</th>
                     <th className="text-left p-3">Reel</th>
-                    <th className="text-left p-3">Order</th>
-                    <th className="text-left p-3">Date</th>
-                    <th className="text-left p-3">Slug</th>
-                    <th className="text-left p-3">Title</th>
-                    <th className="text-left p-3">Subtitle</th>
-                    <th className="text-right p-3">Actions</th>
+                    <th className="text-left p-3">Ordine</th>
+                    <th className="text-left p-3">Data</th>
+                    <th className="text-left p-3">Titolo</th>
+                    <th className="text-left p-3">Sottotitolo</th>
+                    <th className="text-right p-3">Azioni</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td className="p-4 text-[var(--muted)]" colSpan={8}>
-                        Nessuna Experience trovata in EVENT_DEEPDIVE.
+                      <td className="p-4 text-[var(--muted)]" colSpan={7}>
+                        Nessuna Experience trovata.
                       </td>
                     </tr>
                   ) : (
@@ -220,12 +219,12 @@ export default function AdminDeepDiveListPage() {
                             {it.is_published ? (
                               <span className="inline-flex items-center gap-2 text-xs">
                                 <span className="w-2 h-2 rounded-full bg-green-500" />
-                                Published
+                                Pubblicata
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-2 text-xs text-[var(--muted)]">
                                 <span className="w-2 h-2 rounded-full bg-yellow-500" />
-                                Draft
+                                Bozza
                               </span>
                             )}
                           </td>
@@ -234,12 +233,12 @@ export default function AdminDeepDiveListPage() {
                             {reelOk ? (
                               <span className="inline-flex items-center gap-2 text-xs">
                                 <span className="w-2 h-2 rounded-full bg-green-500" />
-                                Reel OK
+                                Reel presente
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-2 text-xs text-[var(--muted)]">
                                 <span className="w-2 h-2 rounded-full bg-zinc-500" />
-                                No Reel
+                                Nessun reel
                               </span>
                             )}
                           </td>
@@ -249,8 +248,6 @@ export default function AdminDeepDiveListPage() {
                           </td>
 
                           <td className="p-3 text-white/80">{fmtDate(it.event_date)}</td>
-
-                          <td className="p-3 font-mono text-xs text-white/80">{it.slug}</td>
 
                           <td className="p-3">
                             {it.title_override || <span className="text-white/40">—</span>}
@@ -266,14 +263,14 @@ export default function AdminDeepDiveListPage() {
                                 href={`/admin/deepdive/${encodeURIComponent(it.slug)}`}
                                 className="inline-flex items-center px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase"
                               >
-                                Edit
+                                Modifica
                               </Link>
 
                               <Link
                               href={`/upload/deepdive-lineup-video/${encodeURIComponent(it.slug)}`}
                               className="inline-flex items-center justify-center px-4 py-2 min-w-[132px] rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs tracking-[0.18em] uppercase text-center"
                               >
-                              Upload Reel
+                              Gestisci reel
                               </Link>
 
                               <button
@@ -282,7 +279,7 @@ export default function AdminDeepDiveListPage() {
                                 disabled={isDeleting}
                                 className="inline-flex items-center px-4 py-2 rounded-full border border-red-900/60 bg-red-950/40 hover:bg-red-950/70 text-xs tracking-[0.18em] uppercase disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                {isDeleting ? "Deleting..." : "Delete"}
+                                {isDeleting ? "Eliminazione..." : "Elimina"}
                               </button>
                             </div>
                           </td>
@@ -295,9 +292,7 @@ export default function AdminDeepDiveListPage() {
             </div>
 
             <div className="mt-6 text-xs text-[var(--muted)]">
-              Crei/colleghi una Experience in Airtable aggiungendo una riga in{" "}
-              <span className="text-[var(--text)]">EVENT_DEEPDIVE</span> e selezionando{" "}
-              <span className="text-[var(--text)]">event_ref</span>.
+              L’Experience è facoltativa e non sostituisce la scheda principale dell’evento.
             </div>
           </>
         )}
