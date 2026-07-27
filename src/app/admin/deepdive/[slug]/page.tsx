@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
-type GalleryAttachment = {
+type MediaAttachment = {
   id?: string;
   url: string;
   filename?: string;
@@ -49,9 +49,9 @@ type DeepDiveEdit = {
   gallery_note: string;
 
   hero_image_url: string;
-  gallery: GalleryAttachment[];
+  gallery: MediaAttachment[];
   gallery_count: number;
-  music_mood_url: string;
+  music_mood: MediaAttachment[];
 };
 
 // ------------------------------------------------------------------
@@ -136,6 +136,7 @@ export default function AdminDeepDiveEditPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [galleryBusy, setGalleryBusy] = useState(false);
+  const [musicBusy, setMusicBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -223,7 +224,23 @@ export default function AdminDeepDiveEditPage() {
     }
   }
 
-  async function saveGallery(gallery: GalleryAttachment[], successMessage: string) {
+  async function refreshMedia(successMessage: string) {
+    const refreshed = await fetch(`/api/admin/deepdive/${encodeURIComponent(String(slug))}`, {
+      cache: "no-store",
+    });
+    const refreshedJson = await refreshed.json().catch(() => null);
+    if (!refreshed.ok || !refreshedJson?.ok) {
+      throw new Error(refreshedJson?.error || "Rilettura media fallita");
+    }
+
+    const nextData = refreshedJson.deepdive as DeepDiveEdit;
+    setData(nextData);
+    setForm((current: any) => ({ ...current, ...nextData }));
+    setMsg(successMessage);
+    localStorage.setItem("lv_events_updated_at", String(Date.now()));
+  }
+
+  async function saveGallery(gallery: MediaAttachment[], successMessage: string) {
     const res = await fetch(`/api/admin/deepdive/${encodeURIComponent(String(slug))}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -232,19 +249,7 @@ export default function AdminDeepDiveEditPage() {
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.ok) throw new Error(json?.error || "Aggiornamento gallery fallito");
 
-    const refreshed = await fetch(`/api/admin/deepdive/${encodeURIComponent(String(slug))}`, {
-      cache: "no-store",
-    });
-    const refreshedJson = await refreshed.json().catch(() => null);
-    if (!refreshed.ok || !refreshedJson?.ok) {
-      throw new Error(refreshedJson?.error || "Rilettura gallery fallita");
-    }
-
-    const nextData = refreshedJson.deepdive as DeepDiveEdit;
-    setData(nextData);
-    setForm((current: any) => ({ ...current, ...nextData }));
-    setMsg(successMessage);
-    localStorage.setItem("lv_events_updated_at", String(Date.now()));
+    await refreshMedia(successMessage);
   }
 
   async function onGalleryUpload(files: FileList | null) {
@@ -268,7 +273,7 @@ export default function AdminDeepDiveEditPage() {
         }
       }
 
-      const additions: GalleryAttachment[] = [];
+      const additions: MediaAttachment[] = [];
       for (const file of selected) {
         const uploadBody = new FormData();
         uploadBody.append("slug", String(slug));
@@ -289,6 +294,72 @@ export default function AdminDeepDiveEditPage() {
       setErr(error?.message || "Caricamento gallery fallito");
     } finally {
       setGalleryBusy(false);
+    }
+  }
+
+  async function saveMusic(musicMood: MediaAttachment[], successMessage: string) {
+    const res = await fetch(`/api/admin/deepdive/${encodeURIComponent(String(slug))}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ music_mood: musicMood }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) throw new Error(json?.error || "Aggiornamento musica fallito");
+    await refreshMedia(successMessage);
+  }
+
+  async function onMusicUpload(file: File | null) {
+    if (!file) return;
+
+    try {
+      setMusicBusy(true);
+      setErr(null);
+      setMsg(null);
+
+      if (file.type !== "audio/mpeg" && !file.name.toLowerCase().endsWith(".mp3")) {
+        throw new Error("Seleziona un file MP3.");
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        throw new Error("File troppo grande (massimo 20 MB).");
+      }
+
+      const uploadBody = new FormData();
+      uploadBody.append("slug", String(slug));
+      uploadBody.append("file", file);
+      const uploadRes = await fetch("/api/admin/deepdive-music-upload", {
+        method: "POST",
+        body: uploadBody,
+      });
+      const upload = await uploadRes.json().catch(() => null);
+      if (!uploadRes.ok || !upload?.ok) {
+        throw new Error(upload?.error || "Caricamento musica non disponibile");
+      }
+
+      await saveMusic(
+        [{ url: upload.url, filename: upload.filename || file.name }],
+        data?.music_mood?.length ? "Musica sostituita." : "Musica collegata."
+      );
+    } catch (error: any) {
+      setErr(error?.message || "Caricamento musica fallito");
+    } finally {
+      setMusicBusy(false);
+    }
+  }
+
+  async function onMusicRemove() {
+    const attachment = data?.music_mood?.[0];
+    if (!attachment) return;
+    if (!window.confirm(`Rimuovere “${attachment.filename || "audio atmosfera"}”?`)) return;
+
+    try {
+      setMusicBusy(true);
+      setErr(null);
+      setMsg(null);
+      await saveMusic([], "Musica rimossa.");
+    } catch (error: any) {
+      setErr(error?.message || "Rimozione musica fallita");
+    } finally {
+      setMusicBusy(false);
     }
   }
 
@@ -345,7 +416,7 @@ export default function AdminDeepDiveEditPage() {
 
   <button
     onClick={onSave}
-    disabled={saving || galleryBusy}
+    disabled={saving || galleryBusy || musicBusy}
     className="px-4 py-2 border border-white/20 text-xs uppercase hover:border-white/40"
   >
     {saving ? "Salvataggio…" : "Salva"}
@@ -614,7 +685,47 @@ export default function AdminDeepDiveEditPage() {
                   </div>
                   <div>
                     <div className="text-xs text-[var(--muted)]">Audio atmosfera</div>
-                    <div className="text-white/70 text-xs break-all">{data.music_mood_url || "—"}</div>
+                    {data.music_mood?.[0] ? (
+                      <div className="mt-2 space-y-2">
+                        <div className="text-white/70 text-xs break-all">
+                          {data.music_mood[0].filename || "Traccia MP3"}
+                        </div>
+                        <audio className="w-full" controls preload="metadata" src={data.music_mood[0].url}>
+                          Il browser non supporta la riproduzione audio.
+                        </audio>
+                        <button
+                          type="button"
+                          disabled={musicBusy}
+                          onClick={() => void onMusicRemove()}
+                          className="text-[11px] uppercase text-red-300 hover:text-red-200 disabled:opacity-50"
+                        >
+                          Rimuovi
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-white/60 text-xs">Nessun MP3 collegato</div>
+                    )}
+                    <label
+                      className={`mt-3 inline-block px-3 py-2 border border-white/20 text-[11px] uppercase ${
+                        musicBusy ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-white/40"
+                      }`}
+                    >
+                      {musicBusy
+                        ? "Caricamento…"
+                        : data.music_mood?.length
+                          ? "Sostituisci MP3"
+                          : "Carica MP3"}
+                      <input
+                        type="file"
+                        accept=".mp3,audio/mpeg"
+                        disabled={musicBusy}
+                        className="hidden"
+                        onChange={(event) => {
+                          void onMusicUpload(event.target.files?.[0] || null);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
                   </div>
                 </div>
               </div>
