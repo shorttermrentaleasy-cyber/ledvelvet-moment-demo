@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type GalleryAttachment = {
   id?: string;
@@ -261,35 +260,28 @@ export default function AdminDeepDiveEditPage() {
         if (!file.type.startsWith("image/")) {
           throw new Error(`${file.name}: seleziona soltanto immagini.`);
         }
-        if (file.size > 10 * 1024 * 1024) {
-          throw new Error(`${file.name}: file troppo grande (massimo 10 MB).`);
+        if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+          throw new Error(`${file.name}: usa JPG, PNG, WEBP o GIF.`);
+        }
+        if (file.size > 4 * 1024 * 1024) {
+          throw new Error(`${file.name}: file troppo grande (massimo 4 MB).`);
         }
       }
 
       const additions: GalleryAttachment[] = [];
       for (const file of selected) {
-        const signedRes = await fetch("/api/admin/deepdive-gallery-upload-url", {
+        const uploadBody = new FormData();
+        uploadBody.append("slug", String(slug));
+        uploadBody.append("file", file);
+        const uploadRes = await fetch("/api/admin/deepdive-gallery-upload", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug, filename: file.name }),
+          body: uploadBody,
         });
-        const signed = await signedRes.json().catch(() => null);
-        if (!signedRes.ok || !signed?.ok) {
-          throw new Error(signed?.error || `Caricamento non disponibile per ${file.name}`);
+        const upload = await uploadRes.json().catch(() => null);
+        if (!uploadRes.ok || !upload?.ok) {
+          throw new Error(upload?.error || `Caricamento non disponibile per ${file.name}`);
         }
-
-        const { error: uploadError } = await supabaseBrowser.storage
-          .from(signed.bucket)
-          .uploadToSignedUrl(signed.path, signed.token, file, {
-            contentType: file.type,
-            upsert: false,
-          });
-        if (uploadError) throw new Error(`${file.name}: ${uploadError.message}`);
-
-        const publicUrl = supabaseBrowser.storage.from(signed.bucket).getPublicUrl(signed.path)
-          .data.publicUrl;
-        if (!publicUrl) throw new Error(`${file.name}: indirizzo del file non disponibile`);
-        additions.push({ url: publicUrl, filename: file.name });
+        additions.push({ url: upload.url, filename: upload.filename || file.name });
       }
 
       await saveGallery([...(data?.gallery || []), ...additions], "Gallery aggiornata.");
