@@ -3,6 +3,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase/browser";
+
+type GalleryAttachment = {
+  id?: string;
+  url: string;
+  filename?: string;
+};
 
 type DeepDiveEdit = {
   airtable_record_id: string;
@@ -43,6 +50,7 @@ type DeepDiveEdit = {
   gallery_note: string;
 
   hero_image_url: string;
+  gallery: GalleryAttachment[];
   gallery_count: number;
   music_mood_url: string;
 };
@@ -128,6 +136,7 @@ export default function AdminDeepDiveEditPage() {
   const [data, setData] = useState<DeepDiveEdit | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [galleryBusy, setGalleryBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -215,6 +224,102 @@ export default function AdminDeepDiveEditPage() {
     }
   }
 
+  async function saveGallery(gallery: GalleryAttachment[], successMessage: string) {
+    const res = await fetch(`/api/admin/deepdive/${encodeURIComponent(String(slug))}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gallery }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) throw new Error(json?.error || "Aggiornamento gallery fallito");
+
+    const refreshed = await fetch(`/api/admin/deepdive/${encodeURIComponent(String(slug))}`, {
+      cache: "no-store",
+    });
+    const refreshedJson = await refreshed.json().catch(() => null);
+    if (!refreshed.ok || !refreshedJson?.ok) {
+      throw new Error(refreshedJson?.error || "Rilettura gallery fallita");
+    }
+
+    const nextData = refreshedJson.deepdive as DeepDiveEdit;
+    setData(nextData);
+    setForm((current: any) => ({ ...current, ...nextData }));
+    setMsg(successMessage);
+    localStorage.setItem("lv_events_updated_at", String(Date.now()));
+  }
+
+  async function onGalleryUpload(files: FileList | null) {
+    const selected = Array.from(files || []);
+    if (!selected.length) return;
+
+    try {
+      setGalleryBusy(true);
+      setErr(null);
+      setMsg(null);
+
+      for (const file of selected) {
+        if (!file.type.startsWith("image/")) {
+          throw new Error(`${file.name}: seleziona soltanto immagini.`);
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          throw new Error(`${file.name}: file troppo grande (massimo 10 MB).`);
+        }
+      }
+
+      const additions: GalleryAttachment[] = [];
+      for (const file of selected) {
+        const signedRes = await fetch("/api/admin/deepdive-gallery-upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug, filename: file.name }),
+        });
+        const signed = await signedRes.json().catch(() => null);
+        if (!signedRes.ok || !signed?.ok) {
+          throw new Error(signed?.error || `Caricamento non disponibile per ${file.name}`);
+        }
+
+        const { error: uploadError } = await supabaseBrowser.storage
+          .from(signed.bucket)
+          .uploadToSignedUrl(signed.path, signed.token, file, {
+            contentType: file.type,
+            upsert: false,
+          });
+        if (uploadError) throw new Error(`${file.name}: ${uploadError.message}`);
+
+        const publicUrl = supabaseBrowser.storage.from(signed.bucket).getPublicUrl(signed.path)
+          .data.publicUrl;
+        if (!publicUrl) throw new Error(`${file.name}: indirizzo del file non disponibile`);
+        additions.push({ url: publicUrl, filename: file.name });
+      }
+
+      await saveGallery([...(data?.gallery || []), ...additions], "Gallery aggiornata.");
+    } catch (error: any) {
+      setErr(error?.message || "Caricamento gallery fallito");
+    } finally {
+      setGalleryBusy(false);
+    }
+  }
+
+  async function onGalleryRemove(index: number) {
+    const attachment = data?.gallery?.[index];
+    if (!attachment) return;
+    if (!window.confirm(`Rimuovere “${attachment.filename || `foto ${index + 1}`}” dalla Gallery?`)) {
+      return;
+    }
+
+    try {
+      setGalleryBusy(true);
+      setErr(null);
+      setMsg(null);
+      const nextGallery = (data?.gallery || []).filter((_, itemIndex) => itemIndex !== index);
+      await saveGallery(nextGallery, "Foto rimossa dalla Gallery.");
+    } catch (error: any) {
+      setErr(error?.message || "Rimozione foto fallita");
+    } finally {
+      setGalleryBusy(false);
+    }
+  }
+
   return (
     <div
       className="min-h-screen bg-[var(--bg)] text-[var(--text)]"
@@ -246,20 +351,12 @@ export default function AdminDeepDiveEditPage() {
     Indietro
   </Link>
 
-  <a
-    href="https://airtable.com/appkpUBdMSN1oY4TI/pagDDuGezzbamb7IP"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="px-4 py-2 border border-white/20 text-xs uppercase hover:border-white/40"
-  >
-    Gestisci media
-  </a>
-
   <button
     onClick={onSave}
+    disabled={saving || galleryBusy}
     className="px-4 py-2 border border-white/20 text-xs uppercase hover:border-white/40"
   >
-    Salva
+    {saving ? "Salvataggio…" : "Salva"}
   </button>
 </div>
 
@@ -370,10 +467,62 @@ export default function AdminDeepDiveEditPage() {
                   />
                 </div>
 
-                <div className="border-t border-white/10 pt-3 text-xs text-[var(--muted)]">
-                  <span className="text-white/80">Gallery:</span>{" "}
-                  {data.gallery_count ? `${data.gallery_count} immagini collegate` : "nessuna immagine collegata"}
-                  <span className="ml-2">Per aggiungerle o modificarle usa “Gestisci media”.</span>
+                <div className="border-t border-white/10 pt-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs tracking-[0.22em] uppercase text-[var(--muted)]">Gallery</div>
+                      <div className="mt-1 text-xs text-[var(--muted)]">
+                        {data.gallery_count
+                          ? `${data.gallery_count} immagini collegate`
+                          : "Nessuna immagine collegata"}
+                      </div>
+                    </div>
+                    <label
+                      className={`px-4 py-2 border border-white/20 text-xs uppercase ${
+                        galleryBusy ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-white/40"
+                      }`}
+                    >
+                      {galleryBusy ? "Caricamento…" : "Aggiungi foto"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        disabled={galleryBusy}
+                        className="hidden"
+                        onChange={(event) => {
+                          void onGalleryUpload(event.target.files);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {data.gallery?.length ? (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {data.gallery.map((attachment, index) => (
+                        <div key={attachment.id || attachment.url} className="border border-white/10 bg-black/30">
+                          <img
+                            src={attachment.url}
+                            alt={attachment.filename || `Foto ${index + 1}`}
+                            className="w-full aspect-square object-cover"
+                          />
+                          <div className="p-2">
+                            <div className="text-[11px] text-white/60 truncate">
+                              {attachment.filename || `Foto ${index + 1}`}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={galleryBusy}
+                              onClick={() => void onGalleryRemove(index)}
+                              className="mt-2 text-[11px] uppercase text-red-300 hover:text-red-200 disabled:opacity-50"
+                            >
+                              Rimuovi
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
