@@ -102,7 +102,6 @@ export default function AdminCreateEventPage() {
     TicketUrl: "",
     HeroImageUrl: "", // link (anche Drive)
     TeaserUrl: "",
-    AftermovieUrl: "",
     Featured: false,
     Notes: "",
     Sponsors: [] as string[], // rec...
@@ -246,7 +245,6 @@ export default function AdminCreateEventPage() {
     const ticketPlatform = String(form.TicketPlatform || "").trim();
     const ticketUrl = String(form.TicketUrl || "").trim();
     const teaser = String(form.TeaserUrl || "").trim();
-    const after = String(form.AftermovieUrl || "").trim();
 
     const heroRaw = String(form.HeroImageUrl || "").trim();
     const hero = normalizeDriveImageUrl(heroRaw);
@@ -255,10 +253,9 @@ export default function AdminCreateEventPage() {
     if (
       (ticketUrl && !isHttpUrl(ticketUrl)) ||
       (teaser && !isHttpUrl(teaser)) ||
-      (after && !isHttpUrl(after)) ||
       (hero && !isHttpUrl(hero))
     ) {
-      return setErr("URL non valido (Ticket/Teaser/Aftermovie/Hero)");
+      return setErr("URL non valido (Ticket/Teaser/Hero)");
     }
 
     setLoading(true);
@@ -275,7 +272,6 @@ export default function AdminCreateEventPage() {
         TicketPlatform: ticketPlatform || null,
         TicketUrl: ticketUrl || null,
         TeaserUrl: teaser || null,
-        AftermovieUrl: after || null,
 
         // ✅ attachment via URL diretto (Drive normalizzato)
         HeroImageUrl: hero || null,
@@ -403,10 +399,6 @@ export default function AdminCreateEventPage() {
                   YouTube Studio
                 </a>
               </div>
-            </Field>
-
-            <Field label="Aftermovie URL (YouTube)">
-              <input name="AftermovieUrl" value={form.AftermovieUrl} onChange={onChange} style={styles.input} />
             </Field>
 
             <label style={{ ...styles.checkRow, gridColumn: "1 / -1" }}>
