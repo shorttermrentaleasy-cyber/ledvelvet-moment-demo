@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +47,39 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 type SponsorOut = { id: string; label: string; logoUrl?: string; website?: string };
 
+async function fetchActiveMembershipRequirements(
+  airtableRecordIds: string[]
+): Promise<Record<string, boolean>> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  const ids = Array.from(new Set(airtableRecordIds.filter(Boolean)));
+
+  if (!url || !key || ids.length === 0) return {};
+
+  const supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data, error } = await supabase
+    .from("events")
+    .select("airtable_record_id, require_active_membership")
+    .in("airtable_record_id", ids);
+
+  if (error) {
+    console.error("Supabase public event flags fetch failed:", error.message);
+    return {};
+  }
+
+  return Object.fromEntries(
+    (data || [])
+      .filter((event) => Boolean(event.airtable_record_id))
+      .map((event) => [
+        String(event.airtable_record_id),
+        Boolean(event.require_active_membership),
+      ])
+  );
+}
+
 async function fetchSponsorsDetails(opts: {
   token: string;
   baseId: string;
@@ -79,7 +113,6 @@ async function fetchSponsorsDetails(opts: {
 
     const j = await r.json();
     const records: AirtableRecord[] = Array.isArray(j?.records) ? j.records : [];
-
     for (const rec of records) {
       const f = rec.fields || {};
 
@@ -196,6 +229,9 @@ export async function GET(req: Request) {
 
     const j = await r.json();
     const records: AirtableRecord[] = Array.isArray(j?.records) ? j.records : [];
+    const activeMembershipByAirtableId = await fetchActiveMembershipRequirements(
+      records.map((record) => record.id)
+    );
 
     // gather sponsor ids across events
     const allSponsorIds: string[] = [];
@@ -264,6 +300,7 @@ export async function GET(req: Request) {
         heroSubtitle: asString(f["Hero Subtitle"] || f["heroSubtitle"]),
         heroOnly: Boolean(f["HeroOnly"] ?? f["heroOnly"]),
         notes: asString(f["Notes"] || f["notes"]),
+        requireActiveMembership: Boolean(activeMembershipByAirtableId[rec.id]),
         deepdive_slug: Array.isArray(f["deepdive_slug"] || f["DeepDive Slug"])
           ? (f["deepdive_slug"] || f["DeepDive Slug"])
           : asString(f["deepdive_slug"] || f["DeepDive Slug"])
