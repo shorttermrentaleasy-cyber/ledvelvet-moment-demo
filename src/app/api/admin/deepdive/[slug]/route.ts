@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,6 +100,16 @@ function jsonNoStore(body: any, status = 200) {
   });
 }
 
+async function isAdminRequest() {
+  const session = await getServerSession(authOptions);
+  const email = s(session?.user?.email).toLowerCase();
+  const allowed = s(process.env.ADMIN_EMAILS)
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return Boolean(email && allowed.includes(email));
+}
+
 async function findRecordBySlug(slug: string) {
   const baseId = envOrThrow("AIRTABLE_BASE_ID");
   const deepTable = process.env.AIRTABLE_DEEPDIVE_TABLE || "EVENT_DEEPDIVE";
@@ -123,6 +135,9 @@ function parseUnknownFieldName(msg: string): string | null {
 
 export async function GET(_req: NextRequest, ctx: { params: { slug: string } }) {
   try {
+    if (!(await isAdminRequest())) {
+      return jsonNoStore({ ok: false, error: "Non autorizzato" }, 401);
+    }
     const slug = s(ctx?.params?.slug);
     if (!slug) return jsonNoStore({ ok: false, error: "Missing slug" }, 400);
 
@@ -194,6 +209,9 @@ export async function GET(_req: NextRequest, ctx: { params: { slug: string } }) 
 
 export async function PATCH(req: NextRequest, ctx: { params: { slug: string } }) {
   try {
+    if (!(await isAdminRequest())) {
+      return jsonNoStore({ ok: false, error: "Non autorizzato" }, 401);
+    }
     const slug = s(ctx?.params?.slug);
     if (!slug) return jsonNoStore({ ok: false, error: "Missing slug" }, 400);
 
@@ -310,6 +328,9 @@ export async function PATCH(req: NextRequest, ctx: { params: { slug: string } })
 
 export async function DELETE(_req: NextRequest, ctx: { params: { slug: string } }) {
   try {
+    if (!(await isAdminRequest())) {
+      return jsonNoStore({ ok: false, error: "Non autorizzato" }, 401);
+    }
     const slug = s(ctx?.params?.slug);
     if (!slug) return jsonNoStore({ ok: false, error: "Missing slug" }, 400);
 
