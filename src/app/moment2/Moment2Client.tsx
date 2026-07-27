@@ -56,6 +56,7 @@ type EventItem = {
   ticketUrl?: string;
 
   notes?: string;
+  requireActiveMembership?: boolean;
 
   teaserUrl?: string;
   aftermovieUrl?: string;
@@ -788,6 +789,9 @@ export default function Moment2() {
               phase,
               ticketUrl: e.ticketUrl || e["Ticket Url"] || "",
               notes: (e.notes || e["Notes"] || "").toString(),
+              requireActiveMembership: Boolean(
+                e.requireActiveMembership ?? e.require_active_membership
+              ),
               teaserUrl: e.teaserUrl || e["Teaser"] || "",
               aftermovieUrl: e.aftermovieUrl || e["Aftermovie"] || "",
               featured: Boolean(e.featured),
@@ -1618,6 +1622,31 @@ export default function Moment2() {
                     <div className="mt-2 text-sm text-white/80">
                       {e.city} • {fmtDateIT(e.date)}
                     </div>
+
+                    {e.requireActiveMembership ? (
+                      <div className="mt-4 border-l-2 border-amber-300/80 bg-amber-200/10 px-4 py-3">
+                        <div className="text-xs font-semibold tracking-[0.12em] uppercase text-amber-100">
+                          Accesso esclusivamente con tessera attiva
+                        </div>
+                        {!account ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLoginError(null);
+                              setLoginSent(false);
+                              setLoginOpen(true);
+                            }}
+                            className="mt-1 text-xs text-white/70 underline decoration-white/35 underline-offset-4 hover:text-white"
+                          >
+                            Tessera non attiva? Accedi per attivarla
+                          </button>
+                        ) : (
+                          <div className="mt-1 text-xs text-white/65">
+                            Gestisci la tessera dal tuo profilo.
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
 
                     {e.notes ? (
                       <div className="mt-3">
