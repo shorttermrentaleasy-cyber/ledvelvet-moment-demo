@@ -197,7 +197,16 @@ export async function GET(_req: NextRequest, ctx: { params: { slug: string } }) 
                 }))
             : [],
           gallery_count: Array.isArray(f.gallery) ? f.gallery.length : 0,
-          music_mood_url: "Gestito in Media Manager",
+          music_mood: Array.isArray(f.music_mood)
+            ? f.music_mood
+                .filter((attachment) => attachment?.url)
+                .slice(0, 1)
+                .map((attachment) => ({
+                  id: s(attachment.id),
+                  url: s(attachment.url),
+                  filename: s(attachment.filename),
+                }))
+            : [],
         },
       },
       200
@@ -270,6 +279,23 @@ export async function PATCH(req: NextRequest, ctx: { params: { slug: string } })
       }
 
       fields.gallery = body.gallery
+        .map((attachment: any) => {
+          const id = s(attachment?.id);
+          const url = s(attachment?.url);
+          const filename = s(attachment?.filename);
+
+          if (id) return { id };
+          if (url) return filename ? { url, filename } : { url };
+          return null;
+        })
+        .filter(Boolean);
+    }
+    if ("music_mood" in body) {
+      if (!Array.isArray(body.music_mood) || body.music_mood.length > 1) {
+        return jsonNoStore({ ok: false, error: "Audio atmosfera non valido" }, 400);
+      }
+
+      fields.music_mood = body.music_mood
         .map((attachment: any) => {
           const id = s(attachment?.id);
           const url = s(attachment?.url);
