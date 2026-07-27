@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type AirtableRecord<T> = { id: string; fields: T };
-type Attachment = { url: string };
+type Attachment = { id?: string; url: string; filename?: string };
 
 type DeepDiveFields = {
   slug?: string;
@@ -172,6 +172,15 @@ export async function GET(_req: NextRequest, ctx: { params: { slug: string } }) 
           gallery_note: s(f.gallery_note),
 
           hero_image_url: "Gestito in Media Manager",
+          gallery: Array.isArray(f.gallery)
+            ? f.gallery
+                .filter((attachment) => attachment?.url)
+                .map((attachment) => ({
+                  id: s(attachment.id),
+                  url: s(attachment.url),
+                  filename: s(attachment.filename),
+                }))
+            : [],
           gallery_count: Array.isArray(f.gallery) ? f.gallery.length : 0,
           music_mood_url: "Gestito in Media Manager",
         },
@@ -237,6 +246,23 @@ export async function PATCH(req: NextRequest, ctx: { params: { slug: string } })
     if ("driver_folder_url" in body) fields.driver_folder_url = s(body.driver_folder_url);
     if ("hero_media_note" in body) fields.hero_media_note = s(body.hero_media_note);
     if ("gallery_note" in body) fields.gallery_note = s(body.gallery_note);
+    if ("gallery" in body) {
+      if (!Array.isArray(body.gallery)) {
+        return jsonNoStore({ ok: false, error: "Gallery non valida" }, 400);
+      }
+
+      fields.gallery = body.gallery
+        .map((attachment: any) => {
+          const id = s(attachment?.id);
+          const url = s(attachment?.url);
+          const filename = s(attachment?.filename);
+
+          if (id) return { id };
+          if (url) return filename ? { url, filename } : { url };
+          return null;
+        })
+        .filter(Boolean);
+    }
 
     // Remove undefined only (keep null!)
     for (const k of Object.keys(fields)) {
