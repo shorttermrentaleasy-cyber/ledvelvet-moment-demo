@@ -38,7 +38,14 @@ export async function POST(req: NextRequest) {
     }
     const formData = await req.formData();
     const kind = String(formData.get("kind") || "");
+    const title = String(formData.get("title") || "").trim();
     const file = formData.get("file");
+    if (!title) {
+      return NextResponse.json(
+        { ok: false, error: "Inserisci prima il titolo del brano." },
+        { status: 400 }
+      );
+    }
     if (!(file instanceof File)) {
       return NextResponse.json({ ok: false, error: "File mancante" }, { status: 400 });
     }
