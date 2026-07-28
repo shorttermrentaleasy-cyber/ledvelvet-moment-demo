@@ -70,10 +70,10 @@ export default async function AdminHomePage() {
 
   <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" />
 
-  <ExternalCard
+  <Card
     title="Ambient Playlist (Hero)"
-    desc="Gestione musica ambient Hero (Airtable)"
-    href="https://airtable.com/appkpUBdMSN1oY4TI/pagCqw9rn03EsYAfo"
+    desc="Gestione musica ambient della Hero"
+    href="/admin/playlist"
   />
 
   <Card title="Settings" desc="Impostazioni admin" href="/admin/settings" disabled />
