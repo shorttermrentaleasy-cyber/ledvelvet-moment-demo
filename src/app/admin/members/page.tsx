@@ -42,7 +42,7 @@ type AccessHistoryRow = {
     name: string | null;
     city: string | null;
     venue: string | null;
-    start_at: string | null;
+    starts_at: string | null;
   } | null;
 };
 
@@ -360,7 +360,7 @@ export default function AdminMembersPage() {
                     </div>
                     <div style={styles.historyMeta}>{place || "Luogo non disponibile"}</div>
                     <div style={styles.historyMeta}>
-                      Data evento: {formatDate(access.event?.start_at, true)} · Check-in: {formatDate(access.checkin_at || access.created_at, true)}
+                      Data evento: {formatDate(access.event?.starts_at, true)} · Check-in: {formatDate(access.checkin_at || access.created_at, true)}
                     </div>
                     {(access.reason || access.method || access.kind) && (
                       <div style={styles.historyMeta}>
