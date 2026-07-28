@@ -74,7 +74,7 @@ export async function GET(request: Request) {
           name,
           city,
           venue,
-          start_at
+          starts_at
         )
       `)
       .eq("member_id", member.id)
