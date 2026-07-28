@@ -349,9 +349,6 @@ export default async function LVPeopleAccessiPage() {
                       const badgeBg = ok ? "bg-emerald-300/10" : "bg-rose-300/10";
                       const badgeText = ok ? "text-emerald-100" : "text-rose-100";
 
-                      const method = (a.method || "").toUpperCase() || "—";
-                      const reason = a.reason || "—";
-
                       return (
                         <li key={a.id} className="rounded-2xl border border-white/10 bg-black/20 p-5 hover:bg-white/5 transition">
                           <div className="flex items-start justify-between gap-4">
@@ -366,19 +363,9 @@ export default async function LVPeopleAccessiPage() {
                               </div>
 
                               <div className="mt-2 text-xs text-white/55">
-                                Data evento: <span className="text-white/75">{fmtDateTimeIT(whenEvent)}</span>
+                                Data evento: <span className="text-white/75">{fmtDateIT(whenEvent)}</span>
                                 <span className="text-white/35"> · </span>
                                 Check-in: <span className="text-white/75">{fmtDateTimeIT(whenCheckin)}</span>
-                              </div>
-
-                              <div className="mt-2 text-xs text-white/55">
-                                Motivo: <span className="text-white/75">{reason}</span>
-                              </div>
-
-                              <div className="mt-1 text-xs text-white/45">
-                                Metodo: <span className="font-mono text-white/60">{method}</span>
-                                {a.kind ? <span className="text-white/35"> · </span> : null}
-                                {a.kind ? <span className="text-white/55">{a.kind}</span> : null}
                               </div>
                             </div>
 
@@ -391,7 +378,7 @@ export default async function LVPeopleAccessiPage() {
                                   badgeText,
                                 ].join(" ")}
                               >
-                                {ok ? "CONSENTITO" : "NEGATO"}
+                                {ok ? "Accesso registrato" : "Accesso negato"}
                               </span>
 
                               {a.scanned_code ? (
