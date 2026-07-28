@@ -30,6 +30,22 @@ type SyncState = {
   missing_count?: number;
 };
 
+type AccessHistoryRow = {
+  id: string;
+  checkin_at: string | null;
+  created_at: string | null;
+  result: string | null;
+  reason: string | null;
+  method: string | null;
+  kind: string | null;
+  event: {
+    name: string | null;
+    city: string | null;
+    venue: string | null;
+    start_at: string | null;
+  } | null;
+};
+
 const PAGE_SIZE = 50;
 
 function errorMessage(value: unknown) {
@@ -110,6 +126,9 @@ export default function AdminMembersPage() {
   const [total, setTotal] = useState(0);
   const [syncState, setSyncState] = useState<SyncState | null>(null);
   const [selected, setSelected] = useState<Member | null>(null);
+  const [accessHistory, setAccessHistory] = useState<AccessHistoryRow[]>([]);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -151,6 +170,34 @@ export default function AdminMembersPage() {
 
   useEffect(() => { void loadMembers(); }, [page, query, status]);
   useEffect(() => { void loadSyncState(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAccessHistory() {
+      if (!selected?.barcode) {
+        setAccessHistory([]);
+        setAccessError(null);
+        setAccessLoading(false);
+        return;
+      }
+
+      setAccessHistory([]);
+      setAccessError(null);
+      setAccessLoading(true);
+      try {
+        const params = new URLSearchParams({ barcode: selected.barcode });
+        const json = await fetchJson(`/api/admin/members/access-history?${params}`);
+        if (!cancelled) setAccessHistory(json.rows || []);
+      } catch (reason) {
+        if (!cancelled) setAccessError(errorMessage(reason));
+      } finally {
+        if (!cancelled) setAccessLoading(false);
+      }
+    }
+
+    void loadAccessHistory();
+    return () => { cancelled = true; };
+  }, [selected?.barcode]);
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -284,6 +331,50 @@ export default function AdminMembersPage() {
             <Detail label="Email" value={selected.email} /><Detail label="Telefono" value={selected.phone} /><Detail label="Gruppo" value={selected.membership_group} /><Detail label="Stato tessera" value={selected.status} /><Detail label="Emissione" value={formatDate(selected.membership_issued_at)} /><Detail label="Scadenza" value={formatDate(selected.membership_expires_at)} /><Detail label="Origine dato" value={sourceLabel(selected)} /><Detail label="Ultimo aggiornamento" value={formatDate(selected.updated_at, true)} />
           </div>
         </div>
+        <section style={styles.historySection}>
+          <div style={styles.historyHeader}>
+            <div>
+              <div style={styles.cardTitle}>Eventi partecipati</div>
+              <div style={styles.cardDesc}>Storico degli accessi realmente registrati.</div>
+            </div>
+            {!accessLoading && !accessError && <span style={styles.historyCount}>{accessHistory.length} accessi</span>}
+          </div>
+          {accessLoading ? (
+            <div style={styles.historyEmpty}>Caricamento accessi…</div>
+          ) : accessError ? (
+            <div style={styles.errorBox}>Impossibile caricare gli accessi: {accessError}</div>
+          ) : accessHistory.length === 0 ? (
+            <div style={styles.historyEmpty}>Nessun ingresso registrato.</div>
+          ) : (
+            <div style={styles.historyList}>
+              {accessHistory.map((access) => {
+                const place = [access.event?.venue, access.event?.city].filter(Boolean).join(" · ");
+                const allowed = access.result === "allowed";
+                return (
+                  <article key={access.id} style={styles.historyItem}>
+                    <div style={styles.historyItemTop}>
+                      <strong>{access.event?.name || "Evento"}</strong>
+                      <span style={allowed ? styles.allowedBadge : styles.deniedBadge}>
+                        {allowed ? "Ingresso consentito" : "Ingresso non consentito"}
+                      </span>
+                    </div>
+                    <div style={styles.historyMeta}>{place || "Luogo non disponibile"}</div>
+                    <div style={styles.historyMeta}>
+                      Data evento: {formatDate(access.event?.start_at, true)} · Check-in: {formatDate(access.checkin_at || access.created_at, true)}
+                    </div>
+                    {(access.reason || access.method || access.kind) && (
+                      <div style={styles.historyMeta}>
+                        {access.reason ? `Motivo: ${access.reason}` : ""}
+                        {access.reason && (access.method || access.kind) ? " · " : ""}
+                        {[access.method?.toUpperCase(), access.kind].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </section></div>}
     </main>
   );
@@ -306,4 +397,5 @@ const styles: Record<string, React.CSSProperties> = {
   tableWrap: { overflowX: "auto", borderRadius: 14, border: "1px solid rgba(255,255,255,.1)" }, table: { width: "100%", borderCollapse: "collapse", minWidth: 980 }, th: { textAlign: "left", padding: "10px 12px", fontSize: 12, opacity: .68, background: "rgba(0,0,0,.18)", borderBottom: "1px solid rgba(255,255,255,.1)" }, td: { padding: "11px 12px", fontSize: 13, borderBottom: "1px solid rgba(255,255,255,.075)", verticalAlign: "middle" }, tdRight: { padding: "11px 12px", textAlign: "right", borderBottom: "1px solid rgba(255,255,255,.075)" }, muted: { opacity: .62, marginTop: 4 }, mono: { fontFamily: "monospace", opacity: .62, marginTop: 4, fontSize: 12 }, activeBadge: { display: "inline-block", padding: "5px 8px", borderRadius: 999, background: "rgba(0,255,209,.12)", border: "1px solid rgba(0,255,209,.25)" }, inactiveBadge: { display: "inline-block", padding: "5px 8px", borderRadius: 999, background: "rgba(255,180,40,.1)", border: "1px solid rgba(255,180,40,.23)" }, empty: { padding: 18, border: "1px dashed rgba(255,255,255,.17)", borderRadius: 14, opacity: .72 },
   fallbackCard: { borderRadius: 16, padding: 14, background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.08)" }, fallbackToggle: { border: 0, background: "transparent", color: "white", cursor: "pointer", fontWeight: 700, padding: 0 }, fallbackBody: { marginTop: 12 },
   overlay: { position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,.68)", display: "grid", placeItems: "center", padding: 16 }, modal: { width: "min(760px, 96vw)", maxHeight: "92vh", overflowY: "auto", borderRadius: 20, padding: 18, background: "#10121d", border: "1px solid rgba(255,255,255,.14)", boxShadow: "0 30px 90px rgba(0,0,0,.6)" }, modalHeader: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 16 }, modalTitle: { margin: 0, fontSize: 24 }, detailGrid: { display: "grid", gridTemplateColumns: "minmax(220px, .8fr) minmax(280px, 1.2fr)", gap: 16 }, qrBox: { background: "white", color: "#111", borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 250 }, monoDark: { fontFamily: "monospace", marginTop: 12, fontSize: 12, wordBreak: "break-all", textAlign: "center" }, details: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }, detail: { padding: 11, borderRadius: 12, border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.04)", overflowWrap: "anywhere" }, detailLabel: { display: "block", fontSize: 11, opacity: .6, marginBottom: 5 },
+  historySection: { marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.1)" }, historyHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }, historyCount: { fontSize: 12, opacity: .7, whiteSpace: "nowrap" }, historyEmpty: { padding: 16, borderRadius: 12, border: "1px dashed rgba(255,255,255,.16)", opacity: .7 }, historyList: { display: "grid", gap: 10 }, historyItem: { padding: 13, borderRadius: 14, border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.035)" }, historyItemTop: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }, historyMeta: { marginTop: 6, fontSize: 12, lineHeight: 1.45, opacity: .68 }, allowedBadge: { padding: "4px 8px", borderRadius: 999, fontSize: 11, background: "rgba(0,255,209,.1)", border: "1px solid rgba(0,255,209,.24)" }, deniedBadge: { padding: "4px 8px", borderRadius: 999, fontSize: 11, background: "rgba(255,40,90,.1)", border: "1px solid rgba(255,40,90,.24)" },
 };
