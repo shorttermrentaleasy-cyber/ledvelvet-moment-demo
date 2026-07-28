@@ -31,12 +31,9 @@ export async function GET() {
     }
 
     const tableName = "PLAYLIST_TRACKS";
-    const viewName = "ACTIVE_HERO";
-
     const fields = ["title", "artist", "audio_file", "audio_url_override", "cover_file", "sort"];
 
     const qs = new URLSearchParams();
-    qs.set("view", viewName);
     qs.set("pageSize", "50");
     fields.forEach((f) => qs.append("fields[]", f));
     qs.append("sort[0][field]", "sort");
@@ -62,7 +59,6 @@ export async function GET() {
           error: "airtable_non_json",
           status: res.status,
           tableName,
-          viewName,
           preview: (text || "").slice(0, 220).replace(/\s+/g, " ").trim(),
         },
         { status: 502 }
@@ -76,7 +72,6 @@ export async function GET() {
           error: "airtable_error",
           status: res.status,
           tableName,
-          viewName,
           details: data,
         },
         { status: 502 }
