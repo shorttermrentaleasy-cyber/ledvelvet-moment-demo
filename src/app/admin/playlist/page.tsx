@@ -55,8 +55,16 @@ export default function PlaylistAdminPage() {
   }, []);
 
   async function upload(file: File, kind: "audio" | "cover") {
+    const title = draft.title.trim();
+    if (!title) {
+      setMessage(kind === "audio"
+        ? "Inserisci prima il titolo del brano, poi carica l’MP3."
+        : "Inserisci prima il titolo del brano, poi carica la copertina.");
+      return;
+    }
     const body = new FormData();
     body.set("kind", kind);
+    body.set("title", title);
     body.set("file", file);
     const response = await fetch("/api/admin/playlist-upload", { method: "POST", body });
     const json = await response.json();
@@ -141,7 +149,16 @@ export default function PlaylistAdminPage() {
             <div style={styles.mediaBox}>
               <b>File MP3</b>
               {draft.audio?.url && <audio controls src={draft.audio.url} style={{ width: "100%" }} />}
-              <label style={styles.upload}>
+              {!draft.title.trim() && <span style={styles.hint}>Inserisci prima il titolo del brano.</span>}
+              <label
+                style={{ ...styles.upload, ...(!draft.title.trim() ? styles.uploadDisabled : {}) }}
+                onClick={(e) => {
+                  if (!draft.title.trim()) {
+                    e.preventDefault();
+                    setMessage("Inserisci prima il titolo del brano, poi carica l’MP3.");
+                  }
+                }}
+              >
                 {draft.audio ? "Sostituisci MP3" : "Carica MP3"}
                 <input hidden type="file" accept=".mp3,audio/mpeg" onChange={async (e) => {
                   const file = e.target.files?.[0];
@@ -215,6 +232,8 @@ const styles: Record<string, React.CSSProperties> = {
   mediaGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 14, marginTop: 18 },
   mediaBox: { border: "1px solid #333", borderRadius: 13, padding: 15, display: "grid", gap: 12 },
   upload: { display: "inline-block", width: "fit-content", background: "#262626", borderRadius: 9, padding: "10px 13px", cursor: "pointer" },
+  uploadDisabled: { opacity: 0.45, cursor: "not-allowed" },
+  hint: { color: "#d6b36a", fontSize: 12 },
   cover: { width: 150, height: 150, objectFit: "cover", borderRadius: 10 },
   actions: { display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" },
   primary: { border: 0, borderRadius: 10, padding: "12px 16px", background: "#d6b36a", color: "#090909", fontWeight: 700, cursor: "pointer" },
