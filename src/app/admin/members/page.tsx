@@ -355,20 +355,13 @@ export default function AdminMembersPage() {
                     <div style={styles.historyItemTop}>
                       <strong>{access.event?.name || "Evento"}</strong>
                       <span style={allowed ? styles.allowedBadge : styles.deniedBadge}>
-                        {allowed ? "Ingresso consentito" : "Ingresso non consentito"}
+                        {allowed ? "Accesso registrato" : "Accesso negato"}
                       </span>
                     </div>
                     <div style={styles.historyMeta}>{place || "Luogo non disponibile"}</div>
                     <div style={styles.historyMeta}>
-                      Data evento: {formatDate(access.event?.starts_at, true)} · Check-in: {formatDate(access.checkin_at || access.created_at, true)}
+                      Data evento: {formatDate(access.event?.starts_at)} · Check-in: {formatDate(access.checkin_at || access.created_at, true)}
                     </div>
-                    {(access.reason || access.method || access.kind) && (
-                      <div style={styles.historyMeta}>
-                        {access.reason ? `Motivo: ${access.reason}` : ""}
-                        {access.reason && (access.method || access.kind) ? " · " : ""}
-                        {[access.method?.toUpperCase(), access.kind].filter(Boolean).join(" · ")}
-                      </div>
-                    )}
                   </article>
                 );
               })}
