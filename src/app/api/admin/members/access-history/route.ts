@@ -5,6 +5,16 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const dynamic = "force-dynamic";
 
+type XceedTicketRow = {
+  event_id: string;
+  transaction_id: string | null;
+  qr_code: string | null;
+  email: string | null;
+  full_name: string | null;
+  status: string | null;
+  raw: any;
+};
+
 function assertEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env: ${name}`);
@@ -31,11 +41,20 @@ function pickEvent(value: unknown) {
   return null;
 }
 
-function isCheckedInTicket(ticket: { status: string | null; raw: any }) {
+function isCheckedInTicket(ticket: XceedTicketRow) {
   if ((ticket.status || "").trim().toLowerCase() === "checked_in") return true;
 
+  const qrCode = String(ticket.qr_code || "").trim().toLowerCase();
+  const passes = Array.isArray(ticket.raw?.booking?.passes)
+    ? ticket.raw.booking.passes
+    : [];
+  const matchingPass = passes.find(
+    (pass: any) => String(pass?.qrCode || "").trim().toLowerCase() === qrCode
+  );
+
   return Boolean(
-    ticket.raw?.pass?.hasCheckedIn ||
+    matchingPass?.hasCheckedIn ||
+      ticket.raw?.pass?.hasCheckedIn ||
       ticket.raw?.ticket?.hasCheckedIn ||
       ticket.raw?.hasCheckedIn
   );
@@ -48,6 +67,29 @@ function normalizeIdentity(value: string | null | undefined) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
 }
+
+function getPassIdentity(ticket: XceedTicketRow) {
+  const qrCode = String(ticket.qr_code || "").trim().toLowerCase();
+  const passes = Array.isArray(ticket.raw?.booking?.passes)
+    ? ticket.raw.booking.passes
+    : [];
+  const matchingPass = passes.find(
+    (pass: any) => String(pass?.qrCode || "").trim().toLowerCase() === qrCode
+  );
+  const passName = matchingPass
+    ? `${String(matchingPass.firstName || "").trim()} ${String(
+        matchingPass.lastName || ""
+      ).trim()}`.trim()
+    : "";
+
+  return {
+    email: String(matchingPass?.email || ticket.email || "")
+      .trim()
+      .toLowerCase(),
+    name: normalizeIdentity(passName || ticket.full_name),
+  };
+}
+
 
 export async function GET(request: Request) {
   try {
@@ -118,55 +160,47 @@ export async function GET(request: Request) {
     if (memberEmail && memberName && accessEventIds.length > 0) {
       const { data: memberTicketData, error: memberTicketError } = await supabase
         .from("xceed_tickets")
-        .select("event_id, transaction_id, full_name")
-        .in("event_id", accessEventIds)
-        .ilike("email", memberEmail);
+        .select("event_id, transaction_id, qr_code, email, full_name, status, raw")
+        .in("event_id", accessEventIds);
 
       if (memberTicketError) throw memberTicketError;
 
+      const memberTickets = (memberTicketData || []) as XceedTicketRow[];
       const transactionsByEvent = new Map<string, Set<string>>();
 
-      for (const ticket of memberTicketData || []) {
+      for (const ticket of memberTickets) {
         const eventId = String(ticket.event_id || "").trim();
         const transactionId = String(ticket.transaction_id || "").trim();
+        const passIdentity = getPassIdentity(ticket);
         if (
           !eventId ||
           !transactionId ||
-          normalizeIdentity(ticket.full_name) !== memberName
-        ) {
-          continue;
-        }
+          passIdentity.email !== memberEmail.toLowerCase() ||
+          passIdentity.name !== memberName
+        ) continue;
 
         const transactions = transactionsByEvent.get(eventId) || new Set<string>();
         transactions.add(transactionId);
         transactionsByEvent.set(eventId, transactions);
       }
 
-      await Promise.all(
-        Array.from(transactionsByEvent.entries()).map(async ([eventId, transactions]) => {
-          // Se nello stesso evento il socio compare in più prenotazioni, non attribuiamo
-          // automaticamente i biglietti aggiuntivi a uno specifico ingresso.
-          if (transactions.size !== 1) return;
-          const transactionId = Array.from(transactions)[0];
+      for (const [eventId, transactions] of transactionsByEvent.entries()) {
+        if (transactions.size !== 1) continue;
+        const transactionId = Array.from(transactions)[0];
+        const usedTickets = memberTickets.filter(
+          (ticket) =>
+            String(ticket.event_id || "").trim() === eventId &&
+            String(ticket.transaction_id || "").trim() === transactionId &&
+            isCheckedInTicket(ticket)
+        ).length;
+        if (usedTickets < 1) continue;
 
-          const { data: bookingTickets, error: bookingTicketsError } = await supabase
-            .from("xceed_tickets")
-            .select("status, raw")
-            .eq("event_id", eventId)
-            .eq("transaction_id", transactionId);
-
-          if (bookingTicketsError) throw bookingTicketsError;
-
-          const usedTickets = (bookingTickets || []).filter(isCheckedInTicket).length;
-          if (usedTickets < 1) return;
-
-          for (const access of data || []) {
-            if (String(access.event_id || "").trim() === eventId) {
-              ticketUsageByCheckinId.set(String(access.id), usedTickets);
-            }
+        for (const access of data || []) {
+          if (String(access.event_id || "").trim() === eventId) {
+            ticketUsageByCheckinId.set(String(access.id), usedTickets);
           }
-        })
-      );
+        }
+      }
     }
 
     const rows = (data || []).map((row: any) => ({
