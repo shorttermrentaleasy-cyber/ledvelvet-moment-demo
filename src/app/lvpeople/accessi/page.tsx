@@ -296,6 +296,20 @@ export default async function LVPeopleAccessiPage() {
       linkedTickets.push(...rows);
       if (rows.length < ticketPageSize) break;
     }
+    const usedTicketsByBooking = new Map<string, number>();
+
+    for (const ticket of linkedTickets) {
+      const eventId = String(ticket.event_id || "").trim();
+      const transactionId = String(ticket.transaction_id || "").trim();
+      if (!eventId || !transactionId || !isCheckedInTicket(ticket)) continue;
+
+      const bookingKey = `${eventId}__${transactionId}`;
+      usedTicketsByBooking.set(
+        bookingKey,
+        (usedTicketsByBooking.get(bookingKey) || 0) + 1
+      );
+    }
+
     const transactionsByEvent = new Map<string, Set<string>>();
 
     for (const ticket of linkedTickets) {
@@ -305,6 +319,8 @@ export default async function LVPeopleAccessiPage() {
       if (
         !eventId ||
         !transactionId ||
+        !isCheckedInTicket(ticket) ||
+        (usedTicketsByBooking.get(`${eventId}__${transactionId}`) || 0) <= 1 ||
         passIdentity.email !== email ||
         passIdentity.name !== memberName
       ) continue;
@@ -317,12 +333,8 @@ export default async function LVPeopleAccessiPage() {
     for (const [eventId, transactions] of transactionsByEvent.entries()) {
       if (transactions.size !== 1) continue;
       const transactionId = Array.from(transactions)[0];
-      const usedTickets = linkedTickets.filter(
-        (ticket) =>
-          String(ticket.event_id || "").trim() === eventId &&
-          String(ticket.transaction_id || "").trim() === transactionId &&
-          isCheckedInTicket(ticket)
-      ).length;
+      const usedTickets =
+      usedTicketsByBooking.get(`${eventId}__${transactionId}`) || 0;
       if (usedTickets < 1) continue;
 
       for (const accesso of accessi) {
