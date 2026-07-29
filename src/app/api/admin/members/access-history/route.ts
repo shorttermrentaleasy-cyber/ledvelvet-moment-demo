@@ -158,14 +158,25 @@ export async function GET(request: Request) {
     );
 
     if (memberEmail && memberName && accessEventIds.length > 0) {
-      const { data: memberTicketData, error: memberTicketError } = await supabase
-        .from("xceed_tickets")
-        .select("event_id, transaction_id, qr_code, email, full_name, status, raw")
-        .in("event_id", accessEventIds);
+      const memberTickets: XceedTicketRow[] = [];
+      const ticketPageSize = 1000;
 
-      if (memberTicketError) throw memberTicketError;
+      for (let from = 0; ; from += ticketPageSize) {
+        const { data: ticketPage, error: memberTicketError } = await supabase
+          .from("xceed_tickets")
+          .select("event_id, transaction_id, qr_code, email, full_name, status, raw")
+          .in("event_id", accessEventIds)
+          .order("event_id", { ascending: true })
+          .order("transaction_id", { ascending: true })
+          .order("qr_code", { ascending: true })
+          .range(from, from + ticketPageSize - 1);
 
-      const memberTickets = (memberTicketData || []) as XceedTicketRow[];
+        if (memberTicketError) throw memberTicketError;
+
+        const rows = (ticketPage || []) as XceedTicketRow[];
+        memberTickets.push(...rows);
+        if (rows.length < ticketPageSize) break;
+      }
       const transactionsByEvent = new Map<string, Set<string>>();
 
       for (const ticket of memberTickets) {
