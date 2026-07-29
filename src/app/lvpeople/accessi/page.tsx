@@ -274,12 +274,28 @@ export default async function LVPeopleAccessiPage() {
   );
 
   if (email && memberName && accessEventIds.length > 0) {
-    const { data: linkedTicketData } = await supabase
-      .from("xceed_tickets")
-      .select("event_id, transaction_id, qr_code, email, full_name, status, raw")
-      .in("event_id", accessEventIds);
+    const linkedTickets: XceedTicketRow[] = [];
+    const ticketPageSize = 1000;
 
-    const linkedTickets = (linkedTicketData ?? []) as XceedTicketRow[];
+    for (let from = 0; ; from += ticketPageSize) {
+      const { data: ticketPage, error: linkedTicketError } = await supabase
+        .from("xceed_tickets")
+        .select("event_id, transaction_id, qr_code, email, full_name, status, raw")
+        .in("event_id", accessEventIds)
+        .order("event_id", { ascending: true })
+        .order("transaction_id", { ascending: true })
+        .order("qr_code", { ascending: true })
+        .range(from, from + ticketPageSize - 1);
+
+      if (linkedTicketError) {
+        linkedTickets.length = 0;
+        break;
+      }
+
+      const rows = (ticketPage || []) as XceedTicketRow[];
+      linkedTickets.push(...rows);
+      if (rows.length < ticketPageSize) break;
+    }
     const transactionsByEvent = new Map<string, Set<string>>();
 
     for (const ticket of linkedTickets) {
