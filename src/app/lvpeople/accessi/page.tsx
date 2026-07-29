@@ -49,6 +49,7 @@ type EventEmbed =
 
 type AccessRow = {
   id: string;
+  event_id: string;
   checkin_at: string | null; // timestamptz
   created_at: string | null; // timestamptz (fallback)
   result: "allowed" | "denied";
@@ -57,6 +58,17 @@ type AccessRow = {
   kind: string | null;
   scanned_code: string | null;
   events: EventEmbed;
+};
+
+type LinkedTicketRow = {
+  checkin_id: string | null;
+  event_id: string;
+  transaction_id: string | null;
+};
+
+type BookingTicketRow = {
+  status: string | null;
+  raw: any;
 };
 
 function getSupabaseAdmin() {
@@ -111,6 +123,16 @@ function pickWhen(a: AccessRow) {
   // priorità: checkin_at -> created_at -> event.start_at
   const ev = pickEvent(a);
   return (a.checkin_at || a.created_at || ev?.start_at || null) as string | null;
+}
+
+function isCheckedInTicket(ticket: BookingTicketRow) {
+  if ((ticket.status || "").trim().toLowerCase() === "checked_in") return true;
+
+  return Boolean(
+    ticket.raw?.pass?.hasCheckedIn ||
+      ticket.raw?.ticket?.hasCheckedIn ||
+      ticket.raw?.hasCheckedIn
+  );
 }
 
 export default async function LVPeopleAccessiPage() {
@@ -184,6 +206,7 @@ export default async function LVPeopleAccessiPage() {
     .select(
       `
         id,
+        event_id,
         checkin_at,
         created_at,
         result,
@@ -204,6 +227,51 @@ export default async function LVPeopleAccessiPage() {
     .limit(30);
 
   const accessi = (accessData ?? []) as AccessRow[];
+
+  const ticketUsageByCheckinId = new Map<string, number>();
+  const accessIds = accessi.map((accesso) => accesso.id);
+
+  if (accessIds.length > 0) {
+    const { data: linkedTicketData } = await supabase
+      .from("xceed_tickets")
+      .select("checkin_id, event_id, transaction_id")
+      .in("checkin_id", accessIds);
+
+    const linkedTickets = (linkedTicketData ?? []) as LinkedTicketRow[];
+    const bookingGroups = new Map<string, { eventId: string; transactionId: string; checkinIds: string[] }>();
+
+    for (const ticket of linkedTickets) {
+      const checkinId = (ticket.checkin_id || "").trim();
+      const eventId = (ticket.event_id || "").trim();
+      const transactionId = (ticket.transaction_id || "").trim();
+      if (!checkinId || !eventId || !transactionId) continue;
+
+      const key = `${eventId}__${transactionId}`;
+      const current = bookingGroups.get(key);
+      if (current) {
+        if (!current.checkinIds.includes(checkinId)) current.checkinIds.push(checkinId);
+      } else {
+        bookingGroups.set(key, { eventId, transactionId, checkinIds: [checkinId] });
+      }
+    }
+
+    await Promise.all(
+      Array.from(bookingGroups.values()).map(async (group) => {
+        const { data } = await supabase
+          .from("xceed_tickets")
+          .select("status, raw")
+          .eq("event_id", group.eventId)
+          .eq("transaction_id", group.transactionId);
+
+        const usedTickets = ((data ?? []) as BookingTicketRow[]).filter(isCheckedInTicket).length;
+        if (usedTickets < 1) return;
+
+        for (const checkinId of group.checkinIds) {
+          ticketUsageByCheckinId.set(checkinId, usedTickets);
+        }
+      })
+    );
+  }
 
   // metriche
   const accessCount = accessi.length;
@@ -348,6 +416,8 @@ export default async function LVPeopleAccessiPage() {
                       const badgeBorder = ok ? "border-emerald-300/30" : "border-rose-300/30";
                       const badgeBg = ok ? "bg-emerald-300/10" : "bg-rose-300/10";
                       const badgeText = ok ? "text-emerald-100" : "text-rose-100";
+                      const usedTickets = ticketUsageByCheckinId.get(a.id) || 0;
+                      const additionalTickets = Math.max(usedTickets - 1, 0);
 
                       return (
                         <li key={a.id} className="rounded-2xl border border-white/10 bg-black/20 p-5 hover:bg-white/5 transition">
@@ -367,6 +437,27 @@ export default async function LVPeopleAccessiPage() {
                                 <span className="text-white/35"> · </span>
                                 Check-in: <span className="text-white/75">{fmtDateTimeIT(whenCheckin)}</span>
                               </div>
+
+                              {ok ? (
+                                <div className="mt-3 rounded-xl border border-emerald-300/15 bg-emerald-300/5 px-3 py-2.5">
+                                  <div className="text-xs text-emerald-100">
+                                    Ingresso personale: <span className="font-semibold">confermato</span>
+                                  </div>
+
+                                  {additionalTickets > 0 ? (
+                                    <>
+                                      <div className="mt-1 text-xs text-white/65">
+                                        Biglietti utilizzati nella prenotazione:{" "}
+                                        <span className="font-semibold text-white/85">{usedTickets}</span>
+                                      </div>
+                                      <div className="mt-1 text-xs text-white/50">
+                                        1 presenza personale · {additionalTickets}{" "}
+                                        {additionalTickets === 1 ? "biglietto aggiuntivo" : "biglietti aggiuntivi"}
+                                      </div>
+                                    </>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
 
                             <div className="text-right shrink-0">
