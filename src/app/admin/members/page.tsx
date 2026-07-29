@@ -38,6 +38,7 @@ type AccessHistoryRow = {
   reason: string | null;
   method: string | null;
   kind: string | null;
+  used_tickets: number;
   event: {
     name: string | null;
     city: string | null;
@@ -350,6 +351,8 @@ export default function AdminMembersPage() {
               {accessHistory.map((access) => {
                 const place = [access.event?.venue, access.event?.city].filter(Boolean).join(" · ");
                 const allowed = access.result === "allowed";
+                const usedTickets = Number(access.used_tickets || 0);
+                const additionalTickets = Math.max(usedTickets - 1, 0);
                 return (
                   <article key={access.id} style={styles.historyItem}>
                     <div style={styles.historyItemTop}>
@@ -362,6 +365,24 @@ export default function AdminMembersPage() {
                     <div style={styles.historyMeta}>
                       Data evento: {formatDate(access.event?.starts_at)} · Check-in: {formatDate(access.checkin_at || access.created_at, true)}
                     </div>
+                    {allowed && (
+                      <div style={styles.personalAccessBox}>
+                        <div style={styles.personalAccessText}>
+                          Ingresso personale: <strong>confermato</strong>
+                        </div>
+                        {additionalTickets > 0 && (
+                          <>
+                            <div style={styles.historyMeta}>
+                              Biglietti utilizzati nella prenotazione: <strong>{usedTickets}</strong>
+                            </div>
+                            <div style={styles.additionalTicketsText}>
+                              1 presenza personale · {additionalTickets}{" "}
+                              {additionalTickets === 1 ? "biglietto aggiuntivo" : "biglietti aggiuntivi"}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </article>
                 );
               })}
@@ -391,4 +412,5 @@ const styles: Record<string, React.CSSProperties> = {
   fallbackCard: { borderRadius: 16, padding: 14, background: "rgba(255,255,255,.025)", border: "1px solid rgba(255,255,255,.08)" }, fallbackToggle: { border: 0, background: "transparent", color: "white", cursor: "pointer", fontWeight: 700, padding: 0 }, fallbackBody: { marginTop: 12 },
   overlay: { position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,.68)", display: "grid", placeItems: "center", padding: 16 }, modal: { width: "min(760px, 96vw)", maxHeight: "92vh", overflowY: "auto", borderRadius: 20, padding: 18, background: "#10121d", border: "1px solid rgba(255,255,255,.14)", boxShadow: "0 30px 90px rgba(0,0,0,.6)" }, modalHeader: { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 16 }, modalTitle: { margin: 0, fontSize: 24 }, detailGrid: { display: "grid", gridTemplateColumns: "minmax(220px, .8fr) minmax(280px, 1.2fr)", gap: 16 }, qrBox: { background: "white", color: "#111", borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 250 }, monoDark: { fontFamily: "monospace", marginTop: 12, fontSize: 12, wordBreak: "break-all", textAlign: "center" }, details: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }, detail: { padding: 11, borderRadius: 12, border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.04)", overflowWrap: "anywhere" }, detailLabel: { display: "block", fontSize: 11, opacity: .6, marginBottom: 5 },
   historySection: { marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.1)" }, historyHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }, historyCount: { fontSize: 12, opacity: .7, whiteSpace: "nowrap" }, historyEmpty: { padding: 16, borderRadius: 12, border: "1px dashed rgba(255,255,255,.16)", opacity: .7 }, historyList: { display: "grid", gap: 10 }, historyItem: { padding: 13, borderRadius: 14, border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.035)" }, historyItemTop: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }, historyMeta: { marginTop: 6, fontSize: 12, lineHeight: 1.45, opacity: .68 }, allowedBadge: { padding: "4px 8px", borderRadius: 999, fontSize: 11, background: "rgba(0,255,209,.1)", border: "1px solid rgba(0,255,209,.24)" }, deniedBadge: { padding: "4px 8px", borderRadius: 999, fontSize: 11, background: "rgba(255,40,90,.1)", border: "1px solid rgba(255,40,90,.24)" },
+  personalAccessBox: { marginTop: 10, padding: "9px 10px", borderRadius: 10, border: "1px solid rgba(0,255,209,.16)", background: "rgba(0,255,209,.055)" }, personalAccessText: { fontSize: 12, color: "rgba(220,255,247,.92)" }, additionalTicketsText: { marginTop: 5, fontSize: 12, opacity: .55 },
 };

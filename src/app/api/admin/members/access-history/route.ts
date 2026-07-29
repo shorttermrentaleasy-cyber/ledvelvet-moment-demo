@@ -31,6 +31,16 @@ function pickEvent(value: unknown) {
   return null;
 }
 
+function isCheckedInTicket(ticket: { status: string | null; raw: any }) {
+  if ((ticket.status || "").trim().toLowerCase() === "checked_in") return true;
+
+  return Boolean(
+    ticket.raw?.pass?.hasCheckedIn ||
+      ticket.raw?.ticket?.hasCheckedIn ||
+      ticket.raw?.hasCheckedIn
+  );
+}
+
 export async function GET(request: Request) {
   try {
     const admin = await requireAdmin();
@@ -83,6 +93,57 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
+    const ticketUsageByCheckinId = new Map<string, number>();
+    const accessIds = (data || []).map((row: any) => String(row.id || "").trim()).filter(Boolean);
+
+    if (accessIds.length > 0) {
+      const { data: linkedTicketData, error: linkedTicketError } = await supabase
+        .from("xceed_tickets")
+        .select("checkin_id, event_id, transaction_id")
+        .in("checkin_id", accessIds);
+
+      if (linkedTicketError) throw linkedTicketError;
+
+      const bookingGroups = new Map<
+        string,
+        { eventId: string; transactionId: string; checkinIds: string[] }
+      >();
+
+      for (const ticket of linkedTicketData || []) {
+        const checkinId = String(ticket.checkin_id || "").trim();
+        const eventId = String(ticket.event_id || "").trim();
+        const transactionId = String(ticket.transaction_id || "").trim();
+        if (!checkinId || !eventId || !transactionId) continue;
+
+        const key = `${eventId}__${transactionId}`;
+        const current = bookingGroups.get(key);
+        if (current) {
+          if (!current.checkinIds.includes(checkinId)) current.checkinIds.push(checkinId);
+        } else {
+          bookingGroups.set(key, { eventId, transactionId, checkinIds: [checkinId] });
+        }
+      }
+
+      await Promise.all(
+        Array.from(bookingGroups.values()).map(async (group) => {
+          const { data: bookingTickets, error: bookingTicketsError } = await supabase
+            .from("xceed_tickets")
+            .select("status, raw")
+            .eq("event_id", group.eventId)
+            .eq("transaction_id", group.transactionId);
+
+          if (bookingTicketsError) throw bookingTicketsError;
+
+          const usedTickets = (bookingTickets || []).filter(isCheckedInTicket).length;
+          if (usedTickets < 1) return;
+
+          for (const checkinId of group.checkinIds) {
+            ticketUsageByCheckinId.set(checkinId, usedTickets);
+          }
+        })
+      );
+    }
+
     const rows = (data || []).map((row: any) => ({
       id: row.id,
       checkin_at: row.checkin_at,
@@ -92,6 +153,7 @@ export async function GET(request: Request) {
       method: row.method,
       kind: row.kind,
       event: pickEvent(row.events),
+      used_tickets: ticketUsageByCheckinId.get(row.id) || 0,
     }));
 
     return NextResponse.json({ ok: true, rows });
