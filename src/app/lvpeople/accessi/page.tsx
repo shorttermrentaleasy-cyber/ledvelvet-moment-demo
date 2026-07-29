@@ -61,9 +61,9 @@ type AccessRow = {
 };
 
 type LinkedTicketRow = {
-  checkin_id: string | null;
   event_id: string;
   transaction_id: string | null;
+  full_name: string | null;
 };
 
 type BookingTicketRow = {
@@ -133,6 +133,14 @@ function isCheckedInTicket(ticket: BookingTicketRow) {
       ticket.raw?.ticket?.hasCheckedIn ||
       ticket.raw?.hasCheckedIn
   );
+}
+
+function normalizeIdentity(value: string | null | undefined) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
 }
 
 export default async function LVPeopleAccessiPage() {
@@ -229,45 +237,57 @@ export default async function LVPeopleAccessiPage() {
   const accessi = (accessData ?? []) as AccessRow[];
 
   const ticketUsageByCheckinId = new Map<string, number>();
-  const accessIds = accessi.map((accesso) => accesso.id);
+  const memberName = normalizeIdentity(`${member.first_name} ${member.last_name}`);
+  const accessEventIds = Array.from(
+    new Set(accessi.map((accesso) => accesso.event_id.trim()).filter(Boolean))
+  );
 
-  if (accessIds.length > 0) {
+  if (email && memberName && accessEventIds.length > 0) {
     const { data: linkedTicketData } = await supabase
       .from("xceed_tickets")
-      .select("checkin_id, event_id, transaction_id")
-      .in("checkin_id", accessIds);
+      .select("event_id, transaction_id, full_name")
+      .in("event_id", accessEventIds)
+      .ilike("email", email);
 
     const linkedTickets = (linkedTicketData ?? []) as LinkedTicketRow[];
-    const bookingGroups = new Map<string, { eventId: string; transactionId: string; checkinIds: string[] }>();
+    const transactionsByEvent = new Map<string, Set<string>>();
 
     for (const ticket of linkedTickets) {
-      const checkinId = (ticket.checkin_id || "").trim();
       const eventId = (ticket.event_id || "").trim();
       const transactionId = (ticket.transaction_id || "").trim();
-      if (!checkinId || !eventId || !transactionId) continue;
-
-      const key = `${eventId}__${transactionId}`;
-      const current = bookingGroups.get(key);
-      if (current) {
-        if (!current.checkinIds.includes(checkinId)) current.checkinIds.push(checkinId);
-      } else {
-        bookingGroups.set(key, { eventId, transactionId, checkinIds: [checkinId] });
+      if (
+        !eventId ||
+        !transactionId ||
+        normalizeIdentity(ticket.full_name) !== memberName
+      ) {
+        continue;
       }
+
+      const transactions = transactionsByEvent.get(eventId) || new Set<string>();
+      transactions.add(transactionId);
+      transactionsByEvent.set(eventId, transactions);
     }
 
     await Promise.all(
-      Array.from(bookingGroups.values()).map(async (group) => {
+      Array.from(transactionsByEvent.entries()).map(async ([eventId, transactions]) => {
+        // Più prenotazioni dello stesso socio nello stesso evento restano un caso
+        // ambiguo: non mostriamo biglietti aggiuntivi senza attribuzione certa.
+        if (transactions.size !== 1) return;
+        const transactionId = Array.from(transactions)[0];
+
         const { data } = await supabase
           .from("xceed_tickets")
           .select("status, raw")
-          .eq("event_id", group.eventId)
-          .eq("transaction_id", group.transactionId);
+          .eq("event_id", eventId)
+          .eq("transaction_id", transactionId);
 
         const usedTickets = ((data ?? []) as BookingTicketRow[]).filter(isCheckedInTicket).length;
         if (usedTickets < 1) return;
 
-        for (const checkinId of group.checkinIds) {
-          ticketUsageByCheckinId.set(checkinId, usedTickets);
+        for (const accesso of accessi) {
+          if (accesso.event_id === eventId) {
+            ticketUsageByCheckinId.set(accesso.id, usedTickets);
+          }
         }
       })
     );
