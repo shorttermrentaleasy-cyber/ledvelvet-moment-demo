@@ -71,6 +71,12 @@ export default async function AdminHomePage() {
   <Card title="Associati" desc="Gestione soci / membership" href="/admin/members" />
 
   <Card
+    title="Pre-controllo biglietti"
+    desc="Verifica anticipata dei partecipanti Xceed con Wallyfor"
+    href="/admin/ticket-prescreen"
+  />
+
+  <Card
     title="Ambient Playlist (Hero)"
     desc="Gestione musica ambient della Hero"
     href="/admin/playlist"
