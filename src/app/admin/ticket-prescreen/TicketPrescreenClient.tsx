@@ -16,8 +16,9 @@ type Result =
   | "inactive"
   | "not_found"
   | "review"
-  | "duplicate"
   | "cancelled";
+
+type Filter = Result | "repeated_identity" | "all";
 
 type Row = {
   ticket_ref: string;
@@ -28,6 +29,8 @@ type Row = {
   buyer: { full_name: string | null; email: string | null; phone: string | null } | null;
   result: Result;
   result_label: string;
+  identity_repeated: boolean;
+  identity_ticket_count: number | null;
   matched_by: "email+phone" | "email" | "phone" | null;
   warnings: string[];
   member: {
@@ -39,14 +42,13 @@ type Row = {
   } | null;
 };
 
-type Summary = Record<Result | "total", number>;
+type Summary = Record<Result | "repeated_identity" | "total", number>;
 
 const resultStyles: Record<Result, string> = {
   active: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
   inactive: "border-red-400/30 bg-red-400/10 text-red-200",
   not_found: "border-red-400/30 bg-red-400/10 text-red-200",
   review: "border-amber-300/30 bg-amber-300/10 text-amber-100",
-  duplicate: "border-amber-300/30 bg-amber-300/10 text-amber-100",
   cancelled: "border-white/15 bg-white/5 text-white/50",
 };
 
@@ -82,7 +84,7 @@ export default function TicketPrescreenClient() {
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<Result | "all">("all");
+  const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
     fetchJson("/api/admin/ticket-prescreen")
@@ -92,7 +94,12 @@ export default function TicketPrescreenClient() {
   }, []);
 
   const visibleRows = useMemo(
-    () => (filter === "all" ? rows : rows.filter((row) => row.result === filter)),
+    () =>
+      filter === "all"
+        ? rows
+        : filter === "repeated_identity"
+          ? rows.filter((row) => row.identity_repeated)
+          : rows.filter((row) => row.result === filter),
     [filter, rows]
   );
 
@@ -126,7 +133,7 @@ export default function TicketPrescreenClient() {
     { key: "inactive", label: "Non attivi", color: "text-red-300" },
     { key: "not_found", label: "Non trovati", color: "text-red-300" },
     { key: "review", label: "Da verificare", color: "text-amber-200" },
-    { key: "duplicate", label: "Duplicati", color: "text-amber-200" },
+    { key: "repeated_identity", label: "Identità ripetute", color: "text-amber-200" },
   ];
 
   return (
@@ -230,7 +237,7 @@ export default function TicketPrescreenClient() {
                 </div>
                 <select
                   value={filter}
-                  onChange={(e) => setFilter(e.target.value as Result | "all")}
+                  onChange={(e) => setFilter(e.target.value as Filter)}
                   className="rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
                 >
                   <option value="all">Tutti gli esiti</option>
@@ -238,7 +245,7 @@ export default function TicketPrescreenClient() {
                   <option value="inactive">Tessere non attive</option>
                   <option value="not_found">Non trovati</option>
                   <option value="review">Da verificare</option>
-                  <option value="duplicate">Soci duplicati</option>
+                  <option value="repeated_identity">Identità ripetute</option>
                   <option value="cancelled">Annullati</option>
                 </select>
               </div>
@@ -280,6 +287,11 @@ export default function TicketPrescreenClient() {
                       <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${resultStyles[row.result]}`}>
                         {row.result_label}
                       </span>
+                      {row.identity_repeated && (
+                        <div className="mt-2 inline-flex rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
+                          Identità ripetuta su {row.identity_ticket_count} biglietti
+                        </div>
+                      )}
                       {row.matched_by && (
                         <div className="mt-2 text-xs text-white/40">
                           Collegato tramite {row.matched_by === "email+phone" ? "email + telefono" : row.matched_by}

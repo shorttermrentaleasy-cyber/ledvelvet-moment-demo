@@ -43,7 +43,6 @@ export type PrescreenResult =
   | "inactive"
   | "not_found"
   | "review"
-  | "duplicate"
   | "cancelled";
 
 export type PrescreenRow = {
@@ -64,6 +63,8 @@ export type PrescreenRow = {
   } | null;
   result: PrescreenResult;
   result_label: string;
+  identity_repeated: boolean;
+  identity_ticket_count: number | null;
   matched_by: "email+phone" | "email" | "phone" | null;
   warnings: string[];
   member: {
@@ -154,7 +155,6 @@ function resultLabel(result: PrescreenResult) {
     inactive: "Tessera non attiva",
     not_found: "Socio non trovato",
     review: "Da verificare",
-    duplicate: "Socio su più biglietti",
     cancelled: "Biglietto annullato",
   };
   return labels[result];
@@ -301,6 +301,8 @@ export function buildPrescreenRows(params: {
         : null,
       result,
       result_label: resultLabel(result),
+      identity_repeated: false,
+      identity_ticket_count: null,
       matched_by: matchedBy,
       warnings,
       member: matched
@@ -329,16 +331,22 @@ export function buildPrescreenRows(params: {
   }
 
   return rows.map(({ qr: _qr, member_id, ...row }) => {
+    const identityTicketCount = member_id
+      ? activeMemberTicketCount.get(member_id) || 0
+      : 0;
     if (
       member_id &&
       row.ticket_status !== "cancelled" &&
-      (activeMemberTicketCount.get(member_id) || 0) > 1
+      identityTicketCount > 1
     ) {
       return {
         ...row,
-        result: "duplicate" as const,
-        result_label: resultLabel("duplicate"),
-        warnings: [...row.warnings, "Stesso socio associato a più QR dell’evento"],
+        identity_repeated: true,
+        identity_ticket_count: identityTicketCount,
+        warnings: [
+          ...row.warnings,
+          `Stesso socio associato a ${identityTicketCount} QR dell’evento`,
+        ],
       };
     }
     return row;
@@ -352,9 +360,12 @@ export function summarizePrescreen(rows: PrescreenRow[]) {
     inactive: 0,
     not_found: 0,
     review: 0,
-    duplicate: 0,
+    repeated_identity: 0,
     cancelled: 0,
   };
-  for (const row of rows) summary[row.result] += 1;
+  for (const row of rows) {
+    summary[row.result] += 1;
+    if (row.identity_repeated) summary.repeated_identity += 1;
+  }
   return summary;
 }
