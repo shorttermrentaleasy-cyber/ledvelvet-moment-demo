@@ -35,6 +35,13 @@ type AnomalyStatus =
   | "resolved"
   | "archived";
 
+type AnomalyActionPreset = {
+  id: string;
+  label: string;
+  status: AnomalyStatus;
+  note: string;
+};
+
 type AnomalyHistory = {
   id: number;
   status: AnomalyStatus;
@@ -136,6 +143,81 @@ const anomalyStatusLabels: Record<AnomalyStatus, string> = {
   waiting_participant: "In attesa del partecipante",
   resolved: "Risolta",
   archived: "Archiviata",
+};
+
+const anomalyActionPresets: Record<AnomalyType, AnomalyActionPreset[]> = {
+  inactive_membership: [
+    {
+      id: "invite_renewal",
+      label: "Invita al rinnovo della tessera",
+      status: "waiting_participant",
+      note:
+        "Inviare al partecipante il link per rinnovare la tessera. Verificare l’attivazione prima dell’evento.",
+    },
+    {
+      id: "wait_membership_update",
+      label: "Attendi aggiornamento dello stato tessera",
+      status: "in_progress",
+      note:
+        "Rinnovo già comunicato: attendere l’aggiornamento dello stato della tessera e ricontrollare prima dell’evento.",
+    },
+  ],
+  non_member: [
+    {
+      id: "invite_membership",
+      label: "Invita a presentare domanda di ammissione",
+      status: "waiting_participant",
+      note:
+        "Inviare al partecipante il link per presentare la domanda di ammissione a LED Velvet. Verificare l’attivazione della tessera prima dell’evento.",
+    },
+    {
+      id: "confirm_participant_data",
+      label: "Richiedi conferma dei dati inseriti",
+      status: "waiting_participant",
+      note:
+        "Richiedere al partecipante la conferma di nome, cognome, email e cellulare indicati sul biglietto.",
+    },
+  ],
+  possible_duplicate: [
+    {
+      id: "request_actual_participant",
+      label: "Richiedi i dati del partecipante effettivo",
+      status: "waiting_participant",
+      note:
+        "Richiedere nome, cognome, email e cellulare del partecipante effettivo del secondo biglietto.",
+    },
+    {
+      id: "check_duplicate_purchase",
+      label: "Verifica possibile acquisto duplicato",
+      status: "in_progress",
+      note:
+        "Verificare con l’acquirente se si tratta di un acquisto duplicato oppure di un biglietto destinato a un altro socio.",
+    },
+  ],
+  identity_review: [
+    {
+      id: "verify_contacts",
+      label: "Richiedi verifica di email e cellulare",
+      status: "waiting_participant",
+      note:
+        "Richiedere la conferma dell’email e del cellulare del partecipante per identificare il socio corretto.",
+    },
+    {
+      id: "match_correct_member",
+      label: "Associa al socio corretto dopo verifica",
+      status: "in_progress",
+      note:
+        "Verificare manualmente l’identità del partecipante e associare il biglietto al socio corretto, mantenendo traccia della decisione.",
+    },
+  ],
+};
+
+const noActionPreset: AnomalyActionPreset = {
+  id: "no_action_required",
+  label: "Nessuna azione necessaria · verificato dall’admin",
+  status: "resolved",
+  note:
+    "Anomalia verificata dall’amministratore: nessuna azione necessaria.",
 };
 
 const emailGroupStyles: Record<
@@ -259,6 +341,7 @@ export default function TicketPrescreenClient() {
   const [selectedTicketRef, setSelectedTicketRef] = useState<string | null>(null);
   const [draftStatus, setDraftStatus] = useState<AnomalyStatus>("open");
   const [draftNote, setDraftNote] = useState("");
+  const [draftActionId, setDraftActionId] = useState("");
   const [savingAnomaly, setSavingAnomaly] = useState(false);
 
   useEffect(() => {
@@ -420,6 +503,17 @@ export default function TicketPrescreenClient() {
     setSelectedTicketRef(row.ticket_ref);
     setDraftStatus(existing?.status || "open");
     setDraftNote(existing?.admin_note || "");
+    setDraftActionId("");
+  }
+
+  function applyAnomalyAction(type: AnomalyType, actionId: string) {
+    setDraftActionId(actionId);
+    const action = [...anomalyActionPresets[type], noActionPreset].find(
+      (item) => item.id === actionId
+    );
+    if (!action) return;
+    setDraftStatus(action.status);
+    setDraftNote(action.note);
   }
 
   async function saveAnomaly(row: Row) {
@@ -797,7 +891,29 @@ export default function TicketPrescreenClient() {
                             Chiudi pannello
                           </button>
                         </div>
-                        <div className="mt-4 grid gap-3 md:grid-cols-[260px_1fr_auto] md:items-end">
+                        <label className="mt-4 block text-xs text-white/55">
+                          Azione suggerita
+                          <select
+                            value={draftActionId}
+                            onChange={(e) =>
+                              applyAnomalyAction(anomalyType(row)!, e.target.value)
+                            }
+                            className="mt-1 w-full rounded-xl border border-fuchsia-300/25 bg-black/60 px-3 py-2 text-sm text-white"
+                          >
+                            <option value="">Scegli un’azione precompilata</option>
+                            {[...anomalyActionPresets[anomalyType(row)!], noActionPreset].map(
+                              (action) => (
+                                <option key={action.id} value={action.id}>
+                                  {action.label}
+                                </option>
+                              )
+                            )}
+                          </select>
+                          <span className="mt-1 block text-[11px] leading-4 text-white/40">
+                            Compila stato e nota. Non invia comunicazioni e non salva finché non premi Salva.
+                          </span>
+                        </label>
+                        <div className="mt-3 grid gap-3 md:grid-cols-[260px_1fr_auto] md:items-end">
                           <label className="text-xs text-white/55">
                             Stato
                             <select
