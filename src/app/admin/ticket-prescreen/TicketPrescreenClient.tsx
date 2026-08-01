@@ -18,7 +18,7 @@ type Result =
   | "review"
   | "cancelled";
 
-type Filter = Result | "repeated_identity" | "all";
+type Filter = Result | "repeated_identity" | "possible_duplicate" | "all";
 
 type Row = {
   ticket_ref: string;
@@ -31,8 +31,9 @@ type Row = {
   result_label: string;
   identity_repeated: boolean;
   identity_ticket_count: number | null;
-  coverage_status: "covered" | "uncovered" | "unidentified";
+  coverage_status: "covered" | "uncovered" | "unidentified" | "possible_duplicate";
   coverage_label: string;
+  first_purchase: boolean;
   matched_by: "email+phone" | "email" | "phone" | null;
   warnings: string[];
   member: {
@@ -51,6 +52,7 @@ type Summary = Record<
     "active_members" |
     "covered_tickets" |
     "uncovered_tickets" |
+    "possible_duplicates" |
     "total",
   number
 >;
@@ -64,7 +66,7 @@ type RowGroup = {
   coveredTickets: number;
   uncoveredTickets: number;
   hasUnidentifiedCoverage: boolean;
-  hasCrossOrderCoverage: boolean;
+  hasPossibleDuplicate: boolean;
 };
 
 const resultStyles: Record<Result, string> = {
@@ -122,6 +124,8 @@ export default function TicketPrescreenClient() {
         ? rows
         : filter === "repeated_identity"
           ? rows.filter((row) => row.identity_repeated)
+          : filter === "possible_duplicate"
+            ? rows.filter((row) => row.coverage_status === "possible_duplicate")
           : rows.filter((row) => row.result === filter),
     [filter, rows]
   );
@@ -138,27 +142,15 @@ export default function TicketPrescreenClient() {
         row.order_ref ? `order:${row.order_ref}` : `ticket:${row.ticket_ref}`
       )
     );
-    const activeMemberGroups = new Map<string, Set<string>>();
-    for (const [key, groupRows] of rowsByGroup) {
-      for (const row of groupRows) {
-        if (row.result !== "active" || !row.member?.id) continue;
-        const groupKeys = activeMemberGroups.get(row.member.id) || new Set<string>();
-        groupKeys.add(key);
-        activeMemberGroups.set(row.member.id, groupKeys);
-      }
-    }
-
     return Array.from(rowsByGroup.entries())
       .filter(([key]) => visibleKeys.has(key))
       .map(([key, groupRows]): RowGroup => {
-        const activeMemberIds = new Set(
+        const coveredMemberIds = new Set(
           groupRows
-            .filter((row) => row.result === "active" && row.member?.id)
+            .filter((row) => row.first_purchase && row.member?.id)
             .map((row) => row.member!.id)
         );
-        const assignableActiveMembers = Array.from(activeMemberIds).filter(
-          (memberId) => (activeMemberGroups.get(memberId)?.size || 0) === 1
-        ).length;
+        const coveredTickets = coveredMemberIds.size;
         const nonCancelled = groupRows.filter(
           (row) => row.ticket_status !== "cancelled"
         ).length;
@@ -168,13 +160,13 @@ export default function TicketPrescreenClient() {
           rows: groupRows.filter((row) => visibleRows.includes(row)),
           totalTickets: groupRows.length,
           nonCancelledTickets: nonCancelled,
-          coveredTickets: assignableActiveMembers,
-          uncoveredTickets: Math.max(0, nonCancelled - assignableActiveMembers),
+          coveredTickets,
+          uncoveredTickets: Math.max(0, nonCancelled - coveredTickets),
           hasUnidentifiedCoverage: groupRows.some(
             (row) => row.coverage_status === "unidentified"
           ),
-          hasCrossOrderCoverage: Array.from(activeMemberIds).some(
-            (memberId) => (activeMemberGroups.get(memberId)?.size || 0) > 1
+          hasPossibleDuplicate: groupRows.some(
+            (row) => row.coverage_status === "possible_duplicate"
           ),
         };
       });
@@ -213,6 +205,7 @@ export default function TicketPrescreenClient() {
     { key: "not_found", label: "Non trovati", color: "text-red-300" },
     { key: "review", label: "Da verificare", color: "text-amber-200" },
     { key: "repeated_identity", label: "Identità ripetute", color: "text-amber-200" },
+    { key: "possible_duplicates", label: "Possibili doppioni", color: "text-amber-200" },
   ];
 
   return (
@@ -325,6 +318,7 @@ export default function TicketPrescreenClient() {
                   <option value="not_found">Non trovati</option>
                   <option value="review">Da verificare</option>
                   <option value="repeated_identity">Identità ripetute</option>
+                  <option value="possible_duplicate">Possibili doppioni</option>
                   <option value="cancelled">Annullati</option>
                 </select>
               </div>
@@ -357,9 +351,14 @@ export default function TicketPrescreenClient() {
                     </div>
                     {group.hasUnidentifiedCoverage && (
                       <div className="border-b border-amber-300/15 bg-amber-300/[0.07] px-4 py-3 text-xs leading-5 text-amber-100">
-                        {group.hasCrossOrderCoverage
-                          ? "La stessa tessera attiva compare in più ordini: un solo biglietto è coperto nell’intero evento, ma non è possibile attribuire la copertura a questo ordine."
-                          : `${group.coveredTickets} ${group.coveredTickets === 1 ? "biglietto coperto" : "biglietti coperti"} su ${group.nonCancelledTickets}; QR personale non identificabile dai dati Xceed ripetuti.`}
+                        {group.coveredTickets > 0
+                          ? `${group.coveredTickets} ${group.coveredTickets === 1 ? "biglietto coperto" : "biglietti coperti"} su ${group.nonCancelledTickets}; QR personale non identificabile dai dati Xceed ripetuti.`
+                          : "La tessera è attiva, ma la data Xceed non consente di determinare con certezza il primo acquisto."}
+                      </div>
+                    )}
+                    {group.hasPossibleDuplicate && (
+                      <div className="border-b border-amber-300/15 bg-amber-300/[0.07] px-4 py-3 text-xs font-semibold leading-5 text-amber-100">
+                        Acquisto successivo con una tessera già associata al primo biglietto dell’evento: da controllare.
                       </div>
                     )}
                     <div className="divide-y divide-white/10">
@@ -405,6 +404,8 @@ export default function TicketPrescreenClient() {
                             ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
                             : row.coverage_status === "unidentified"
                               ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                              : row.coverage_status === "possible_duplicate"
+                                ? "border-amber-300/40 bg-amber-300/15 text-amber-100"
                               : "border-white/10 bg-white/[0.035] text-white/55"
                         }`}
                       >

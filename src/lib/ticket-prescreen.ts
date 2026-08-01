@@ -65,8 +65,9 @@ export type PrescreenRow = {
   result_label: string;
   identity_repeated: boolean;
   identity_ticket_count: number | null;
-  coverage_status: "covered" | "uncovered" | "unidentified";
+  coverage_status: "covered" | "uncovered" | "unidentified" | "possible_duplicate";
   coverage_label: string;
+  first_purchase: boolean;
   matched_by: "email+phone" | "email" | "phone" | null;
   warnings: string[];
   member: {
@@ -307,6 +308,7 @@ export function buildPrescreenRows(params: {
       identity_ticket_count: null,
       coverage_status: "uncovered",
       coverage_label: "Partecipante da associare",
+      first_purchase: false,
       matched_by: matchedBy,
       warnings,
       member: matched
@@ -325,7 +327,10 @@ export function buildPrescreenRows(params: {
   }
 
   const activeMemberTicketCount = new Map<string, number>();
-  const activeCoverageCount = new Map<string, number>();
+  const activeRowsByMember = new Map<
+    string,
+    Array<(typeof rows)[number]>
+  >();
   for (const row of rows) {
     if (row.member_id && row.ticket_status !== "cancelled") {
       activeMemberTicketCount.set(
@@ -333,20 +338,87 @@ export function buildPrescreenRows(params: {
         (activeMemberTicketCount.get(row.member_id) || 0) + 1
       );
       if (row.result === "active") {
-        activeCoverageCount.set(
-          row.member_id,
-          (activeCoverageCount.get(row.member_id) || 0) + 1
-        );
+        activeRowsByMember.set(row.member_id, [
+          ...(activeRowsByMember.get(row.member_id) || []),
+          row,
+        ]);
       }
     }
   }
 
-  return rows.map(({ qr: _qr, member_id, ...row }) => {
+  const coverageByQr = new Map<
+    string,
+    Pick<PrescreenRow, "coverage_status" | "coverage_label" | "first_purchase">
+  >();
+
+  for (const memberRows of activeRowsByMember.values()) {
+    const groups = new Map<string, typeof memberRows>();
+    for (const row of memberRows) {
+      const key = row.order_ref ? `order:${row.order_ref}` : `ticket:${row.qr}`;
+      groups.set(key, [...(groups.get(key) || []), row]);
+    }
+
+    const orderedGroups = Array.from(groups.values())
+      .map((groupRows) => ({
+        rows: groupRows,
+        purchasedAt: groupRows.reduce<number | null>((earliest, row) => {
+          const time = row.purchased_at ? Date.parse(row.purchased_at) : Number.NaN;
+          if (!Number.isFinite(time)) return earliest;
+          return earliest == null || time < earliest ? time : earliest;
+        }, null),
+      }))
+      .sort((left, right) => {
+        if (left.purchasedAt == null) return right.purchasedAt == null ? 0 : 1;
+        if (right.purchasedAt == null) return -1;
+        return left.purchasedAt - right.purchasedAt;
+      });
+
+    const firstGroup = orderedGroups[0];
+    const secondGroup = orderedGroups[1];
+    const firstPurchaseIsCertain = Boolean(
+      firstGroup &&
+        (orderedGroups.length === 1 ||
+          (firstGroup.purchasedAt != null &&
+            orderedGroups.every((group) => group.purchasedAt != null) &&
+            firstGroup.purchasedAt !== secondGroup?.purchasedAt))
+    );
+
+    if (!firstPurchaseIsCertain || !firstGroup) {
+      for (const row of memberRows) {
+        coverageByQr.set(row.qr, {
+          coverage_status: "unidentified",
+          coverage_label: "Copertura presente, primo acquisto non determinabile",
+          first_purchase: false,
+        });
+      }
+      continue;
+    }
+
+    for (const row of firstGroup.rows) {
+      coverageByQr.set(row.qr, {
+        coverage_status: firstGroup.rows.length === 1 ? "covered" : "unidentified",
+        coverage_label:
+          firstGroup.rows.length === 1
+            ? "Coperto da tessera attiva – primo acquisto"
+            : "1 copertura nel primo acquisto; QR personale non identificabile",
+        first_purchase: true,
+      });
+    }
+
+    for (const group of orderedGroups.slice(1)) {
+      for (const row of group.rows) {
+        coverageByQr.set(row.qr, {
+          coverage_status: "possible_duplicate",
+          coverage_label: "Possibile doppione – tessera già usata nel primo acquisto",
+          first_purchase: false,
+        });
+      }
+    }
+  }
+
+  return rows.map(({ qr, member_id, ...row }) => {
     const identityTicketCount = member_id
       ? activeMemberTicketCount.get(member_id) || 0
-      : 0;
-    const memberActiveTicketCount = member_id
-      ? activeCoverageCount.get(member_id) || 0
       : 0;
     const coverage =
       row.ticket_status === "cancelled" || row.result !== "active"
@@ -356,16 +428,13 @@ export function buildPrescreenRows(params: {
               row.ticket_status === "cancelled"
                 ? "Biglietto annullato"
                 : "Partecipante da associare",
+            first_purchase: false,
           }
-        : memberActiveTicketCount === 1
-          ? {
-              coverage_status: "covered" as const,
-              coverage_label: "Biglietto coperto da socio attivo",
-            }
-          : {
-              coverage_status: "unidentified" as const,
-              coverage_label: "Copertura presente, QR personale non identificabile",
-            };
+        : coverageByQr.get(qr) || {
+            coverage_status: "unidentified" as const,
+            coverage_label: "Copertura presente, attribuzione non determinabile",
+            first_purchase: false,
+          };
 
     if (
       member_id &&
@@ -399,11 +468,15 @@ export function summarizePrescreen(rows: PrescreenRow[]) {
     active_members: 0,
     covered_tickets: 0,
     uncovered_tickets: 0,
+    possible_duplicates: 0,
   };
   const activeMembers = new Set<string>();
   for (const row of rows) {
     summary[row.result] += 1;
     if (row.identity_repeated) summary.repeated_identity += 1;
+    if (row.coverage_status === "possible_duplicate") {
+      summary.possible_duplicates += 1;
+    }
     if (row.result === "active" && row.member?.id) activeMembers.add(row.member.id);
   }
   summary.active_members = activeMembers.size;
