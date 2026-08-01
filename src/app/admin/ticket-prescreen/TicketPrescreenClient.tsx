@@ -296,9 +296,9 @@ const emailGroupStyles: Record<
     label: "Socio · Tessera non attiva",
   },
   non_member: {
-    container: "border-orange-400/40 bg-orange-400/[0.055]",
-    header: "border-orange-400/30 bg-orange-400/[0.14]",
-    badge: "border-orange-300/45 bg-orange-300/20 text-orange-100",
+    container: "border-red-500/45 bg-red-500/[0.07]",
+    header: "border-red-500/35 bg-red-500/[0.16]",
+    badge: "border-red-400/50 bg-red-400/20 text-red-100",
     label: "Non socio",
   },
   mixed: {
@@ -351,6 +351,51 @@ function anomalyType(row: Row): AnomalyType | null {
 
 function isClosedAnomaly(anomaly: AnomalyRecord | undefined) {
   return anomaly?.status === "resolved" || anomaly?.status === "archived";
+}
+
+function hasSentEmail(anomaly: AnomalyRecord | undefined) {
+  return Boolean(
+    anomaly?.history.some((item) => item.note?.startsWith("Email inviata a "))
+  );
+}
+
+function communicationStatusLabel(
+  type: AnomalyType,
+  anomaly: AnomalyRecord | undefined,
+  fallbackStatus: AnomalyStatus
+) {
+  if (fallbackStatus !== "waiting_participant") {
+    return anomalyStatusLabels[fallbackStatus];
+  }
+
+  const sent = hasSentEmail(anomaly);
+  if (type === "inactive_membership") {
+    return sent
+      ? "Email rinnovo inviata · In attesa del rinnovo"
+      : "Da inviare email di rinnovo";
+  }
+  if (type === "non_member") {
+    return sent
+      ? "Email tesseramento inviata · In attesa della domanda"
+      : "Da inviare email di tesseramento";
+  }
+  return sent
+    ? "Email inviata · In attesa della risposta"
+    : "Da inviare richiesta al partecipante";
+}
+
+function prepareEmailLabel(type: AnomalyType, anomaly: AnomalyRecord | undefined) {
+  if (hasSentEmail(anomaly)) return "Reinvia email";
+  if (type === "inactive_membership") return "Prepara email di rinnovo";
+  if (type === "non_member") return "Prepara email di tesseramento";
+  if (type === "possible_duplicate") return "Prepara richiesta dati";
+  return "Prepara verifica dati";
+}
+
+function historyStatusLabel(item: AnomalyHistory) {
+  if (item.note?.startsWith("Email inviata a ")) return "Email inviata";
+  if (item.note?.startsWith("Invio email fallito")) return "Invio email fallito";
+  return anomalyStatusLabels[item.status];
 }
 
 function emailGroupCategory(group: EmailGroup): EmailGroupCategory {
@@ -976,7 +1021,7 @@ export default function TicketPrescreenClient() {
                           </button>
                           <div className="text-xs text-white/45">
                             {anomalies[row.ticket_ref]
-                              ? `${anomalyTypeLabels[anomalyType(row)!]} · ${anomalyStatusLabels[anomalies[row.ticket_ref].status]}`
+                              ? `${anomalyTypeLabels[anomalyType(row)!]} · ${communicationStatusLabel(anomalyType(row)!, anomalies[row.ticket_ref], anomalies[row.ticket_ref].status)}`
                               : `${anomalyTypeLabels[anomalyType(row)!]} · Non ancora presa in carico`}
                           </div>
                         </div>
@@ -1029,7 +1074,15 @@ export default function TicketPrescreenClient() {
                               className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
                             >
                               {Object.entries(anomalyStatusLabels).map(([value, label]) => (
-                                <option key={value} value={value}>{label}</option>
+                                <option key={value} value={value}>
+                                  {value === "waiting_participant"
+                                    ? communicationStatusLabel(
+                                        anomalyType(row)!,
+                                        anomalies[row.ticket_ref],
+                                        "waiting_participant"
+                                      )
+                                    : label}
+                                </option>
                               ))}
                             </select>
                           </label>
@@ -1060,14 +1113,19 @@ export default function TicketPrescreenClient() {
                               onClick={() => prepareEmail(row)}
                               className="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-35"
                             >
-                              Prepara email
+                              {prepareEmailLabel(
+                                anomalyType(row)!,
+                                anomalies[row.ticket_ref]
+                              )}
                             </button>
                             <span className="text-xs text-white/45">
                               {!anomalies[row.ticket_ref]
                                 ? "Salva prima la gestione dell’anomalia."
                                 : !row.participant.email
                                   ? "Il biglietto non contiene un’email destinatario."
-                                  : "L’invio avviene solo dopo anteprima e conferma."}
+                                  : hasSentEmail(anomalies[row.ticket_ref])
+                                    ? "Email già inviata: puoi controllarla e reinviarla."
+                                    : "L’invio avviene solo dopo anteprima e conferma."}
                             </span>
                           </div>
 
@@ -1129,7 +1187,11 @@ export default function TicketPrescreenClient() {
                                   onClick={() => void sendEmail(row)}
                                   className="rounded-xl bg-cyan-200 px-4 py-2.5 text-sm font-bold text-black disabled:opacity-40"
                                 >
-                                  {sendingEmail ? "Invio…" : "Invia email"}
+                                  {sendingEmail
+                                    ? "Invio…"
+                                    : hasSentEmail(anomalies[row.ticket_ref])
+                                      ? "Reinvia email"
+                                      : "Invia email"}
                                 </button>
                                 <button
                                   type="button"
@@ -1168,7 +1230,7 @@ export default function TicketPrescreenClient() {
                             <div className="mt-2 space-y-2">
                               {anomalies[row.ticket_ref].history.map((item) => (
                                 <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
-                                  <span className="font-semibold text-white/80">{anomalyStatusLabels[item.status]}</span>
+                                  <span className="font-semibold text-white/80">{historyStatusLabel(item)}</span>
                                   {" · "}{formatDate(item.created_at, true)}
                                   {" · "}{item.admin_email}
                                   {item.note ? ` · ${item.note}` : ""}
