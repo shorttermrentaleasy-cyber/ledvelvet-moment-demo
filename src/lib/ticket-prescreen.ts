@@ -65,6 +65,8 @@ export type PrescreenRow = {
   result_label: string;
   identity_repeated: boolean;
   identity_ticket_count: number | null;
+  coverage_status: "covered" | "uncovered" | "unidentified";
+  coverage_label: string;
   matched_by: "email+phone" | "email" | "phone" | null;
   warnings: string[];
   member: {
@@ -303,6 +305,8 @@ export function buildPrescreenRows(params: {
       result_label: resultLabel(result),
       identity_repeated: false,
       identity_ticket_count: null,
+      coverage_status: "uncovered",
+      coverage_label: "Partecipante da associare",
       matched_by: matchedBy,
       warnings,
       member: matched
@@ -321,12 +325,19 @@ export function buildPrescreenRows(params: {
   }
 
   const activeMemberTicketCount = new Map<string, number>();
+  const activeCoverageCount = new Map<string, number>();
   for (const row of rows) {
     if (row.member_id && row.ticket_status !== "cancelled") {
       activeMemberTicketCount.set(
         row.member_id,
         (activeMemberTicketCount.get(row.member_id) || 0) + 1
       );
+      if (row.result === "active") {
+        activeCoverageCount.set(
+          row.member_id,
+          (activeCoverageCount.get(row.member_id) || 0) + 1
+        );
+      }
     }
   }
 
@@ -334,6 +345,28 @@ export function buildPrescreenRows(params: {
     const identityTicketCount = member_id
       ? activeMemberTicketCount.get(member_id) || 0
       : 0;
+    const memberActiveTicketCount = member_id
+      ? activeCoverageCount.get(member_id) || 0
+      : 0;
+    const coverage =
+      row.ticket_status === "cancelled" || row.result !== "active"
+        ? {
+            coverage_status: "uncovered" as const,
+            coverage_label:
+              row.ticket_status === "cancelled"
+                ? "Biglietto annullato"
+                : "Partecipante da associare",
+          }
+        : memberActiveTicketCount === 1
+          ? {
+              coverage_status: "covered" as const,
+              coverage_label: "Biglietto coperto da socio attivo",
+            }
+          : {
+              coverage_status: "unidentified" as const,
+              coverage_label: "Copertura presente, QR personale non identificabile",
+            };
+
     if (
       member_id &&
       row.ticket_status !== "cancelled" &&
@@ -341,6 +374,7 @@ export function buildPrescreenRows(params: {
     ) {
       return {
         ...row,
+        ...coverage,
         identity_repeated: true,
         identity_ticket_count: identityTicketCount,
         warnings: [
@@ -349,7 +383,7 @@ export function buildPrescreenRows(params: {
         ],
       };
     }
-    return row;
+    return { ...row, ...coverage };
   });
 }
 
@@ -362,10 +396,21 @@ export function summarizePrescreen(rows: PrescreenRow[]) {
     review: 0,
     repeated_identity: 0,
     cancelled: 0,
+    active_members: 0,
+    covered_tickets: 0,
+    uncovered_tickets: 0,
   };
+  const activeMembers = new Set<string>();
   for (const row of rows) {
     summary[row.result] += 1;
     if (row.identity_repeated) summary.repeated_identity += 1;
+    if (row.result === "active" && row.member?.id) activeMembers.add(row.member.id);
   }
+  summary.active_members = activeMembers.size;
+  summary.covered_tickets = activeMembers.size;
+  summary.uncovered_tickets = Math.max(
+    0,
+    rows.filter((row) => row.ticket_status !== "cancelled").length - activeMembers.size
+  );
   return summary;
 }

@@ -31,9 +31,12 @@ type Row = {
   result_label: string;
   identity_repeated: boolean;
   identity_ticket_count: number | null;
+  coverage_status: "covered" | "uncovered" | "unidentified";
+  coverage_label: string;
   matched_by: "email+phone" | "email" | "phone" | null;
   warnings: string[];
   member: {
+    id: string;
     barcode: string | null;
     full_name: string | null;
     membership_group: string | null;
@@ -42,7 +45,27 @@ type Row = {
   } | null;
 };
 
-type Summary = Record<Result | "repeated_identity" | "total", number>;
+type Summary = Record<
+  Result |
+    "repeated_identity" |
+    "active_members" |
+    "covered_tickets" |
+    "uncovered_tickets" |
+    "total",
+  number
+>;
+
+type RowGroup = {
+  key: string;
+  orderRef: string | null;
+  rows: Row[];
+  totalTickets: number;
+  nonCancelledTickets: number;
+  coveredTickets: number;
+  uncoveredTickets: number;
+  hasUnidentifiedCoverage: boolean;
+  hasCrossOrderCoverage: boolean;
+};
 
 const resultStyles: Record<Result, string> = {
   active: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
@@ -103,6 +126,60 @@ export default function TicketPrescreenClient() {
     [filter, rows]
   );
 
+  const visibleGroups = useMemo(() => {
+    const rowsByGroup = new Map<string, Row[]>();
+    for (const row of rows) {
+      const key = row.order_ref ? `order:${row.order_ref}` : `ticket:${row.ticket_ref}`;
+      rowsByGroup.set(key, [...(rowsByGroup.get(key) || []), row]);
+    }
+
+    const visibleKeys = new Set(
+      visibleRows.map((row) =>
+        row.order_ref ? `order:${row.order_ref}` : `ticket:${row.ticket_ref}`
+      )
+    );
+    const activeMemberGroups = new Map<string, Set<string>>();
+    for (const [key, groupRows] of rowsByGroup) {
+      for (const row of groupRows) {
+        if (row.result !== "active" || !row.member?.id) continue;
+        const groupKeys = activeMemberGroups.get(row.member.id) || new Set<string>();
+        groupKeys.add(key);
+        activeMemberGroups.set(row.member.id, groupKeys);
+      }
+    }
+
+    return Array.from(rowsByGroup.entries())
+      .filter(([key]) => visibleKeys.has(key))
+      .map(([key, groupRows]): RowGroup => {
+        const activeMemberIds = new Set(
+          groupRows
+            .filter((row) => row.result === "active" && row.member?.id)
+            .map((row) => row.member!.id)
+        );
+        const assignableActiveMembers = Array.from(activeMemberIds).filter(
+          (memberId) => (activeMemberGroups.get(memberId)?.size || 0) === 1
+        ).length;
+        const nonCancelled = groupRows.filter(
+          (row) => row.ticket_status !== "cancelled"
+        ).length;
+        return {
+          key,
+          orderRef: groupRows[0]?.order_ref || null,
+          rows: groupRows.filter((row) => visibleRows.includes(row)),
+          totalTickets: groupRows.length,
+          nonCancelledTickets: nonCancelled,
+          coveredTickets: assignableActiveMembers,
+          uncoveredTickets: Math.max(0, nonCancelled - assignableActiveMembers),
+          hasUnidentifiedCoverage: groupRows.some(
+            (row) => row.coverage_status === "unidentified"
+          ),
+          hasCrossOrderCoverage: Array.from(activeMemberIds).some(
+            (memberId) => (activeMemberGroups.get(memberId)?.size || 0) > 1
+          ),
+        };
+      });
+  }, [rows, visibleRows]);
+
   async function loadPrescreen(selectedId = eventId) {
     if (!selectedId) return;
     setLoading(true);
@@ -129,7 +206,9 @@ export default function TicketPrescreenClient() {
 
   const cards: Array<{ key: keyof Summary; label: string; color: string }> = [
     { key: "total", label: "Biglietti", color: "text-white" },
-    { key: "active", label: "Soci attivi", color: "text-emerald-300" },
+    { key: "active_members", label: "Tessere attive", color: "text-emerald-300" },
+    { key: "covered_tickets", label: "Biglietti coperti", color: "text-emerald-300" },
+    { key: "uncovered_tickets", label: "Da associare", color: "text-amber-200" },
     { key: "inactive", label: "Non attivi", color: "text-red-300" },
     { key: "not_found", label: "Non trovati", color: "text-red-300" },
     { key: "review", label: "Da verificare", color: "text-amber-200" },
@@ -250,12 +329,45 @@ export default function TicketPrescreenClient() {
                 </select>
               </div>
 
-              <div className="space-y-3">
-                {visibleRows.map((row, index) => (
-                  <article
-                    key={`${row.ticket_ref}-${index}`}
-                    className="grid gap-4 rounded-2xl border border-white/10 bg-black/25 p-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr]"
+              <div className="space-y-5">
+                {visibleGroups.map((group) => (
+                  <div
+                    key={group.key}
+                    className="overflow-hidden rounded-3xl border border-white/10 bg-black/20"
                   >
+                    <div className="flex flex-col gap-3 border-b border-white/10 bg-white/[0.035] px-4 py-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.16em] text-white/40">
+                          {group.orderRef ? `Ordine ${group.orderRef}` : "Biglietto singolo"}
+                        </div>
+                        <div className="mt-1 text-sm text-white/70">
+                          {group.totalTickets} {group.totalTickets === 1 ? "biglietto" : "biglietti"}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                        <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-emerald-200">
+                          {group.coveredTickets} {group.coveredTickets === 1 ? "coperto" : "coperti"}
+                        </span>
+                        {group.uncoveredTickets > 0 && (
+                          <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-amber-100">
+                            {group.uncoveredTickets} da associare
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {group.hasUnidentifiedCoverage && (
+                      <div className="border-b border-amber-300/15 bg-amber-300/[0.07] px-4 py-3 text-xs leading-5 text-amber-100">
+                        {group.hasCrossOrderCoverage
+                          ? "La stessa tessera attiva compare in più ordini: un solo biglietto è coperto nell’intero evento, ma non è possibile attribuire la copertura a questo ordine."
+                          : `${group.coveredTickets} ${group.coveredTickets === 1 ? "biglietto coperto" : "biglietti coperti"} su ${group.nonCancelledTickets}; QR personale non identificabile dai dati Xceed ripetuti.`}
+                      </div>
+                    )}
+                    <div className="divide-y divide-white/10">
+                      {group.rows.map((row, index) => (
+                        <article
+                          key={`${row.ticket_ref}-${index}`}
+                          className="grid gap-4 p-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr]"
+                        >
                     <div>
                       <div className="font-semibold">{row.participant.full_name || "Senza nominativo"}</div>
                       <div className="mt-1 text-sm text-white/55">{row.participant.email || "Email assente"}</div>
@@ -287,6 +399,17 @@ export default function TicketPrescreenClient() {
                       <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${resultStyles[row.result]}`}>
                         {row.result_label}
                       </span>
+                      <div
+                        className={`mt-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
+                          row.coverage_status === "covered"
+                            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                            : row.coverage_status === "unidentified"
+                              ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                              : "border-white/10 bg-white/[0.035] text-white/55"
+                        }`}
+                      >
+                        {row.coverage_label}
+                      </div>
                       {row.identity_repeated && (
                         <div className="mt-2 inline-flex rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
                           Identità ripetuta su {row.identity_ticket_count} biglietti
@@ -301,7 +424,10 @@ export default function TicketPrescreenClient() {
                         <div key={warning} className="mt-2 text-xs leading-5 text-amber-100/80">• {warning}</div>
                       ))}
                     </div>
-                  </article>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
 
