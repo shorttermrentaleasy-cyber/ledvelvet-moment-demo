@@ -20,7 +20,43 @@ type Result =
 
 type MembershipCategory = "active_member" | "inactive_member" | "non_member";
 type EmailGroupCategory = MembershipCategory | "mixed";
-type Filter = MembershipCategory | "all";
+type Filter = MembershipCategory | "anomalies" | "all";
+
+type AnomalyType =
+  | "inactive_membership"
+  | "non_member"
+  | "possible_duplicate"
+  | "identity_review";
+
+type AnomalyStatus =
+  | "open"
+  | "in_progress"
+  | "waiting_participant"
+  | "resolved"
+  | "archived";
+
+type AnomalyHistory = {
+  id: number;
+  status: AnomalyStatus;
+  note: string | null;
+  admin_email: string;
+  created_at: string;
+};
+
+type AnomalyRecord = {
+  id: string;
+  event_id: string;
+  ticket_ref: string;
+  anomaly_type: AnomalyType;
+  status: AnomalyStatus;
+  member_id: string | null;
+  admin_note: string | null;
+  assigned_admin_email: string;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  history: AnomalyHistory[];
+};
 
 type Row = {
   ticket_ref: string;
@@ -87,6 +123,21 @@ const resultStyles: Record<Result, string> = {
   cancelled: "border-white/15 bg-white/5 text-white/50",
 };
 
+const anomalyTypeLabels: Record<AnomalyType, string> = {
+  inactive_membership: "Tessera non attiva",
+  non_member: "Partecipante non socio",
+  possible_duplicate: "Tessera già usata per un altro biglietto",
+  identity_review: "Identità da verificare",
+};
+
+const anomalyStatusLabels: Record<AnomalyStatus, string> = {
+  open: "Da gestire",
+  in_progress: "In lavorazione",
+  waiting_participant: "In attesa del partecipante",
+  resolved: "Risolta",
+  archived: "Archiviata",
+};
+
 const emailGroupStyles: Record<
   EmailGroupCategory,
   { container: string; header: string; badge: string; label: string }
@@ -148,6 +199,19 @@ function membershipCategory(row: Row): MembershipCategory {
   return hasInactiveMembership(row) ? "inactive_member" : "active_member";
 }
 
+function anomalyType(row: Row): AnomalyType | null {
+  if (row.ticket_status === "cancelled") return null;
+  if (row.coverage_status === "possible_duplicate") return "possible_duplicate";
+  if (hasInactiveMembership(row)) return "inactive_membership";
+  if (!row.member) return "non_member";
+  if (row.result === "review") return "identity_review";
+  return null;
+}
+
+function isClosedAnomaly(anomaly: AnomalyRecord | undefined) {
+  return anomaly?.status === "resolved" || anomaly?.status === "archived";
+}
+
 function emailGroupCategory(group: EmailGroup): EmailGroupCategory {
   const categories = new Set(
     group.orderGroups.flatMap((orderGroup) =>
@@ -190,6 +254,12 @@ export default function TicketPrescreenClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [anomalies, setAnomalies] = useState<Record<string, AnomalyRecord>>({});
+  const [managementWarning, setManagementWarning] = useState("");
+  const [selectedTicketRef, setSelectedTicketRef] = useState<string | null>(null);
+  const [draftStatus, setDraftStatus] = useState<AnomalyStatus>("open");
+  const [draftNote, setDraftNote] = useState("");
+  const [savingAnomaly, setSavingAnomaly] = useState(false);
 
   useEffect(() => {
     fetchJson("/api/admin/ticket-prescreen")
@@ -198,12 +268,23 @@ export default function TicketPrescreenClient() {
       .finally(() => setLoadingEvents(false));
   }, []);
 
+  const openAnomalyRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        const detected = anomalyType(row);
+        return detected && !isClosedAnomaly(anomalies[row.ticket_ref]);
+      }),
+    [anomalies, rows]
+  );
+
   const visibleRows = useMemo(
     () =>
       filter === "all"
         ? rows
-        : rows.filter((row) => membershipCategory(row) === filter),
-    [filter, rows]
+        : filter === "anomalies"
+          ? openAnomalyRows
+          : rows.filter((row) => membershipCategory(row) === filter),
+    [filter, openAnomalyRows, rows]
   );
 
   const visibleGroups = useMemo(() => {
@@ -314,6 +395,66 @@ export default function TicketPrescreenClient() {
       });
   }, [visibleGroups]);
 
+  async function loadAnomalies(selectedId: string) {
+    setManagementWarning("");
+    try {
+      const payload = await fetchJson(
+        `/api/admin/ticket-prescreen/anomalies?event_id=${encodeURIComponent(selectedId)}&t=${Date.now()}`
+      );
+      const next = Object.fromEntries(
+        (payload.anomalies || []).map((item: AnomalyRecord) => [item.ticket_ref, item])
+      );
+      setAnomalies(next);
+    } catch (reason) {
+      setAnomalies({});
+      setManagementWarning(
+        reason instanceof Error
+          ? `Gestione anomalie non disponibile: ${reason.message}`
+          : "Gestione anomalie non disponibile"
+      );
+    }
+  }
+
+  function openAnomalyManager(row: Row) {
+    const existing = anomalies[row.ticket_ref];
+    setSelectedTicketRef(row.ticket_ref);
+    setDraftStatus(existing?.status || "open");
+    setDraftNote(existing?.admin_note || "");
+  }
+
+  async function saveAnomaly(row: Row) {
+    const detectedType = anomalyType(row);
+    if (!eventId || !detectedType) return;
+    setSavingAnomaly(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/ticket-prescreen/anomalies", {
+        method: "PUT",
+        credentials: "include",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_id: eventId,
+          ticket_ref: row.ticket_ref,
+          anomaly_type: detectedType,
+          status: draftStatus,
+          note: draftNote,
+          member_id: row.member?.id || null,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || `Errore HTTP ${response.status}`);
+      }
+      const saved = payload.anomaly as AnomalyRecord;
+      setAnomalies((current) => ({ ...current, [saved.ticket_ref]: saved }));
+      setManagementWarning("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Errore nel salvataggio");
+    } finally {
+      setSavingAnomaly(false);
+    }
+  }
+
   async function loadPrescreen(selectedId = eventId) {
     if (!selectedId) return;
     setLoading(true);
@@ -327,10 +468,13 @@ export default function TicketPrescreenClient() {
       setSummary(payload.summary || null);
       setRows(payload.rows || []);
       setGeneratedAt(payload.generated_at || null);
+      setSelectedTicketRef(null);
+      await loadAnomalies(selectedId);
     } catch (reason) {
       setEvent(null);
       setSummary(null);
       setRows([]);
+      setAnomalies({});
       setGeneratedAt(null);
       setError(reason instanceof Error ? reason.message : "Errore sconosciuto");
     } finally {
@@ -368,7 +512,7 @@ export default function TicketPrescreenClient() {
               <h1 className="mt-2 text-3xl font-bold md:text-4xl">Pre-controllo biglietti</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
                 Lettura live delle vendite Xceed e confronto con l’anagrafica Wallyfor.
-                Nessun dato viene modificato o salvato.
+                Xceed e Wallyfor non vengono modificati; sono salvate solo le decisioni dell’amministratore.
               </p>
             </div>
             <div>
@@ -444,7 +588,12 @@ export default function TicketPrescreenClient() {
             <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-4 md:p-5">
               <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold">Controllo partecipanti</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-semibold">Controllo partecipanti</h2>
+                    <span className="rounded-full border border-fuchsia-300/35 bg-fuchsia-300/10 px-3 py-1 text-xs font-semibold text-fuchsia-100">
+                      {openAnomalyRows.length} {openAnomalyRows.length === 1 ? "anomalia aperta" : "anomalie aperte"}
+                    </span>
+                  </div>
                   <p className="mt-1 text-xs text-white/45">
                     “Regolare” significa pre-controllo superato sui dati dichiarati nel biglietto.
                   </p>
@@ -458,8 +607,15 @@ export default function TicketPrescreenClient() {
                   <option value="active_member">Acquisti soci attivi</option>
                   <option value="inactive_member">Acquisti soci non attivi</option>
                   <option value="non_member">Acquisti non soci</option>
+                  <option value="anomalies">Anomalie da gestire ({openAnomalyRows.length})</option>
                 </select>
               </div>
+
+              {managementWarning && (
+                <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+                  {managementWarning}
+                </div>
+              )}
 
               <div className="space-y-6">
                 {visibleEmailGroups.map((emailGroup) => (
@@ -608,7 +764,89 @@ export default function TicketPrescreenClient() {
                           {warning}
                         </div>
                       ))}
+                      {anomalyType(row) && (
+                        <div className="mt-3 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => openAnomalyManager(row)}
+                            className="rounded-xl border border-fuchsia-300/35 bg-fuchsia-300/10 px-3 py-2 text-xs font-semibold text-fuchsia-100"
+                          >
+                            Gestisci anomalia
+                          </button>
+                          <div className="text-xs text-white/45">
+                            {anomalies[row.ticket_ref]
+                              ? `${anomalyTypeLabels[anomalyType(row)!]} · ${anomalyStatusLabels[anomalies[row.ticket_ref].status]}`
+                              : `${anomalyTypeLabels[anomalyType(row)!]} · Non ancora presa in carico`}
+                          </div>
+                        </div>
+                      )}
                     </div>
+
+                    {selectedTicketRef === row.ticket_ref && anomalyType(row) && (
+                      <div className="rounded-2xl border border-fuchsia-300/25 bg-fuchsia-300/[0.07] p-4 lg:col-span-4">
+                        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-fuchsia-100">
+                              {anomalyTypeLabels[anomalyType(row)!]}
+                            </div>
+                            <div className="mt-1 text-xs text-white/45">
+                              La decisione è manuale e non modifica Xceed, Wallyfor o Fast Check.
+                            </div>
+                          </div>
+                          <button type="button" onClick={() => setSelectedTicketRef(null)} className="text-left text-xs text-white/50 md:text-right">
+                            Chiudi pannello
+                          </button>
+                        </div>
+                        <div className="mt-4 grid gap-3 md:grid-cols-[260px_1fr_auto] md:items-end">
+                          <label className="text-xs text-white/55">
+                            Stato
+                            <select
+                              value={draftStatus}
+                              onChange={(e) => setDraftStatus(e.target.value as AnomalyStatus)}
+                              className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                            >
+                              {Object.entries(anomalyStatusLabels).map(([value, label]) => (
+                                <option key={value} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="text-xs text-white/55">
+                            Nota amministratore
+                            <textarea
+                              value={draftNote}
+                              maxLength={2000}
+                              onChange={(e) => setDraftNote(e.target.value)}
+                              placeholder="Verifica effettuata, contatto o motivazione…"
+                              className="mt-1 min-h-20 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={savingAnomaly}
+                            onClick={() => void saveAnomaly(row)}
+                            className="rounded-xl bg-fuchsia-300 px-4 py-2.5 text-sm font-bold text-black disabled:opacity-40"
+                          >
+                            {savingAnomaly ? "Salvataggio…" : "Salva"}
+                          </button>
+                        </div>
+                        {(anomalies[row.ticket_ref]?.history || []).length > 0 && (
+                          <div className="mt-4 border-t border-white/10 pt-3">
+                            <div className="text-xs uppercase tracking-[0.14em] text-white/40">Storico decisioni</div>
+                            <div className="mt-2 space-y-2">
+                              {anomalies[row.ticket_ref].history.map((item) => (
+                                <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
+                                  <span className="font-semibold text-white/80">{anomalyStatusLabels[item.status]}</span>
+                                  {" · "}{formatDate(item.created_at, true)}
+                                  {" · "}{item.admin_email}
+                                  {item.note ? ` · ${item.note}` : ""}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                         </article>
                       ))}
                     </div>
