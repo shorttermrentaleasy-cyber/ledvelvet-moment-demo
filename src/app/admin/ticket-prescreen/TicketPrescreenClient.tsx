@@ -103,6 +103,14 @@ function participantEmail(row: Row) {
   return normalizedEmail(row.participant.email);
 }
 
+function hasInactiveMembership(row: Row) {
+  const status = row.member?.status?.trim().toLowerCase().replace(/[_-]+/g, " ");
+  return Boolean(
+    row.member &&
+      (row.result === "inactive" || status === "non attiva" || status === "inactive")
+  );
+}
+
 function groupPurchasedAt(group: RowGroup) {
   const timestamps = group.rows
     .map((row) => (row.purchased_at ? new Date(row.purchased_at).getTime() : Number.NaN))
@@ -478,7 +486,7 @@ export default function TicketPrescreenClient() {
                         <article
                           key={`${row.ticket_ref}-${index}`}
                           className={`grid gap-4 p-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr] ${
-                            row.result === "inactive"
+                            hasInactiveMembership(row)
                               ? "border-l-4 border-amber-300 bg-amber-400/20 ring-1 ring-inset ring-amber-300/50"
                               : ""
                           }`}
@@ -511,13 +519,23 @@ export default function TicketPrescreenClient() {
                     </div>
 
                     <div>
-                      <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${resultStyles[row.result]}`}>
-                        {row.result_label}
+                      <span
+                        className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                          hasInactiveMembership(row)
+                            ? resultStyles.inactive
+                            : resultStyles[row.result]
+                        }`}
+                      >
+                        {hasInactiveMembership(row)
+                          ? "Tessera non attiva"
+                          : row.result_label}
                       </span>
                       <div
                         className={`mt-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
-                          row.coverage_status === "covered"
-                            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+                          hasInactiveMembership(row)
+                            ? "border-amber-300/40 bg-amber-300/15 text-amber-100"
+                            : row.coverage_status === "covered"
+                              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
                             : row.coverage_status === "unidentified"
                               ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
                               : row.coverage_status === "possible_duplicate"
@@ -525,7 +543,9 @@ export default function TicketPrescreenClient() {
                               : "border-white/10 bg-white/[0.035] text-white/55"
                         }`}
                       >
-                        {row.coverage_label}
+                        {hasInactiveMembership(row)
+                          ? "Socio riconosciuto · Acquisto corretto · Biglietto non coperto"
+                          : row.coverage_label}
                       </div>
                       {row.identity_repeated && (
                         <div className="mt-2 inline-flex rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
@@ -538,7 +558,10 @@ export default function TicketPrescreenClient() {
                         </div>
                       )}
                       {row.warnings.map((warning) => (
-                        <div key={warning} className="mt-2 text-xs leading-5 text-amber-100/80">• {warning}</div>
+                        <div key={warning} className="mt-2 text-xs leading-5 text-amber-100/80">
+                          • {hasInactiveMembership(row) ? "Nota secondaria: " : ""}
+                          {warning}
+                        </div>
                       ))}
                     </div>
                         </article>
