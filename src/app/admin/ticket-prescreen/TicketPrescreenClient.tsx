@@ -69,6 +69,14 @@ type RowGroup = {
   hasPossibleDuplicate: boolean;
 };
 
+type EmailGroup = {
+  key: string;
+  email: string | null;
+  orderGroups: RowGroup[];
+  totalOrders: number;
+  totalTickets: number;
+};
+
 const resultStyles: Record<Result, string> = {
   active: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
   inactive: "border-red-400/30 bg-red-400/10 text-red-200",
@@ -84,6 +92,27 @@ function formatDate(value: string | null, withTime = false) {
   return withTime
     ? date.toLocaleString("it-IT")
     : date.toLocaleDateString("it-IT");
+}
+
+function normalizedEmail(value: string | null | undefined) {
+  const email = value?.trim().toLowerCase();
+  return email || null;
+}
+
+function groupEmail(group: RowGroup) {
+  for (const row of group.rows) {
+    const email =
+      normalizedEmail(row.buyer?.email) || normalizedEmail(row.participant.email);
+    if (email) return email;
+  }
+  return null;
+}
+
+function groupPurchasedAt(group: RowGroup) {
+  const timestamps = group.rows
+    .map((row) => (row.purchased_at ? new Date(row.purchased_at).getTime() : Number.NaN))
+    .filter((value) => Number.isFinite(value));
+  return timestamps.length ? Math.min(...timestamps) : Number.POSITIVE_INFINITY;
 }
 
 async function fetchJson(url: string) {
@@ -171,6 +200,39 @@ export default function TicketPrescreenClient() {
         };
       });
   }, [rows, visibleRows]);
+
+  const visibleEmailGroups = useMemo(() => {
+    const groupsByEmail = new Map<string, RowGroup[]>();
+    for (const group of visibleGroups) {
+      const email = groupEmail(group);
+      const key = email ? `email:${email}` : "email:missing";
+      groupsByEmail.set(key, [...(groupsByEmail.get(key) || []), group]);
+    }
+
+    return Array.from(groupsByEmail.entries())
+      .map(([key, orderGroups]): EmailGroup => {
+        const sortedGroups = [...orderGroups].sort((a, b) => {
+          const byDate = groupPurchasedAt(a) - groupPurchasedAt(b);
+          if (byDate !== 0) return byDate;
+          return (a.orderRef || a.key).localeCompare(b.orderRef || b.key, "it");
+        });
+        return {
+          key,
+          email: key === "email:missing" ? null : key.slice("email:".length),
+          orderGroups: sortedGroups,
+          totalOrders: sortedGroups.length,
+          totalTickets: sortedGroups.reduce(
+            (total, group) => total + group.totalTickets,
+            0
+          ),
+        };
+      })
+      .sort((a, b) => {
+        if (!a.email) return 1;
+        if (!b.email) return -1;
+        return a.email.localeCompare(b.email, "it", { sensitivity: "base" });
+      });
+  }, [visibleGroups]);
 
   async function loadPrescreen(selectedId = eventId) {
     if (!selectedId) return;
@@ -323,12 +385,34 @@ export default function TicketPrescreenClient() {
                 </select>
               </div>
 
-              <div className="space-y-5">
-                {visibleGroups.map((group) => (
+              <div className="space-y-6">
+                {visibleEmailGroups.map((emailGroup) => (
                   <div
-                    key={group.key}
-                    className="overflow-hidden rounded-3xl border border-white/10 bg-black/20"
+                    key={emailGroup.key}
+                    className="overflow-hidden rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.025]"
                   >
+                    <div className="flex flex-col gap-2 border-b border-cyan-300/15 bg-cyan-300/[0.07] px-4 py-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.18em] text-cyan-200/60">
+                          Email Xceed
+                        </div>
+                        <div className="mt-1 break-all font-semibold text-cyan-100">
+                          {emailGroup.email || "Senza email"}
+                        </div>
+                      </div>
+                      <div className="text-sm text-white/60">
+                        {emailGroup.totalOrders}{" "}
+                        {emailGroup.totalOrders === 1 ? "acquisto" : "acquisti"} ·{" "}
+                        {emailGroup.totalTickets}{" "}
+                        {emailGroup.totalTickets === 1 ? "biglietto" : "biglietti"}
+                      </div>
+                    </div>
+                    <div className="space-y-4 p-3 md:p-4">
+                      {emailGroup.orderGroups.map((group) => (
+                        <div
+                          key={group.key}
+                          className="overflow-hidden rounded-2xl border border-white/10 bg-black/25"
+                        >
                     <div className="flex flex-col gap-3 border-b border-white/10 bg-white/[0.035] px-4 py-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <div className="text-xs uppercase tracking-[0.16em] text-white/40">
@@ -426,6 +510,9 @@ export default function TicketPrescreenClient() {
                       ))}
                     </div>
                         </article>
+                      ))}
+                    </div>
+                        </div>
                       ))}
                     </div>
                   </div>
