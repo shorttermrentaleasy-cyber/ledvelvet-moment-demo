@@ -79,7 +79,7 @@ type EmailGroup = {
 
 const resultStyles: Record<Result, string> = {
   active: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
-  inactive: "border-red-400/30 bg-red-400/10 text-red-200",
+  inactive: "border-amber-300/40 bg-amber-300/15 text-amber-100",
   not_found: "border-red-400/30 bg-red-400/10 text-red-200",
   review: "border-amber-300/30 bg-amber-300/10 text-amber-100",
   cancelled: "border-white/15 bg-white/5 text-white/50",
@@ -477,7 +477,11 @@ export default function TicketPrescreenClient() {
                       {group.rows.map((row, index) => (
                         <article
                           key={`${row.ticket_ref}-${index}`}
-                          className="grid gap-4 p-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr]"
+                          className={`grid gap-4 p-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr] ${
+                            row.result === "inactive"
+                              ? "bg-amber-300/[0.08] ring-1 ring-inset ring-amber-300/30"
+                              : ""
+                          }`}
                         >
                     <div>
                       <div className="font-semibold">{row.participant.full_name || "Senza nominativo"}</div>
