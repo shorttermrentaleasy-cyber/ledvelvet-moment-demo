@@ -479,7 +479,7 @@ export default function TicketPrescreenClient() {
                           key={`${row.ticket_ref}-${index}`}
                           className={`grid gap-4 p-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr] ${
                             row.result === "inactive"
-                              ? "bg-amber-300/[0.08] ring-1 ring-inset ring-amber-300/30"
+                              ? "border-l-4 border-amber-300 bg-amber-400/20 ring-1 ring-inset ring-amber-300/50"
                               : ""
                           }`}
                         >
