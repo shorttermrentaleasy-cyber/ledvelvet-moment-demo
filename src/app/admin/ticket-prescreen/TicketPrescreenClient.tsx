@@ -99,13 +99,8 @@ function normalizedEmail(value: string | null | undefined) {
   return email || null;
 }
 
-function groupEmail(group: RowGroup) {
-  for (const row of group.rows) {
-    const email =
-      normalizedEmail(row.buyer?.email) || normalizedEmail(row.participant.email);
-    if (email) return email;
-  }
-  return null;
+function participantEmail(row: Row) {
+  return normalizedEmail(row.participant.email);
 }
 
 function groupPurchasedAt(group: RowGroup) {
@@ -204,9 +199,42 @@ export default function TicketPrescreenClient() {
   const visibleEmailGroups = useMemo(() => {
     const groupsByEmail = new Map<string, RowGroup[]>();
     for (const group of visibleGroups) {
-      const email = groupEmail(group);
-      const key = email ? `email:${email}` : "email:missing";
-      groupsByEmail.set(key, [...(groupsByEmail.get(key) || []), group]);
+      const rowsByEmail = new Map<string, Row[]>();
+      for (const row of group.rows) {
+        const email = participantEmail(row);
+        const key = email ? `email:${email}` : "email:missing";
+        rowsByEmail.set(key, [...(rowsByEmail.get(key) || []), row]);
+      }
+
+      for (const [key, emailRows] of rowsByEmail) {
+        const coveredMemberIds = new Set(
+          emailRows
+            .filter((row) => row.first_purchase && row.member?.id)
+            .map((row) => row.member!.id)
+        );
+        const nonCancelledTickets = emailRows.filter(
+          (row) => row.ticket_status !== "cancelled"
+        ).length;
+        const emailOrderGroup: RowGroup = {
+          key: `${group.key}:${key}`,
+          orderRef: group.orderRef,
+          rows: emailRows,
+          totalTickets: emailRows.length,
+          nonCancelledTickets,
+          coveredTickets: coveredMemberIds.size,
+          uncoveredTickets: Math.max(0, nonCancelledTickets - coveredMemberIds.size),
+          hasUnidentifiedCoverage: emailRows.some(
+            (row) => row.coverage_status === "unidentified"
+          ),
+          hasPossibleDuplicate: emailRows.some(
+            (row) => row.coverage_status === "possible_duplicate"
+          ),
+        };
+        groupsByEmail.set(key, [
+          ...(groupsByEmail.get(key) || []),
+          emailOrderGroup,
+        ]);
+      }
     }
 
     return Array.from(groupsByEmail.entries())
@@ -394,7 +422,7 @@ export default function TicketPrescreenClient() {
                     <div className="flex flex-col gap-2 border-b border-cyan-300/15 bg-cyan-300/[0.07] px-4 py-4 md:flex-row md:items-center md:justify-between">
                       <div>
                         <div className="text-xs uppercase tracking-[0.18em] text-cyan-200/60">
-                          Email Xceed
+                          Email partecipante
                         </div>
                         <div className="mt-1 break-all font-semibold text-cyan-100">
                           {emailGroup.email || "Senza email"}
