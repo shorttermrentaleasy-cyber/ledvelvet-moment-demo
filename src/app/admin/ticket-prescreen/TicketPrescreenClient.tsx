@@ -18,7 +18,9 @@ type Result =
   | "review"
   | "cancelled";
 
-type Filter = Result | "repeated_identity" | "possible_duplicate" | "all";
+type MembershipCategory = "active_member" | "inactive_member" | "non_member";
+type EmailGroupCategory = MembershipCategory | "mixed";
+type Filter = MembershipCategory | "all";
 
 type Row = {
   ticket_ref: string;
@@ -85,6 +87,36 @@ const resultStyles: Record<Result, string> = {
   cancelled: "border-white/15 bg-white/5 text-white/50",
 };
 
+const emailGroupStyles: Record<
+  EmailGroupCategory,
+  { container: string; header: string; badge: string; label: string }
+> = {
+  active_member: {
+    container: "border-emerald-400/35 bg-emerald-400/[0.045]",
+    header: "border-emerald-400/25 bg-emerald-400/[0.12]",
+    badge: "border-emerald-300/40 bg-emerald-300/15 text-emerald-100",
+    label: "Socio attivo · Tessera attiva",
+  },
+  inactive_member: {
+    container: "border-amber-300/40 bg-amber-300/[0.055]",
+    header: "border-amber-300/30 bg-amber-300/[0.14]",
+    badge: "border-amber-300/45 bg-amber-300/20 text-amber-100",
+    label: "Socio · Tessera non attiva",
+  },
+  non_member: {
+    container: "border-orange-400/40 bg-orange-400/[0.055]",
+    header: "border-orange-400/30 bg-orange-400/[0.14]",
+    badge: "border-orange-300/45 bg-orange-300/20 text-orange-100",
+    label: "Non socio",
+  },
+  mixed: {
+    container: "border-cyan-300/25 bg-cyan-300/[0.025]",
+    header: "border-cyan-300/20 bg-cyan-300/[0.08]",
+    badge: "border-cyan-300/35 bg-cyan-300/15 text-cyan-100",
+    label: "Stati diversi",
+  },
+};
+
 function formatDate(value: string | null, withTime = false) {
   if (!value) return "—";
   const date = new Date(value);
@@ -109,6 +141,22 @@ function hasInactiveMembership(row: Row) {
     row.member &&
       (row.result === "inactive" || status === "non attiva" || status === "inactive")
   );
+}
+
+function membershipCategory(row: Row): MembershipCategory {
+  if (!row.member) return "non_member";
+  return hasInactiveMembership(row) ? "inactive_member" : "active_member";
+}
+
+function emailGroupCategory(group: EmailGroup): EmailGroupCategory {
+  const categories = new Set(
+    group.orderGroups.flatMap((orderGroup) =>
+      orderGroup.rows.map((row) => membershipCategory(row))
+    )
+  );
+  return categories.size === 1
+    ? (Array.from(categories)[0] as MembershipCategory)
+    : "mixed";
 }
 
 function groupPurchasedAt(group: RowGroup) {
@@ -154,11 +202,7 @@ export default function TicketPrescreenClient() {
     () =>
       filter === "all"
         ? rows
-        : filter === "repeated_identity"
-          ? rows.filter((row) => row.identity_repeated)
-          : filter === "possible_duplicate"
-            ? rows.filter((row) => row.coverage_status === "possible_duplicate")
-          : rows.filter((row) => row.result === filter),
+        : rows.filter((row) => membershipCategory(row) === filter),
     [filter, rows]
   );
 
@@ -410,14 +454,10 @@ export default function TicketPrescreenClient() {
                   onChange={(e) => setFilter(e.target.value as Filter)}
                   className="rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
                 >
-                  <option value="all">Tutti gli esiti</option>
-                  <option value="active">Soci attivi</option>
-                  <option value="inactive">Tessere non attive</option>
-                  <option value="not_found">Non trovati</option>
-                  <option value="review">Da verificare</option>
-                  <option value="repeated_identity">Identità ripetute</option>
-                  <option value="possible_duplicate">Possibili doppioni</option>
-                  <option value="cancelled">Annullati</option>
+                  <option value="all">Tutti gli acquisti</option>
+                  <option value="active_member">Acquisti soci attivi</option>
+                  <option value="inactive_member">Acquisti soci non attivi</option>
+                  <option value="non_member">Acquisti non soci</option>
                 </select>
               </div>
 
@@ -425,15 +465,20 @@ export default function TicketPrescreenClient() {
                 {visibleEmailGroups.map((emailGroup) => (
                   <div
                     key={emailGroup.key}
-                    className="overflow-hidden rounded-3xl border border-cyan-300/20 bg-cyan-300/[0.025]"
+                    className={`overflow-hidden rounded-3xl border ${emailGroupStyles[emailGroupCategory(emailGroup)].container}`}
                   >
-                    <div className="flex flex-col gap-2 border-b border-cyan-300/15 bg-cyan-300/[0.07] px-4 py-4 md:flex-row md:items-center md:justify-between">
+                    <div className={`flex flex-col gap-2 border-b px-4 py-4 md:flex-row md:items-center md:justify-between ${emailGroupStyles[emailGroupCategory(emailGroup)].header}`}>
                       <div>
-                        <div className="text-xs uppercase tracking-[0.18em] text-cyan-200/60">
+                        <div className="text-xs uppercase tracking-[0.18em] text-white/55">
                           Email partecipante
                         </div>
-                        <div className="mt-1 break-all font-semibold text-cyan-100">
-                          {emailGroup.email || "Senza email"}
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <div className="break-all font-semibold text-white">
+                            {emailGroup.email || "Senza email"}
+                          </div>
+                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${emailGroupStyles[emailGroupCategory(emailGroup)].badge}`}>
+                            {emailGroupStyles[emailGroupCategory(emailGroup)].label}
+                          </span>
                         </div>
                       </div>
                       <div className="text-sm text-white/60">
