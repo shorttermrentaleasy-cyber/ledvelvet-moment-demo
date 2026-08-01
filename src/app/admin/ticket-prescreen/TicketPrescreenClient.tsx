@@ -290,7 +290,7 @@ export default function TicketPrescreenClient() {
     { key: "total", label: "Biglietti", color: "text-white" },
     { key: "active_members", label: "Tessere attive", color: "text-emerald-300" },
     { key: "covered_tickets", label: "Biglietti coperti", color: "text-emerald-300" },
-    { key: "uncovered_tickets", label: "Da associare", color: "text-amber-200" },
+    { key: "uncovered_tickets", label: "Biglietti non coperti", color: "text-amber-200" },
     { key: "inactive", label: "Non attivi", color: "text-red-300" },
     { key: "not_found", label: "Non trovati", color: "text-red-300" },
     { key: "review", label: "Da verificare", color: "text-amber-200" },
@@ -456,7 +456,7 @@ export default function TicketPrescreenClient() {
                         </span>
                         {group.uncoveredTickets > 0 && (
                           <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-amber-100">
-                            {group.uncoveredTickets} da associare
+                            {group.uncoveredTickets} {group.uncoveredTickets === 1 ? "non coperto" : "non coperti"}
                           </span>
                         )}
                       </div>

@@ -427,7 +427,13 @@ export function buildPrescreenRows(params: {
             coverage_label:
               row.ticket_status === "cancelled"
                 ? "Biglietto annullato"
-                : "Partecipante da associare",
+                : row.result === "inactive"
+                  ? "Socio riconosciuto – tessera non attiva"
+                  : row.result === "review" && member_id
+                    ? "Socio riconosciuto – stato tessera da verificare"
+                    : row.result === "review"
+                      ? "Partecipante da verificare"
+                      : "Partecipante da associare",
             first_purchase: false,
           }
         : coverageByQr.get(qr) || {
