@@ -42,6 +42,12 @@ type AnomalyActionPreset = {
   note: string;
 };
 
+type EmailDraft = {
+  recipient: string;
+  subject: string;
+  text: string;
+};
+
 type AnomalyHistory = {
   id: number;
   status: AnomalyStatus;
@@ -220,6 +226,59 @@ const noActionPreset: AnomalyActionPreset = {
     "Anomalia verificata dall’amministratore: nessuna azione necessaria.",
 };
 
+const MEMBERSHIP_REQUEST_URL =
+  "https://wallyfor.com/iframepass/index.php?ref=1d7439beb34f751e1db481e40592079e&agenteget=";
+
+function renewalUrl(barcode: string | null | undefined) {
+  const value = barcode?.trim();
+  return value
+    ? `https://wallyfor.com/rinnovi/step3.php?idcode=5355&msg=${encodeURIComponent(value)}&imp=`
+    : null;
+}
+
+function emailDraftFor(type: AnomalyType, row: Row, event: EventItem | null): EmailDraft {
+  const recipient = row.participant.email?.trim().toLowerCase() || "";
+  const name = row.participant.full_name?.trim();
+  const greeting = name ? `Ciao ${name},` : "Ciao,";
+  const eventName = event?.name?.trim() || "l’evento LEDVELVET";
+  const signature = "Grazie,\nStaff LEDVELVET";
+
+  if (type === "inactive_membership") {
+    const link = renewalUrl(row.member?.barcode);
+    return {
+      recipient,
+      subject: `Rinnovo tessera LV People · ${eventName}`,
+      text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}. La tua tessera LV People risulta non attiva.\n\n${
+        link
+          ? `Puoi completare il rinnovo personale con un clic da questo link:\n${link}`
+          : "Contattaci per ricevere il link personale di rinnovo."
+      }\n\nDopo il rinnovo verificheremo automaticamente l’aggiornamento della tessera prima dell’evento.\n\n${signature}`,
+    };
+  }
+
+  if (type === "non_member") {
+    return {
+      recipient,
+      subject: `Domanda di ammissione LV People · ${eventName}`,
+      text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}. Dai dati inseriti non risulta una tessera LV People associata.\n\nPuoi presentare la domanda di ammissione attraverso il percorso ufficiale:\n${MEMBERSHIP_REQUEST_URL}\n\nUna volta completata la procedura, verificheremo l’aggiornamento prima dell’evento.\n\n${signature}`,
+    };
+  }
+
+  if (type === "possible_duplicate") {
+    return {
+      recipient,
+      subject: `Verifica partecipante · ${eventName}`,
+      text: `${greeting}\n\nti contattiamo in merito ai biglietti per ${eventName}. La stessa tessera LV People risulta associata anche a un altro biglietto dell’evento.\n\nTi chiediamo di rispondere a questa email indicando nome, cognome, email e cellulare del partecipante effettivo del secondo biglietto.\n\n${signature}`,
+    };
+  }
+
+  return {
+    recipient,
+    subject: `Verifica dati partecipante · ${eventName}`,
+    text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}. Per identificare correttamente la tessera LV People abbiamo bisogno di verificare i dati del partecipante.\n\nTi chiediamo di rispondere a questa email confermando nome, cognome, email e cellulare.\n\n${signature}`,
+  };
+}
+
 const emailGroupStyles: Record<
   EmailGroupCategory,
   { container: string; header: string; badge: string; label: string }
@@ -343,6 +402,9 @@ export default function TicketPrescreenClient() {
   const [draftNote, setDraftNote] = useState("");
   const [draftActionId, setDraftActionId] = useState("");
   const [savingAnomaly, setSavingAnomaly] = useState(false);
+  const [emailDraft, setEmailDraft] = useState<EmailDraft | null>(null);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailResult, setEmailResult] = useState("");
 
   useEffect(() => {
     fetchJson("/api/admin/ticket-prescreen")
@@ -504,6 +566,8 @@ export default function TicketPrescreenClient() {
     setDraftStatus(existing?.status || "open");
     setDraftNote(existing?.admin_note || "");
     setDraftActionId("");
+    setEmailDraft(null);
+    setEmailResult("");
   }
 
   function applyAnomalyAction(type: AnomalyType, actionId: string) {
@@ -546,6 +610,49 @@ export default function TicketPrescreenClient() {
       setError(reason instanceof Error ? reason.message : "Errore nel salvataggio");
     } finally {
       setSavingAnomaly(false);
+    }
+  }
+
+  function prepareEmail(row: Row) {
+    const detectedType = anomalyType(row);
+    if (!detectedType) return;
+    setEmailResult("");
+    setEmailDraft(emailDraftFor(detectedType, row, event));
+  }
+
+  async function sendEmail(row: Row) {
+    const detectedType = anomalyType(row);
+    if (!eventId || !detectedType || !emailDraft) return;
+    if (!window.confirm(`Inviare ora questa email a ${emailDraft.recipient}?`)) return;
+
+    setSendingEmail(true);
+    setEmailResult("");
+    setError("");
+    try {
+      const response = await fetch("/api/admin/ticket-prescreen/anomalies/email", {
+        method: "POST",
+        credentials: "include",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_id: eventId,
+          ticket_ref: row.ticket_ref,
+          recipient: emailDraft.recipient,
+          subject: emailDraft.subject,
+          text: emailDraft.text,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || `Errore HTTP ${response.status}`);
+      }
+      setEmailResult(`Email inviata correttamente a ${payload.recipient}.`);
+      await loadAnomalies(eventId);
+    } catch (reason) {
+      setEmailResult(
+        reason instanceof Error ? `Invio non riuscito: ${reason.message}` : "Invio non riuscito"
+      );
+    } finally {
+      setSendingEmail(false);
     }
   }
 
@@ -944,6 +1051,116 @@ export default function TicketPrescreenClient() {
                           >
                             {savingAnomaly ? "Salvataggio…" : "Salva"}
                           </button>
+                        </div>
+                        <div className="mt-4 border-t border-white/10 pt-4">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              disabled={!anomalies[row.ticket_ref] || !row.participant.email}
+                              onClick={() => prepareEmail(row)}
+                              className="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
+                              Prepara email
+                            </button>
+                            <span className="text-xs text-white/45">
+                              {!anomalies[row.ticket_ref]
+                                ? "Salva prima la gestione dell’anomalia."
+                                : !row.participant.email
+                                  ? "Il biglietto non contiene un’email destinatario."
+                                  : "L’invio avviene solo dopo anteprima e conferma."}
+                            </span>
+                          </div>
+
+                          {emailDraft && (
+                            <div className="mt-4 rounded-2xl border border-cyan-300/20 bg-black/25 p-4">
+                              <div className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">
+                                Anteprima comunicazione
+                              </div>
+                              <div className="mt-3 grid gap-3">
+                                <label className="text-xs text-white/55">
+                                  Destinatario
+                                  <input
+                                    type="email"
+                                    value={emailDraft.recipient}
+                                    onChange={(e) =>
+                                      setEmailDraft((current) =>
+                                        current ? { ...current, recipient: e.target.value } : current
+                                      )
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                                  />
+                                </label>
+                                <label className="text-xs text-white/55">
+                                  Oggetto
+                                  <input
+                                    value={emailDraft.subject}
+                                    maxLength={180}
+                                    onChange={(e) =>
+                                      setEmailDraft((current) =>
+                                        current ? { ...current, subject: e.target.value } : current
+                                      )
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                                  />
+                                </label>
+                                <label className="text-xs text-white/55">
+                                  Testo email
+                                  <textarea
+                                    value={emailDraft.text}
+                                    maxLength={8000}
+                                    onChange={(e) =>
+                                      setEmailDraft((current) =>
+                                        current ? { ...current, text: e.target.value } : current
+                                      )
+                                    }
+                                    className="mt-1 min-h-64 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm leading-6 text-white"
+                                  />
+                                </label>
+                              </div>
+                              <div className="mt-3 flex flex-wrap items-center gap-3">
+                                <button
+                                  type="button"
+                                  disabled={
+                                    sendingEmail ||
+                                    !emailDraft.recipient.trim() ||
+                                    !emailDraft.subject.trim() ||
+                                    !emailDraft.text.trim()
+                                  }
+                                  onClick={() => void sendEmail(row)}
+                                  className="rounded-xl bg-cyan-200 px-4 py-2.5 text-sm font-bold text-black disabled:opacity-40"
+                                >
+                                  {sendingEmail ? "Invio…" : "Invia email"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={sendingEmail}
+                                  onClick={() => {
+                                    setEmailDraft(null);
+                                    setEmailResult("");
+                                  }}
+                                  className="rounded-xl border border-white/15 px-4 py-2.5 text-sm text-white/65 disabled:opacity-40"
+                                >
+                                  Annulla
+                                </button>
+                                <span className="text-xs text-white/45">
+                                  Mittente configurato: {" "}
+                                  <span className="font-semibold text-white/70">admin@ledvelvet.it</span>
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {emailResult && (
+                            <div
+                              className={`mt-3 rounded-xl border px-3 py-2 text-sm ${
+                                emailResult.startsWith("Email inviata")
+                                  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+                                  : "border-red-400/30 bg-red-400/10 text-red-200"
+                              }`}
+                            >
+                              {emailResult}
+                            </div>
+                          )}
                         </div>
                         {(anomalies[row.ticket_ref]?.history || []).length > 0 && (
                           <div className="mt-4 border-t border-white/10 pt-3">
