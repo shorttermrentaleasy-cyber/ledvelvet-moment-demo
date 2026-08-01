@@ -1,10 +1,36 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
+import { signIn } from "next-auth/react";
 
 export const dynamic = "force-dynamic";
 
-export default function LoginPage({ searchParams }: { searchParams?: { err?: string } }) {
+type LoginSearchParams = {
+  err?: string | string[];
+  error?: string | string[];
+  callbackUrl?: string | string[];
+};
+
+function firstValue(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] || "" : value || "";
+}
+
+function safeCallbackUrl(value?: string | string[]) {
+  const candidate = firstValue(value).trim();
+  return candidate.startsWith("/") && !candidate.startsWith("//")
+    ? candidate
+    : "/gate";
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+export default function LoginPage({
+  searchParams,
+}: {
+  searchParams?: LoginSearchParams;
+}) {
   const palette = {
     bg: "#050505",
     surface: "#080808",
@@ -16,42 +42,100 @@ export default function LoginPage({ searchParams }: { searchParams?: { err?: str
     redAccent: "#930b0c",
   } as const;
 
-  const [csrfToken, setCsrfToken] = useState<string>("");
   const [email, setEmail] = useState("");
-  const [loadingCsrf, setLoadingCsrf] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState("");
+  const [checkingCode, setCheckingCode] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const callbackUrl = "/gate";
-  const err = searchParams?.err || "";
-  const nextAuthError = (searchParams as any)?.error || "";
+  const callbackUrl = safeCallbackUrl(searchParams?.callbackUrl);
+  const err = firstValue(searchParams?.err);
+  const nextAuthError = firstValue(searchParams?.error);
   const isDenied = err === "not_allowed" || nextAuthError === "AccessDenied";
+  const canSend = useMemo(
+    () => isValidEmail(email) && !sending,
+    [email, sending],
+  );
+  const canCheckCode = useMemo(
+    () => isValidEmail(email) && code.length === 8 && !checkingCode,
+    [email, code, checkingCode],
+  );
 
-  useEffect(() => {
-    let alive = true;
+  async function sendAccess(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSend) return;
 
-    (async () => {
-      try {
-        const r = await fetch("/api/auth/csrf", { cache: "no-store" });
-        const j = await r.json();
-        if (!alive) return;
-        setCsrfToken(String(j?.csrfToken || ""));
-      } catch {
-        if (!alive) return;
-        setCsrfToken("");
-      } finally {
-        if (!alive) return;
-        setLoadingCsrf(false);
+    setSending(true);
+    setMessage(null);
+
+    try {
+      const result = await signIn("email", {
+        email: email.trim(),
+        callbackUrl,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setMessage(
+          "Non è stato possibile inviare l’accesso. Controlla l’email o riprova.",
+        );
+        return;
       }
-    })();
 
-    return () => {
-      alive = false;
-    };
-  }, []);
+      setCode("");
+      setSent(true);
+    } catch {
+      setMessage("Non è stato possibile inviare l’accesso. Riprova tra poco.");
+    } finally {
+      setSending(false);
+    }
+  }
 
-  const canSubmit = useMemo(() => {
-    const v = email.trim();
-    return !!csrfToken && v.includes("@") && v.includes(".");
-  }, [csrfToken, email]);
+  async function verifyCode(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canCheckCode) return;
+
+    setCheckingCode(true);
+    setMessage(null);
+
+    try {
+      const params = new URLSearchParams({
+        callbackUrl,
+        token: code,
+        email: email.trim(),
+      });
+      const response = await fetch(
+        `/api/auth/callback/email?${params.toString()}`,
+        {
+          credentials: "include",
+          redirect: "follow",
+        },
+      );
+      const finalUrl = new URL(response.url, window.location.origin);
+
+      if (
+        !response.ok ||
+        finalUrl.searchParams.has("error") ||
+        finalUrl.pathname === "/login"
+      ) {
+        setMessage("Codice errato, scaduto o già utilizzato.");
+        return;
+      }
+
+      window.location.assign(finalUrl.href);
+    } catch {
+      setMessage("Non è stato possibile verificare il codice. Riprova.");
+    } finally {
+      setCheckingCode(false);
+    }
+  }
+
+  function changeEmail() {
+    setSent(false);
+    setCode("");
+    setMessage(null);
+  }
 
   return (
     <main
@@ -68,7 +152,6 @@ export default function LoginPage({ searchParams }: { searchParams?: { err?: str
         background: palette.bg,
       }}
     >
-      {/* background glow + gradient */}
       <div className="pointer-events-none absolute inset-0">
         <div
           className="absolute inset-0 opacity-70"
@@ -81,151 +164,187 @@ export default function LoginPage({ searchParams }: { searchParams?: { err?: str
       </div>
 
       <div className="relative z-10 px-6 py-10">
-        <div className="max-w-md mx-auto">
-          {/* top brand */}
+        <div className="mx-auto max-w-md">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full border border-white/10 bg-black/40 grid place-items-center overflow-hidden">
-              <img src="/logo.png" alt="LedVelvet" className="w-10 h-10 object-contain opacity-90" />
+            <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-full border border-white/10 bg-black/40">
+              <img
+                src="/logo.png"
+                alt="LedVelvet"
+                className="h-10 w-10 object-contain opacity-90"
+              />
             </div>
             <div className="leading-tight">
-              <div className="text-sm font-semibold tracking-tight">LedVelvet</div>
-              <div className="text-[11px] text-white/60 tracking-[0.26em] uppercase">Access</div>
+              <div className="text-sm font-semibold tracking-tight">
+                LedVelvet
+              </div>
+              <div className="text-[11px] uppercase tracking-[0.26em] text-white/60">
+                Access
+              </div>
             </div>
           </div>
 
-          {/* card */}
-          <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.60)]">
-            {/* header stripe */}
-            <div className="px-6 py-5 border-b border-white/10">
-              <div className="text-[11px] tracking-[0.26em] uppercase text-white/70">Magic link</div>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">Accedi con email</h1>
-              <p className="mt-2 text-sm text-white/70">
-                Inserisci la tua email: riceverai un link per entrare. Verrai reindirizzato automaticamente su{" "}
-                <span className="text-white">Admin</span> o <span className="text-white">LV People</span>.
+          <div className="mt-6 overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_20px_70px_rgba(0,0,0,0.60)] backdrop-blur-md">
+            <div className="border-b border-white/10 px-6 py-5">
+              <div className="text-[11px] uppercase tracking-[0.26em] text-white/70">
+                Accesso protetto
+              </div>
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">
+                Accedi con email
+              </h1>
+              <p className="mt-2 text-sm leading-relaxed text-white/70">
+                Riceverai un link personale e un codice di 8 cifre. Puoi usare
+                quello più comodo.
               </p>
             </div>
 
             <div className="px-6 py-6">
+              {isDenied && !sent ? (
+                <div className="mb-5 overflow-hidden rounded-3xl border border-white/10 bg-black/40">
+                  <div
+                    className="border-b border-white/10 px-5 py-4"
+                    style={{
+                      background:
+                        "linear-gradient(90deg, rgba(147,11,12,0.35), rgba(0,0,0,0.25))",
+                    }}
+                  >
+                    <div className="text-[11px] uppercase tracking-[0.26em] text-white/70">
+                      Accesso non autorizzato
+                    </div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      Accedi con un’email amministratore.
+                    </div>
+                    <div className="mt-1 text-sm text-white/70">
+                      La sessione attuale non dispone dei permessi necessari per
+                      questa pagina.
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
-              {isDenied ? (
-  <div className="mb-5 overflow-hidden rounded-3xl border border-white/10 bg-black/40">
-    <div
-      className="px-5 py-4 border-b border-white/10"
-      style={{
-        background: "linear-gradient(90deg, rgba(147,11,12,0.35), rgba(0,0,0,0.25))",
-      }}
-    >
-      <div className="text-[11px] tracking-[0.26em] uppercase text-white/70">Access denied</div>
-      <div className="mt-2 text-lg font-semibold text-white">Not on the list.</div>
-      <div className="mt-1 text-sm text-white/70">Questa email non è abilitata per entrare.</div>
-    </div>
+              {sent ? (
+                <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4">
+                  <div className="font-semibold text-emerald-100">
+                    Controlla la tua email
+                  </div>
+                  <p className="mt-2 text-sm leading-relaxed text-emerald-100/70">
+                    Abbiamo inviato il link e un codice a{" "}
+                    <span className="text-emerald-50">{email.trim()}</span>.
+                    Apri il link oppure inserisci qui il codice di 8 cifre.
+                  </p>
 
-    <div className="px-5 py-4">
-      <div className="text-xs text-white/60">
-        Se pensi sia un errore: chiedi allo staff di aggiungerti come socio LV People (o di abilitarti come admin).
-      </div>
+                  <form onSubmit={verifyCode} className="mt-4">
+                    <label
+                      htmlFor="admin-login-code"
+                      className="block text-xs uppercase tracking-[0.18em] text-emerald-100/60"
+                    >
+                      Codice di accesso
+                    </label>
+                    <input
+                      id="admin-login-code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={8}
+                      value={code}
+                      onChange={(event) =>
+                        setCode(
+                          event.target.value.replace(/\D/g, "").slice(0, 8),
+                        )
+                      }
+                      placeholder="00000000"
+                      autoFocus
+                      className="mt-2 h-12 w-full rounded-2xl border border-white/15 bg-black/25 px-4 text-center text-lg tracking-[0.28em] text-white outline-none placeholder:text-white/25 focus:border-white/35"
+                    />
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <a
-          href="/login"
-          className="px-4 py-2 rounded-2xl bg-[var(--red-accent)] text-black text-xs tracking-[0.22em] uppercase font-semibold hover:opacity-90"
-        >
-          Riprova
-        </a>
-        <a
-          href="/moment2"
-          className="px-4 py-2 rounded-2xl border border-white/20 text-white text-xs tracking-[0.22em] uppercase hover:bg-white/10"
-        >
-          Torna a Moment
-        </a>
-      </div>
-    </div>
-  </div>
-) : null}
+                    {message ? (
+                      <div className="mt-3 rounded-xl border border-red-300/20 bg-red-300/10 px-3 py-2 text-sm text-red-100">
+                        {message}
+                      </div>
+                    ) : null}
 
+                    <button
+                      type="submit"
+                      disabled={!canCheckCode}
+                      className={[
+                        "mt-3 h-11 w-full rounded-2xl text-xs font-semibold uppercase tracking-[0.18em] transition",
+                        canCheckCode
+                          ? "bg-[var(--red-accent)] text-black hover:opacity-90"
+                          : "cursor-not-allowed bg-white/10 text-white/35",
+                      ].join(" ")}
+                    >
+                      {checkingCode
+                        ? "Verifica in corso…"
+                        : "Accedi con il codice"}
+                    </button>
+                  </form>
 
-
-              {loadingCsrf ? (
-                <div className="text-sm text-white/70">Carico…</div>
-              ) : !csrfToken ? (
-                <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
-                  Errore CSRF. Controlla che NextAuth sia attivo e che <span className="font-mono">/api/auth/csrf</span>{" "}
-                  risponda.
+                  <button
+                    type="button"
+                    onClick={changeEmail}
+                    className="mt-4 text-xs uppercase tracking-[0.16em] text-white/60 hover:text-white"
+                  >
+                    Usa un’altra email
+                  </button>
                 </div>
               ) : (
-                <form method="post" action="/api/auth/signin/email" className="space-y-4">
-                  <input type="hidden" name="csrfToken" value={csrfToken} />
-                  <input type="hidden" name="callbackUrl" value={callbackUrl} />
+                <form onSubmit={sendAccess} className="space-y-4">
+                  <label
+                    htmlFor="admin-login-email"
+                    className="block text-xs uppercase tracking-[0.22em] text-white/70"
+                  >
+                    Email
+                  </label>
+                  <input
+                    id="admin-login-email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="nome@dominio.com"
+                    autoComplete="email"
+                    inputMode="email"
+                    autoFocus
+                    className="h-11 w-full rounded-2xl border border-white/15 bg-black/35 px-4 text-sm text-white outline-none focus:border-white/30 focus:bg-black/45"
+                  />
 
-                  <label className="block text-xs tracking-[0.22em] uppercase text-white/70">Email</label>
-
-                  <div className="relative">
-                    <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-white/40">
-                      {/* mail icon */}
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <path
-                          d="M4 6h16v12H4V6Z"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          opacity="0.9"
-                        />
-                        <path
-                          d="M4.5 7l7.5 6 7.5-6"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          opacity="0.9"
-                        />
-                      </svg>
+                  {message ? (
+                    <div className="rounded-xl border border-red-300/20 bg-red-300/10 px-3 py-2 text-sm text-red-100">
+                      {message}
                     </div>
-
-                    <input
-                      name="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="nome@dominio.com"
-                      autoComplete="email"
-                      inputMode="email"
-                      className="
-                        w-full h-11 pl-10 pr-3 text-sm text-white
-                        rounded-2xl outline-none
-                        border border-white/15 bg-black/35
-                        focus:border-white/30 focus:bg-black/45
-                      "
-                    />
-                  </div>
+                  ) : null}
 
                   <button
                     type="submit"
-                    disabled={!canSubmit}
+                    disabled={!canSend}
                     className={[
-                      "w-full h-11 rounded-2xl text-xs tracking-[0.26em] uppercase font-semibold transition",
-                      canSubmit
+                      "h-11 w-full rounded-2xl text-xs font-semibold uppercase tracking-[0.26em] transition",
+                      canSend
                         ? "bg-[var(--red-accent)] text-black hover:opacity-90"
-                        : "bg-white/10 text-white/50 cursor-not-allowed",
+                        : "cursor-not-allowed bg-white/10 text-white/50",
                     ].join(" ")}
                   >
-                    Invia link di accesso
+                    {sending ? "Invio in corso…" : "Invia link e codice"}
                   </button>
 
                   <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                    <div className="text-[11px] tracking-[0.22em] uppercase text-white/60">Info</div>
-                    <p className="mt-2 text-xs text-white/60">
-                      1) Ricevi l’email · 2) Clicca il link · 3) Verrai reindirizzato automaticamente.
+                    <div className="text-[11px] uppercase tracking-[0.22em] text-white/60">
+                      Come funziona
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-white/60">
+                      1) Ricevi l’email · 2) Clicca il link oppure inserisci il
+                      codice · 3) Torni nell’area autorizzata.
                     </p>
                   </div>
                 </form>
               )}
             </div>
 
-            {/* footer */}
-            <div className="px-6 py-5 border-t border-white/10 bg-black/30">
-              <p className="text-[11px] tracking-[0.22em] uppercase text-white/55">
+            <div className="border-t border-white/10 bg-black/30 px-6 py-5">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">
                 © {new Date().getFullYear()} LedVelvet
               </p>
             </div>
           </div>
 
-          {/* micro link */}
           <div className="mt-6 text-center text-xs text-white/45">
             Se non hai richiesto l’accesso, ignora l’email.
           </div>
