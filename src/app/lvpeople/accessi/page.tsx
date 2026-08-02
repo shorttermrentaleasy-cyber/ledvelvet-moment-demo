@@ -1,4 +1,6 @@
 import React from "react";
+import { createHmac, timingSafeEqual } from "crypto";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
@@ -29,6 +31,18 @@ type WallyRow = {
   raw: any;
   updated_at: string;
 };
+
+function hasMemberAccess(email: string, barcode: string) {
+  const value = cookies().get("lv_member_access")?.value || "";
+  const separator = value.lastIndexOf(".");
+  if (separator < 1 || value.slice(0, separator) !== barcode || !process.env.NEXTAUTH_SECRET) return false;
+  const received = value.slice(separator + 1);
+  const expected = createHmac("sha256", process.env.NEXTAUTH_SECRET)
+    .update(`${email}:${barcode}`)
+    .digest("hex");
+  return received.length === expected.length &&
+    timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+}
 
 // NB: events può arrivare come ARRAY oppure OGGETTO (PostgREST embed)
 type EventEmbed =
@@ -174,20 +188,53 @@ function getPassIdentity(ticket: XceedTicketRow) {
 }
 
 
-export default async function LVPeopleAccessiPage() {
+export default async function LVPeopleAccessiPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ barcode?: string }>;
+}) {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email?.toLowerCase().trim();
+  const params = await searchParams;
+  const selectedBarcode = String(params?.barcode || "").trim();
 
   // entrypoint unico
   if (!email) redirect("/login");
 
   const supabase = getSupabaseAdmin();
 
-  // 1) trova socio (LV People usa members)
+  // 1) identifica la tessera Wallyfor esatta, come nella scheda LV People
+  const { data: ownedMemberships, error: ownedMembershipsError } = await supabase
+    .from("wallyfor_members")
+    .select("barcode")
+    .ilike("email", email)
+    .eq("source", "wallyfor_api")
+    .eq("is_present", true);
+
+  if (ownedMembershipsError) {
+    throw ownedMembershipsError;
+  }
+
+  const ownedBarcodes = (ownedMemberships || [])
+    .map((row) => String(row.barcode || "").trim())
+    .filter(Boolean);
+  const selectedIsAllowed = selectedBarcode
+    ? ownedBarcodes.includes(selectedBarcode) &&
+      (ownedBarcodes.length === 1 || hasMemberAccess(email, selectedBarcode))
+    : false;
+  const memberBarcode = selectedIsAllowed
+    ? selectedBarcode
+    : ownedBarcodes.length === 1
+      ? ownedBarcodes[0]
+      : null;
+
+  if (!memberBarcode) redirect("/lvpeople");
+
+  // 2) collega la tessera al record interno usato dallo storico check-in
   const { data: member, error: memberErr } = await supabase
     .from("members")
     .select("id, first_name, last_name, email, phone, legacy, legacy_barcode, created_at, membership_group, status, membership_expires_at")
-    .ilike("email", email)
+    .eq("legacy_barcode", memberBarcode)
     .maybeSingle<MemberRow>();
 
   if (memberErr) {
