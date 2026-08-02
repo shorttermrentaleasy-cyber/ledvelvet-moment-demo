@@ -25,6 +25,20 @@ export function isValidMemberTicketBaseUrl(value: string) {
   }
 }
 
+export function normalizeMemberPhoneForXceed(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return "";
+
+  if (trimmed.startsWith("+")) return `+${digits}`;
+  if (digits.startsWith("00")) return `+${digits.slice(2)}`;
+  if (digits.startsWith("39") && digits.length > 10) return `+${digits}`;
+
+  return `+39${digits}`;
+}
+
 export function buildMemberTicketUrl(baseUrl: string, member: MemberTicketData) {
   let url: URL;
 
@@ -40,7 +54,7 @@ export function buildMemberTicketUrl(baseUrl: string, member: MemberTicketData) 
   url.searchParams.set("lastName", member.lastName.trim());
   url.searchParams.set("email", member.email.trim());
   url.searchParams.set("emailConfirm", member.email.trim());
-  url.searchParams.set("phone", member.phone.trim());
+  url.searchParams.set("phone", normalizeMemberPhoneForXceed(member.phone));
   url.searchParams.set("idNumber", member.barcode.trim());
 
   return url.toString();
