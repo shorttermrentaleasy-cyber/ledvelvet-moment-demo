@@ -10,6 +10,7 @@ import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import { buildMemberTicketUrl } from "@/lib/member-ticket";
+import { checkMemberTicketOnXceed } from "@/lib/member-ticket-xceed";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,8 @@ type MemberTicketEvent = {
   venue: string | null;
   city: string | null;
   member_ticket_url: string;
+  xceed_event_ref: string | null;
+  xceed_event_uuid: string | null;
 };
 
 function formatEventDate(value: string | null) {
@@ -264,7 +267,9 @@ export default async function LVPeopleHomePage({
 
   const { data: memberTicketEvents } = await supabase
     .from("events")
-    .select("id, name, starts_at, venue, city, member_ticket_url")
+    .select(
+      "id, name, starts_at, venue, city, member_ticket_url, xceed_event_ref, xceed_event_uuid"
+    )
     .eq("member_ticket_enabled", true)
     .not("member_ticket_url", "is", null)
     .gte("starts_at", `${today}T00:00:00.000Z`)
@@ -274,6 +279,7 @@ export default async function LVPeopleHomePage({
 
   const eventIds = (memberTicketEvents || []).map((event) => event.id);
   const purchasedEventIds = new Set<string>();
+  const unavailableTicketCheckEventIds = new Set<string>();
 
   if (qrValue && eventIds.length > 0) {
     const { data: existingTickets } = await supabase
@@ -285,6 +291,29 @@ export default async function LVPeopleHomePage({
 
     for (const ticket of existingTickets || []) {
       if (ticket.event_id) purchasedEventIds.add(String(ticket.event_id));
+    }
+
+    const unresolvedEvents = (memberTicketEvents || []).filter(
+      (event) => !purchasedEventIds.has(event.id)
+    );
+    const liveChecks = await Promise.all(
+      unresolvedEvents.map(async (event) => {
+        const xceedEventId = String(
+          event.xceed_event_uuid || event.xceed_event_ref || ""
+        ).trim();
+        const result = await checkMemberTicketOnXceed({
+          xceedEventId,
+          barcode: qrValue,
+        });
+        return { eventId: event.id, result };
+      })
+    );
+
+    for (const check of liveChecks) {
+      if (check.result === "purchased") purchasedEventIds.add(check.eventId);
+      if (check.result === "unavailable") {
+        unavailableTicketCheckEventIds.add(check.eventId);
+      }
     }
   }
   const activationUrl = qrValue
@@ -395,6 +424,9 @@ export default async function LVPeopleHomePage({
               <div className="mt-4 space-y-3">
                 {(memberTicketEvents || []).map((event) => {
                   const alreadyPurchased = purchasedEventIds.has(event.id);
+                  const ticketCheckUnavailable = unavailableTicketCheckEventIds.has(
+                    event.id
+                  );
                   const checkoutUrl = qrValue
                     ? buildMemberTicketUrl(event.member_ticket_url, {
                         firstName: member.first_name,
@@ -415,7 +447,11 @@ export default async function LVPeopleHomePage({
 
                       {alreadyPurchased ? (
                         <div className="mt-3 inline-flex rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-4 py-2 text-sm font-semibold text-emerald-100">
-                          Biglietto già acquistato
+                          Biglietto per questo evento già acquistato
+                        </div>
+                      ) : ticketCheckUnavailable ? (
+                        <div className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+                          Verifica acquisto momentaneamente non disponibile. Riprova tra poco.
                         </div>
                       ) : canBuyMemberTicket && hasCompleteTicketProfile && checkoutUrl ? (
                         <a
