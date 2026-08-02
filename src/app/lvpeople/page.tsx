@@ -68,6 +68,13 @@ function hasMemberAccess(email: string, barcode: string) {
     timingSafeEqual(Buffer.from(received), Buffer.from(expected));
 }
 
+function getSelectedMemberBarcode(email: string) {
+  const value = cookies().get("lv_member_access")?.value || "";
+  const separator = value.lastIndexOf(".");
+  const barcode = separator > 0 ? value.slice(0, separator) : "";
+  return barcode && hasMemberAccess(email, barcode) ? barcode : "";
+}
+
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE;
@@ -89,12 +96,13 @@ export default async function LVPeopleHomePage({
   const session = await getServerSession(authOptions);
   const email = session?.user?.email?.toLowerCase().trim();
   const params = await searchParams;
-  const selectedBarcode = String(params?.barcode || "").trim();
 
   // ✅ CHANGE: entrypoint separato per LV People
   if (!email) {
     redirect("/login");
   }
+
+  const selectedBarcode = String(params?.barcode || "").trim() || getSelectedMemberBarcode(email);
 
   const supabase = getSupabaseAdmin();
 
