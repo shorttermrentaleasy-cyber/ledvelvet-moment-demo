@@ -279,6 +279,7 @@ export default async function LVPeopleHomePage({
 
   const eventIds = (memberTicketEvents || []).map((event) => event.id);
   const purchasedEventIds = new Set<string>();
+  const purchasedTicketNames = new Map<string, string>();
   const unavailableTicketCheckEventIds = new Set<string>();
 
   if (qrValue && eventIds.length > 0) {
@@ -304,14 +305,21 @@ export default async function LVPeopleHomePage({
         const result = await checkMemberTicketOnXceed({
           xceedEventId,
           barcode: qrValue,
+          email: member.email || "",
+          phone: member.phone || "",
         });
         return { eventId: event.id, result };
       })
     );
 
     for (const check of liveChecks) {
-      if (check.result === "purchased") purchasedEventIds.add(check.eventId);
-      if (check.result === "unavailable") {
+      if (check.result.status === "purchased") {
+        purchasedEventIds.add(check.eventId);
+        if (check.result.offerName) {
+          purchasedTicketNames.set(check.eventId, check.result.offerName);
+        }
+      }
+      if (check.result.status === "unavailable") {
         unavailableTicketCheckEventIds.add(check.eventId);
       }
     }
@@ -424,6 +432,7 @@ export default async function LVPeopleHomePage({
               <div className="mt-4 space-y-3">
                 {(memberTicketEvents || []).map((event) => {
                   const alreadyPurchased = purchasedEventIds.has(event.id);
+                  const purchasedTicketName = purchasedTicketNames.get(event.id);
                   const ticketCheckUnavailable = unavailableTicketCheckEventIds.has(
                     event.id
                   );
@@ -446,8 +455,15 @@ export default async function LVPeopleHomePage({
                       </div>
 
                       {alreadyPurchased ? (
-                        <div className="mt-3 inline-flex rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-4 py-2 text-sm font-semibold text-emerald-100">
-                          Biglietto per questo evento già acquistato
+                        <div className="mt-3 rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-4 py-3 text-sm text-emerald-100">
+                          <div className="font-semibold">
+                            {purchasedTicketName
+                              ? `Biglietto acquistato: ${purchasedTicketName}`
+                              : "Biglietto per questo evento già acquistato"}
+                          </div>
+                          <div className="mt-1 text-emerald-100/75">
+                            Ogni socio può acquistare un solo biglietto per questo evento.
+                          </div>
                         </div>
                       ) : ticketCheckUnavailable ? (
                         <div className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">

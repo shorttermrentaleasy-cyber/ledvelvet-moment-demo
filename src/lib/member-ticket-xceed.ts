@@ -1,27 +1,52 @@
 import "server-only";
 
 import { normalizeMemberBarcode } from "@/lib/member-ticket";
+import { normalizeEmail, normalizePhone } from "@/lib/ticket-prescreen";
+
+type XceedOffer = {
+  name?: string | null;
+};
 
 type XceedTicket = {
+  qrCode?: string | null;
   idNumber?: string | number | null;
+  email?: string | null;
+  phone?: string | null;
   isActive?: boolean | null;
+  offer?: XceedOffer | null;
   pass?: {
+    qrCode?: string | null;
     idNumber?: string | number | null;
+    email?: string | null;
+    phone?: string | null;
     isActive?: boolean | null;
+    offer?: XceedOffer | null;
   } | null;
 };
 
 type XceedBookingPass = {
+  qrCode?: string | null;
   idNumber?: string | number | null;
+  email?: string | null;
+  phone?: string | null;
   isActive?: boolean | null;
+  offer?: XceedOffer | null;
 };
 
 type XceedBooking = {
-  buyer?: { idNumber?: string | number | null } | null;
+  buyer?: {
+    idNumber?: string | number | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
   passes?: XceedBookingPass[] | null;
+  offer?: XceedOffer | null;
 };
 
-export type MemberTicketCheck = "purchased" | "not_purchased" | "unavailable";
+export type MemberTicketCheck = {
+  status: "purchased" | "not_purchased" | "unavailable";
+  offerName: string | null;
+};
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 50;
@@ -39,7 +64,7 @@ function sameBarcode(value: unknown, expected: string) {
 async function hasMatchAcrossPages<T>(
   path: "tickets" | "bookings",
   eventId: string,
-  matches: (row: T) => boolean
+  matches: (row: T) => string | null | undefined | false
 ) {
   const baseUrl = requiredEnv("XCEED_BASE_URL");
   const apiKey = requiredEnv("XCEED_API_KEY");
@@ -63,56 +88,115 @@ async function hasMatchAcrossPages<T>(
     }
 
     const rows = payload.data as T[];
-    if (rows.some(matches)) return true;
-    if (rows.length < PAGE_SIZE) return false;
+    for (const row of rows) {
+      const offerName = matches(row);
+      if (offerName !== false && offerName !== undefined) {
+        return { matched: true, offerName: offerName || null };
+      }
+    }
+    if (rows.length < PAGE_SIZE) return { matched: false, offerName: null };
   }
 
   throw new Error(`Xceed ${path} pagination exceeded the safety limit`);
 }
 
-function ticketMatches(ticket: XceedTicket, barcode: string) {
-  const active = ticket.isActive !== false && ticket.pass?.isActive !== false;
-  return active && sameBarcode(ticket.idNumber ?? ticket.pass?.idNumber, barcode);
+function sameIdentity(
+  candidateEmail: unknown,
+  candidatePhone: unknown,
+  expectedEmail: string,
+  expectedPhone: string
+) {
+  return Boolean(
+    expectedEmail &&
+      expectedPhone &&
+      normalizeEmail(candidateEmail) === expectedEmail &&
+      normalizePhone(candidatePhone) === expectedPhone
+  );
 }
 
-function bookingMatches(booking: XceedBooking, barcode: string) {
+function ticketMatches(
+  ticket: XceedTicket,
+  barcode: string,
+  email: string,
+  phone: string
+) {
+  const active = ticket.isActive !== false && ticket.pass?.isActive !== false;
+  if (!active) return false;
+
+  const pass = ticket.pass;
+  const matched =
+    sameBarcode(ticket.idNumber ?? pass?.idNumber, barcode) ||
+    sameIdentity(ticket.email ?? pass?.email, ticket.phone ?? pass?.phone, email, phone);
+
+  return matched ? ticket.offer?.name || pass?.offer?.name || null : false;
+}
+
+function bookingMatches(
+  booking: XceedBooking,
+  barcode: string,
+  email: string,
+  phone: string
+) {
   const passes = Array.isArray(booking.passes) ? booking.passes : [];
 
-  if (passes.some((pass) => pass.isActive !== false && sameBarcode(pass.idNumber, barcode))) {
-    return true;
+  for (const pass of passes) {
+    if (
+      pass.isActive !== false &&
+      (sameBarcode(pass.idNumber, barcode) ||
+        sameIdentity(pass.email, pass.phone, email, phone))
+    ) {
+      return pass.offer?.name || booking.offer?.name || null;
+    }
   }
 
-  return passes.length === 1 &&
+  const buyerMatches = passes.length === 1 &&
     passes[0]?.isActive !== false &&
-    sameBarcode(booking.buyer?.idNumber, barcode);
+    (sameBarcode(booking.buyer?.idNumber, barcode) ||
+      sameIdentity(booking.buyer?.email, booking.buyer?.phone, email, phone));
+
+  return buyerMatches ? passes[0]?.offer?.name || booking.offer?.name || null : false;
 }
 
 export async function checkMemberTicketOnXceed(params: {
   xceedEventId: string;
   barcode: string;
+  email: string;
+  phone: string;
 }): Promise<MemberTicketCheck> {
   const eventId = params.xceedEventId.trim();
   const barcode = params.barcode.trim();
-  if (!eventId || !barcode) return "unavailable";
+  const email = normalizeEmail(params.email);
+  const phone = normalizePhone(params.phone);
+  if (!eventId || !barcode) return { status: "unavailable", offerName: null };
 
   const [ticketsResult, bookingsResult] = await Promise.allSettled([
     hasMatchAcrossPages<XceedTicket>("tickets", eventId, (ticket) =>
-      ticketMatches(ticket, barcode)
+      ticketMatches(ticket, barcode, email, phone)
     ),
     hasMatchAcrossPages<XceedBooking>("bookings", eventId, (booking) =>
-      bookingMatches(booking, barcode)
+      bookingMatches(booking, barcode, email, phone)
     ),
   ]);
 
-  if (ticketsResult.status === "fulfilled" && ticketsResult.value) {
-    return "purchased";
+  if (ticketsResult.status === "fulfilled" && ticketsResult.value.matched) {
+    return {
+      status: "purchased",
+      offerName: ticketsResult.value.offerName,
+    };
   }
 
-  if (bookingsResult.status === "fulfilled" && bookingsResult.value) {
-    return "purchased";
+  if (bookingsResult.status === "fulfilled" && bookingsResult.value.matched) {
+    return {
+      status: "purchased",
+      offerName: bookingsResult.value.offerName,
+    };
   }
 
-  return ticketsResult.status === "fulfilled" && bookingsResult.status === "fulfilled"
-    ? "not_purchased"
-    : "unavailable";
+  return {
+    status:
+      ticketsResult.status === "fulfilled" && bookingsResult.status === "fulfilled"
+        ? "not_purchased"
+        : "unavailable",
+    offerName: null,
+  };
 }
