@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import AdminTopbarClient from "../../AdminTopbarClient";
+import { isValidMemberTicketBaseUrl } from "@/lib/member-ticket";
 
 const HERO_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
 const YT_STUDIO_VIDEOS_URL = "https://studio.youtube.com/channel/UCfQf25gurELioXHUNN8fSNQ/videos/";
@@ -19,7 +20,7 @@ async function fetchSupabaseEventByAirtableRecordId(airtableRecordId: string) {
 
   const { data, error } = await supabase
     .from("events")
-    .select("require_ticket, require_membership, require_active_membership")
+    .select("require_ticket, require_membership, require_active_membership, member_ticket_url, member_ticket_enabled")
     .eq("airtable_record_id", airtableRecordId)
     .maybeSingle();
 
@@ -353,8 +354,14 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     const hero = normalizeDriveImageUrl(heroRaw);
     const teaser = String(formData.get("teaserUrl") || "").trim();
     const after = String(formData.get("aftermovieUrl") || "").trim();
+    const memberTicketUrl = String(formData.get("memberTicketUrl") || "").trim();
 
-    if ((hero && !isHttpUrl(hero)) || (teaser && !isHttpUrl(teaser)) || (after && !isHttpUrl(after))) {
+    if (
+      (hero && !isHttpUrl(hero)) ||
+      (teaser && !isHttpUrl(teaser)) ||
+      (after && !isHttpUrl(after)) ||
+      (memberTicketUrl && !isValidMemberTicketBaseUrl(memberTicketUrl))
+    ) {
       redirect(`/admin/events/edit?id=${id}`);
     }
 
@@ -437,6 +444,8 @@ const updatePayload = {
   require_ticket: requireTicket,
   require_membership: requireMembership,
   require_active_membership: requireActiveMembership,
+  member_ticket_url: memberTicketUrl || null,
+  member_ticket_enabled: formData.get("memberTicketEnabled") === "on",
 };
 
     const { error: supabaseError } = await supabase
@@ -492,6 +501,12 @@ const updatePayload = {
             />
 
             <Input label="Ticket URL" name="ticketUrl" defaultValue={f["Ticket Url"]} />
+
+            <Input
+              label="Checkout riservato soci (Xceed)"
+              name="memberTicketUrl"
+              defaultValue={supabaseEvent?.member_ticket_url || ""}
+            />
 
             <Field label="Hero Google Drive URL (o direct image URL)">
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -570,6 +585,18 @@ const updatePayload = {
       type="checkbox"
       name="requireActiveMembership"
       defaultChecked={Boolean(supabaseEvent?.require_active_membership ?? false)}
+    />
+  </label>
+
+  <label style={styles.checkRow}>
+    <div>
+      <div style={styles.label}>Abilita acquisto dalla scheda socio</div>
+      <div style={styles.smallMuted}>Il link riservato non viene pubblicato nella scheda evento.</div>
+    </div>
+    <input
+      type="checkbox"
+      name="memberTicketEnabled"
+      defaultChecked={Boolean(supabaseEvent?.member_ticket_enabled ?? false)}
     />
   </label>
 </div>

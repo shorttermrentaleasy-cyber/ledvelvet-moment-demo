@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { isValidMemberTicketBaseUrl } from "@/lib/member-ticket";
 
 export const runtime = "nodejs";
 
@@ -222,8 +223,14 @@ export async function POST(req: Request) {
     const HeroImageUrl = asString(body?.HeroImageUrl);
     const TeaserUrl = asString(body?.TeaserUrl);
     const AftermovieUrl = asString(body?.AftermovieUrl);
+    const memberTicketUrl = asString(body?.MemberTicketUrl);
 
-    if (!isHttpUrl(HeroImageUrl) || !isHttpUrl(TeaserUrl) || !isHttpUrl(AftermovieUrl)) {
+    if (
+      !isHttpUrl(HeroImageUrl) ||
+      !isHttpUrl(TeaserUrl) ||
+      !isHttpUrl(AftermovieUrl) ||
+      (memberTicketUrl && !isValidMemberTicketBaseUrl(memberTicketUrl))
+    ) {
       return NextResponse.json({ ok: false, error: "Invalid URL" }, { status: 400 });
     }
 
@@ -319,6 +326,8 @@ export async function POST(req: Request) {
       require_ticket: requireTicket,
       require_membership: requireMembership,
       require_active_membership: requireActiveMembership,
+      member_ticket_url: memberTicketUrl || null,
+      member_ticket_enabled: asBoolean(body?.MemberTicketEnabled, false),
     };
 
     const { data: insertedEvent, error: supabaseError } = await supabase

@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { buildMemberTicketUrl } from "@/lib/member-ticket";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,26 @@ type WallyforMembershipRow = {
   barcode: string;
   status: string | null;
 };
+
+type MemberTicketEvent = {
+  id: string;
+  name: string;
+  starts_at: string | null;
+  venue: string | null;
+  city: string | null;
+  member_ticket_url: string;
+};
+
+function formatEventDate(value: string | null) {
+  if (!value) return "Data da definire";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Data da definire";
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
 
 function hasMemberAccess(email: string, barcode: string) {
   const value = cookies().get("lv_member_access")?.value || "";
@@ -234,6 +255,38 @@ export default async function LVPeopleHomePage({
   const isWallyforMembershipActive = normalizedStatus === "ATTIVA";
   const isWallyforMembershipInactive = normalizedStatus === "NON ATTIVA";
   const qrValue = wallyforMembership.barcode.trim() || null;
+  const today = new Date().toISOString().slice(0, 10);
+  const isMembershipExpired = Boolean(
+    member.membership_expires_at && member.membership_expires_at < today
+  );
+  const canBuyMemberTicket = isWallyforMembershipActive && !isMembershipExpired && Boolean(qrValue);
+  const hasCompleteTicketProfile = Boolean(member.email?.trim() && member.phone?.trim());
+
+  const { data: memberTicketEvents } = await supabase
+    .from("events")
+    .select("id, name, starts_at, venue, city, member_ticket_url")
+    .eq("member_ticket_enabled", true)
+    .not("member_ticket_url", "is", null)
+    .gte("starts_at", `${today}T00:00:00.000Z`)
+    .order("starts_at", { ascending: true })
+    .limit(5)
+    .returns<MemberTicketEvent[]>();
+
+  const eventIds = (memberTicketEvents || []).map((event) => event.id);
+  const purchasedEventIds = new Set<string>();
+
+  if (qrValue && eventIds.length > 0) {
+    const { data: existingTickets } = await supabase
+      .from("xceed_tickets")
+      .select("event_id")
+      .in("event_id", eventIds)
+      .eq("member_barcode", qrValue)
+      .neq("status", "cancelled");
+
+    for (const ticket of existingTickets || []) {
+      if (ticket.event_id) purchasedEventIds.add(String(ticket.event_id));
+    }
+  }
   const activationUrl = qrValue
     ? `https://wallyfor.com/rinnovi/step3.php?idcode=5355&msg=${encodeURIComponent(qrValue)}&imp=`
     : "https://wallyfor.com/rinnovi/index.php?idcode=5355";
@@ -333,6 +386,57 @@ export default async function LVPeopleHomePage({
               >
                 Paga 3 € e attiva la tessera
               </a>
+            </div>
+          ) : null}
+
+          {(memberTicketEvents || []).length > 0 ? (
+            <div className="mt-6 rounded-2xl border border-fuchsia-300/20 bg-black/25 p-5">
+              <h3 className="text-base font-semibold">Biglietti riservati ai soci</h3>
+              <div className="mt-4 space-y-3">
+                {(memberTicketEvents || []).map((event) => {
+                  const alreadyPurchased = purchasedEventIds.has(event.id);
+                  const checkoutUrl = qrValue
+                    ? buildMemberTicketUrl(event.member_ticket_url, {
+                        firstName: member.first_name,
+                        lastName: member.last_name,
+                        email: member.email || "",
+                        phone: member.phone || "",
+                        barcode: qrValue,
+                      })
+                    : null;
+                  const location = [event.venue, event.city].filter(Boolean).join(" · ");
+
+                  return (
+                    <div key={event.id} className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                      <div className="font-semibold text-white">{event.name}</div>
+                      <div className="mt-1 text-sm text-white/60">
+                        {formatEventDate(event.starts_at)}{location ? ` · ${location}` : ""}
+                      </div>
+
+                      {alreadyPurchased ? (
+                        <div className="mt-3 inline-flex rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-4 py-2 text-sm font-semibold text-emerald-100">
+                          Biglietto già acquistato
+                        </div>
+                      ) : canBuyMemberTicket && hasCompleteTicketProfile && checkoutUrl ? (
+                        <a
+                          href={checkoutUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-[#8d003f] to-[#e00072] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-fuchsia-950/40 transition hover:brightness-110"
+                        >
+                          Acquista il tuo biglietto
+                        </a>
+                      ) : (
+                        <div className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+                          {!canBuyMemberTicket
+                            ? "Per acquistare devi avere la tessera attiva e non scaduta."
+                            : "Per acquistare servono email e telefono associati alla tessera."}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
 

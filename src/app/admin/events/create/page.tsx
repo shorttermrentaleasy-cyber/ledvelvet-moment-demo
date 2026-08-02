@@ -10,6 +10,7 @@ const YT_STUDIO_VIDEOS_URL =
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminTopbarClient from "../../AdminTopbarClient";
+import { isValidMemberTicketBaseUrl } from "@/lib/member-ticket";
 
 type SponsorOption = { id: string; label: string };
 
@@ -108,6 +109,8 @@ export default function AdminCreateEventPage() {
     RequireTicket: true,
     RequireMembership: true,
     RequireActiveMembership: false,
+    MemberTicketUrl: "",
+    MemberTicketEnabled: false,
   });
 
   const featuredWarningText = useMemo(() => {
@@ -244,6 +247,7 @@ export default function AdminCreateEventPage() {
     // ✅ clean inputs (trim) + Drive normalize
     const ticketPlatform = String(form.TicketPlatform || "").trim();
     const ticketUrl = String(form.TicketUrl || "").trim();
+    const memberTicketUrl = String(form.MemberTicketUrl || "").trim();
     const teaser = String(form.TeaserUrl || "").trim();
 
     const heroRaw = String(form.HeroImageUrl || "").trim();
@@ -252,6 +256,7 @@ export default function AdminCreateEventPage() {
     // ✅ validate ONLY if not empty
     if (
       (ticketUrl && !isHttpUrl(ticketUrl)) ||
+      (memberTicketUrl && !isValidMemberTicketBaseUrl(memberTicketUrl)) ||
       (teaser && !isHttpUrl(teaser)) ||
       (hero && !isHttpUrl(hero))
     ) {
@@ -271,6 +276,7 @@ export default function AdminCreateEventPage() {
         // ✅ empty -> null (così Airtable pulisce davvero il campo)
         TicketPlatform: ticketPlatform || null,
         TicketUrl: ticketUrl || null,
+        MemberTicketUrl: memberTicketUrl || null,
         TeaserUrl: teaser || null,
 
         // ✅ attachment via URL diretto (Drive normalizzato)
@@ -360,6 +366,16 @@ export default function AdminCreateEventPage() {
               <input name="TicketUrl" value={form.TicketUrl} onChange={onChange} style={styles.input} />
             </Field>
 
+            <Field label="Checkout riservato soci (Xceed)">
+              <input
+                name="MemberTicketUrl"
+                value={form.MemberTicketUrl}
+                onChange={onChange}
+                style={styles.input}
+                placeholder="Link Xceed con promocode"
+              />
+            </Field>
+
             <Field label="Hero Google Drive URL (o direct image URL)">
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <input
@@ -422,6 +438,16 @@ export default function AdminCreateEventPage() {
       type="checkbox"
       name="RequireActiveMembership"
       checked={form.RequireActiveMembership}
+      onChange={onChange}
+    />
+  </label>
+
+  <label style={styles.checkRow}>
+    <span>Abilita acquisto dalla scheda socio</span>
+    <input
+      type="checkbox"
+      name="MemberTicketEnabled"
+      checked={form.MemberTicketEnabled}
       onChange={onChange}
     />
   </label>

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { evaluateDoorXceedLive } from "@/lib/door/xceed-live-evaluate-core";
+import { normalizeMemberBarcode } from "@/lib/member-ticket";
 
 type XceedTicket = {
   qrCode: string;
+  idNumber?: string | number | null;
   firstName?: string | null;
   lastName?: string | null;
   email?: string | null;
@@ -40,6 +42,7 @@ type XceedTicketsResponse = {
 
 type XceedBookingPass = {
   qrCode?: string | null;
+  idNumber?: string | number | null;
   firstName?: string | null;
   lastName?: string | null;
   email?: string | null;
@@ -57,6 +60,7 @@ type XceedBooking = {
     lastName?: string | null;
     email?: string | null;
     phone?: string | null;
+    idNumber?: string | number | null;
   } | null;
   passes?: XceedBookingPass[] | null;
   offer?: {
@@ -111,6 +115,7 @@ type XceedTicketRow = {
   buyer_phone: string | null;
   buyer_email_norm: string | null;
   buyer_phone_norm: string | null;
+  member_barcode: string | null;
 };
 
 type BookingPassIndexItem = {
@@ -512,6 +517,11 @@ function buildRowFromTicket(params: {
   const buyerPhone = normalizePhone(
     matchedBooking?.buyer?.phone ?? ticket.phone ?? matchedPass?.phone ?? null
   );
+  const memberBarcode = normalizeMemberBarcode(
+    ticket.idNumber,
+    matchedPass?.idNumber,
+    matchedBooking?.buyer?.idNumber
+  );
 
   const resolvedOfferType = normalizeOfferType(
     pickFirstNonEmpty(matchedBooking?.offer?.type ?? null, ticket.offer?.type ?? null)
@@ -581,6 +591,7 @@ const checkedInBy =
     buyer_phone: buyerPhone,
     buyer_email_norm: buyerEmail,
     buyer_phone_norm: buyerPhone,
+    member_barcode: memberBarcode,
   };
 }
 
@@ -612,6 +623,7 @@ function buildRowsFromBookingsOnly(params: {
 
       const buyerEmail = normalizeEmail(booking.buyer?.email ?? null);
       const buyerPhone = normalizePhone(booking.buyer?.phone ?? null);
+      const memberBarcode = normalizeMemberBarcode(pass.idNumber, booking.buyer?.idNumber);
 
       rows.push({
         event_id: localEventId,
@@ -645,6 +657,7 @@ function buildRowsFromBookingsOnly(params: {
         buyer_phone: buyerPhone,
         buyer_email_norm: buyerEmail,
         buyer_phone_norm: buyerPhone,
+        member_barcode: memberBarcode,
       });
     }
   }
