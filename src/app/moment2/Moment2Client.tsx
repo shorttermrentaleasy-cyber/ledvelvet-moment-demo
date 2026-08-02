@@ -26,6 +26,7 @@ type AccountProfile = {
   member: AccountMember | null;
   members: AccountMember[];
   requiresMemberChoice: boolean;
+  canChangeMember: boolean;
 };
 
 type Product = {
@@ -452,6 +453,22 @@ export default function Moment2() {
     } finally {
       setMemberVerifyBusy(false);
     }
+  }
+
+  async function changeAccountMember() {
+    await fetch("/api/account/member-verify", {
+      method: "DELETE",
+      credentials: "include",
+    }).catch(() => null);
+    window.location.reload();
+  }
+
+  async function signOutAccount() {
+    await fetch("/api/account/member-verify", {
+      method: "DELETE",
+      credentials: "include",
+    }).catch(() => null);
+    await signOut({ callbackUrl: "/" });
   }
 
   useEffect(() => {
@@ -1327,13 +1344,24 @@ export default function Moment2() {
                   <div className="p-2 border-t border-white/10">
                     {account.isMember && !account.requiresMemberChoice ? (
                       <Link
-                        href="/lvpeople"
+                        href={account.member?.barcode
+                          ? `/lvpeople?barcode=${encodeURIComponent(account.member.barcode)}`
+                          : "/lvpeople"}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="block rounded-xl px-3 py-2.5 text-xs text-white/80 hover:bg-white/10 hover:text-white"
                       >
                         Scheda socio
                       </Link>
+                    ) : null}
+                    {account.canChangeMember ? (
+                      <button
+                        type="button"
+                        onClick={() => void changeAccountMember()}
+                        className="block w-full rounded-xl px-3 py-2.5 text-left text-xs text-white/80 hover:bg-white/10 hover:text-white"
+                      >
+                        Cambia tessera
+                      </button>
                     ) : null}
                     {account.isAdmin ? (
                       <Link
@@ -1347,7 +1375,7 @@ export default function Moment2() {
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => signOut({ callbackUrl: "/" })}
+                      onClick={() => void signOutAccount()}
                       className="block w-full rounded-xl px-3 py-2.5 text-left text-xs text-white/60 hover:bg-white/10 hover:text-white"
                     >
                       Esci

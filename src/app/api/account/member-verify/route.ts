@@ -48,6 +48,14 @@ export async function POST(request: Request) {
   }
 
   const response = Response.json({ ok: true, href: `/lvpeople?barcode=${encodeURIComponent(barcode)}` });
-  response.headers.append("Set-Cookie", `lv_member_access=${barcode}.${sign(email, barcode)}; Path=/lvpeople; HttpOnly; Secure; SameSite=Lax; Max-Age=900`);
+  response.headers.append("Set-Cookie", "lv_member_access=; Path=/lvpeople; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+  response.headers.append("Set-Cookie", `lv_member_access=${barcode}.${sign(email, barcode)}; Path=/; HttpOnly; Secure; SameSite=Lax`);
+  return response;
+}
+
+export async function DELETE() {
+  const response = Response.json({ ok: true });
+  response.headers.append("Set-Cookie", "lv_member_access=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+  response.headers.append("Set-Cookie", "lv_member_access=; Path=/lvpeople; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
   return response;
 }

@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "crypto";
+import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
@@ -10,6 +12,24 @@ function getAllowedAdmins() {
     .split(",")
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function getSelectedMemberBarcode(email: string) {
+  const value = cookies().get("lv_member_access")?.value || "";
+  const separator = value.lastIndexOf(".");
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (separator < 1 || !secret) return null;
+
+  const barcode = value.slice(0, separator);
+  const received = value.slice(separator + 1);
+  const expected = createHmac("sha256", secret)
+    .update(`${email}:${barcode}`)
+    .digest("hex");
+
+  return received.length === expected.length &&
+    timingSafeEqual(Buffer.from(received), Buffer.from(expected))
+    ? barcode
+    : null;
 }
 
 export async function GET() {
@@ -52,7 +72,11 @@ export async function GET() {
     barcode: member.barcode,
   }));
   const isMember = members.length > 0;
-  const singleMember = members.length === 1 ? members[0] : null;
+  const selectedBarcode = getSelectedMemberBarcode(email);
+  const selectedMember = selectedBarcode
+    ? members.find((member) => member.barcode === selectedBarcode) || null
+    : null;
+  const activeMember = members.length === 1 ? members[0] : selectedMember;
   const qualification = isAdmin && isMember
     ? "Amministratore e socio"
     : isAdmin
@@ -64,13 +88,14 @@ export async function GET() {
     authenticated: true,
     profile: {
       email,
-      fullName: singleMember?.fullName || session?.user?.name || email,
+      fullName: activeMember?.fullName || session?.user?.name || email,
       qualification,
       isAdmin,
       isMember,
-      member: singleMember,
+      member: activeMember,
       members,
-      requiresMemberChoice: members.length > 1,
+      requiresMemberChoice: members.length > 1 && !activeMember,
+      canChangeMember: members.length > 1 && Boolean(activeMember),
     },
   });
 }
