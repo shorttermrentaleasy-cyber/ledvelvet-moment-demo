@@ -37,6 +37,68 @@ type DeepDive = {
   music_mood_url?: any;
 };
 
+type YouTubePlayer = {
+  destroy: () => void;
+  mute: () => void;
+  playVideo: () => void;
+};
+
+type YouTubePlayerEvent = {
+  target: YouTubePlayer;
+  data?: number;
+};
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (
+        element: HTMLIFrameElement,
+        options: {
+          events: {
+            onReady: (event: YouTubePlayerEvent) => void;
+            onStateChange: (event: YouTubePlayerEvent) => void;
+            onAutoplayBlocked: () => void;
+          };
+        },
+      ) => YouTubePlayer;
+      PlayerState?: {
+        PLAYING: number;
+      };
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+let youtubeApiPromise: Promise<void> | null = null;
+
+function loadYouTubeApi(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.YT?.Player) return Promise.resolve();
+  if (youtubeApiPromise) return youtubeApiPromise;
+
+  youtubeApiPromise = new Promise((resolve, reject) => {
+    const previousReady = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previousReady?.();
+      resolve();
+    };
+
+    const existing = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]');
+    if (existing) {
+      existing.addEventListener("error", () => reject(new Error("YouTube API unavailable")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://www.youtube.com/iframe_api";
+    script.async = true;
+    script.addEventListener("error", () => reject(new Error("YouTube API unavailable")), { once: true });
+    document.head.appendChild(script);
+  });
+
+  return youtubeApiPromise;
+}
+
 function getYouTubeId(urlRaw: string): string | null {
   const url = (urlRaw || "").trim();
   if (!url) return null;
@@ -68,7 +130,7 @@ function getYouTubeId(urlRaw: string): string | null {
 function ytEmbed(url: string) {
   const id = getYouTubeId(url);
   if (!id) return "";
-  return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&rel=0&modestbranding=1&playsinline=1`;
+  return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}&controls=0&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`;
 }
 
 function asString(v: any): string {
@@ -203,7 +265,10 @@ export default function DeepDiveOverlay({
   const moodAudioRef = useRef<HTMLAudioElement | null>(null);
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
   const lineupVideoRef = useRef<HTMLVideoElement | null>(null);
+  const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
   const [isMoodPlaying, setIsMoodPlaying] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   const [returnTo, setReturnTo] = useState<string>("");
 
@@ -370,11 +435,72 @@ export default function DeepDiveOverlay({
     video.setAttribute("playsinline", "");
     video.setAttribute("webkit-playsinline", "");
 
-    void video.play().catch(() => {
-      // Mobile browsers can still block autoplay in Low Power/Data Saver mode.
-      // Native controls remain available as a fallback.
-    });
+    void video
+      .play()
+      .then(() => setAutoplayBlocked(false))
+      .catch(() => setAutoplayBlocked(true));
   }, []);
+
+  useEffect(() => {
+    if (!open || heroType !== "youtube" || !heroYouTube || !youtubeIframeRef.current) return;
+
+    let alive = true;
+    let player: YouTubePlayer | null = null;
+
+    void loadYouTubeApi()
+      .then(() => {
+        if (!alive || !window.YT?.Player || !youtubeIframeRef.current) return;
+
+        player = new window.YT.Player(youtubeIframeRef.current, {
+          events: {
+            onReady: (event) => {
+              if (!alive) return;
+              event.target.mute();
+              event.target.playVideo();
+            },
+            onStateChange: (event) => {
+              if (!alive) return;
+              if (event.data === window.YT?.PlayerState?.PLAYING) setAutoplayBlocked(false);
+            },
+            onAutoplayBlocked: () => {
+              if (alive) setAutoplayBlocked(true);
+            },
+          },
+        });
+        youtubePlayerRef.current = player;
+      })
+      .catch(() => {
+        if (alive) setAutoplayBlocked(true);
+      });
+
+    return () => {
+      alive = false;
+      if (youtubePlayerRef.current === player) youtubePlayerRef.current = null;
+      try {
+        player?.destroy();
+      } catch {}
+    };
+  }, [heroType, heroYouTube, open, slug]);
+
+  useEffect(() => {
+    if (!open) setAutoplayBlocked(false);
+  }, [open, slug]);
+
+  const startVisibleMedia = useCallback(() => {
+    const youtubePlayer = youtubePlayerRef.current;
+    if (youtubePlayer) {
+      youtubePlayer.mute();
+      youtubePlayer.playVideo();
+    }
+
+    [heroVideoRef.current, lineupVideoRef.current].forEach((video) => {
+      if (!video) return;
+      const rect = video.getBoundingClientRect();
+      if (rect.bottom > 0 && rect.top < window.innerHeight) playMutedVideo(video);
+    });
+
+    setAutoplayBlocked(false);
+  }, [playMutedVideo]);
 
   useEffect(() => {
     if (!open || !data) return;
@@ -516,6 +642,7 @@ export default function DeepDiveOverlay({
                   <div className="absolute inset-0 bg-black">
                     {heroType === "youtube" && heroYouTube ? (
                       <iframe
+                        ref={youtubeIframeRef}
                         key={`${slug}-${heroYouTube}`}
                         className="h-full w-full"
                         src={heroYouTube}
@@ -902,6 +1029,16 @@ export default function DeepDiveOverlay({
                 </div>
               </div>
             </div>
+          ) : null}
+
+          {autoplayBlocked && !lightboxOpen ? (
+            <button
+              type="button"
+              onClick={startVisibleMedia}
+              className="absolute inset-x-4 bottom-5 z-50 mx-auto w-fit rounded-full border border-white/25 bg-[var(--red-acc)] px-5 py-3 text-[10px] font-semibold tracking-[0.2em] uppercase text-white shadow-[0_12px_35px_rgba(0,0,0,0.6)] backdrop-blur-xl md:bottom-7"
+            >
+              ▶ Tocca per avviare i video
+            </button>
           ) : null}
 
           <style jsx>{`
