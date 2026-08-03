@@ -580,6 +580,7 @@ export default function Moment2() {
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const menuRef = useRef<HTMLDetailsElement | null>(null);
+  const accountMenuRef = useRef<HTMLDetailsElement | null>(null);
   const closeMenu = () => {
     if (menuRef.current) menuRef.current.open = false;
   };
@@ -1253,7 +1254,7 @@ export default function Moment2() {
                 Accedi
               </button>
             ) : (
-              <details className="relative group">
+              <details ref={accountMenuRef} className="relative group">
                 <summary className="list-none cursor-pointer select-none px-4 py-2 rounded-full border border-white/15 hover:border-white/30 hover:bg-white/10 text-xs whitespace-nowrap max-w-[230px]">
                   <span className="block truncate font-semibold">{account.fullName}</span>
                   <span className="block truncate text-[10px] tracking-[0.12em] uppercase text-white/55">{account.qualification}</span>
@@ -1646,6 +1647,19 @@ export default function Moment2() {
                           >
                             Accedi e acquista
                           </button>
+                        ) : e.requireActiveMembership && account?.isMember && account.requiresMemberChoice ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedMemberBarcode(null);
+                              setMemberPhone("");
+                              setMemberVerifyError(null);
+                              if (accountMenuRef.current) accountMenuRef.current.open = true;
+                            }}
+                            className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
+                          >
+                            Scegli la tessera
+                          </button>
                         ) : e.requireActiveMembership && account?.isMember ? (
                           <Link
                             href={account.member?.barcode
@@ -1655,11 +1669,9 @@ export default function Moment2() {
                             rel="noopener noreferrer"
                             className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
                           >
-                            {account.requiresMemberChoice
-                              ? "Scegli la tessera"
-                              : isAccountMembershipActive(account.member)
-                                ? "Acquista il biglietto"
-                                : "Attiva la tessera"}
+                            {isAccountMembershipActive(account.member)
+                              ? "Acquista il biglietto"
+                              : "Attiva la tessera"}
                           </Link>
                         ) : e.requireActiveMembership && account ? (
                           <Link
