@@ -479,7 +479,13 @@ export default async function LVPeopleHomePage({
                           Verifica acquisto momentaneamente non disponibile. Riprova tra poco.
                         </div>
                       ) : canBuyMemberTicket && hasCompleteTicketProfile && checkoutUrl ? (
-                        <MemberTicketPurchaseAction checkoutUrl={checkoutUrl} />
+                        <div className="mt-3">
+                          <p className="text-xs leading-relaxed text-white/65">
+                            <strong className="font-semibold text-white/85">Biglietto personale e nominativo.</strong>{" "}
+                            Acquistalo solo per te e, su Xceed, seleziona <strong className="font-semibold text-white/85">Same as buyer</strong>.
+                          </p>
+                          <MemberTicketPurchaseAction checkoutUrl={checkoutUrl} />
+                        </div>
                       ) : (
                         <div className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
                           {!canBuyMemberTicket

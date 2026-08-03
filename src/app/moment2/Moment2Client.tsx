@@ -163,6 +163,12 @@ function fmtDateIT(v: string) {
   return new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 }
 
+function isAccountMembershipActive(member: AccountMember | null) {
+  if (!member || (member.status || "").trim().toUpperCase() !== "ATTIVA") return false;
+  if (!member.expiresAt) return true;
+  return member.expiresAt >= new Date().toISOString().slice(0, 10);
+}
+
 function getYearSafe(dateStr: string): number | null {
   if (!dateStr) return null;
   const d = new Date(dateStr);
@@ -1628,22 +1634,49 @@ export default function Moment2() {
 
                         {soldOut ? (
                           <span className="text-xs text-white/60">Sold out</span>
+                        ) : e.requireActiveMembership && !account ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLoginError(null);
+                              setLoginSent(false);
+                              setLoginOpen(true);
+                            }}
+                            className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
+                          >
+                            Accedi e acquista
+                          </button>
+                        ) : e.requireActiveMembership && account?.isMember ? (
+                          <Link
+                            href={account.member?.barcode
+                              ? `/lvpeople?barcode=${encodeURIComponent(account.member.barcode)}`
+                              : "/lvpeople"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
+                          >
+                            {account.requiresMemberChoice
+                              ? "Scegli la tessera"
+                              : isAccountMembershipActive(account.member)
+                                ? "Acquista il biglietto"
+                                : "Attiva la tessera"}
+                          </Link>
+                        ) : e.requireActiveMembership && account ? (
+                          <Link
+                            href="/become-member?from=/moment2#eventi"
+                            className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
+                          >
+                            Unisciti a LV People
+                          </Link>
                         ) : e.ticketUrl ? (
-                          
-
-
-<a
-  href={e.ticketUrl}
-  target="_blank"
-  rel="noreferrer"
-  className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
->
-  Acquista
-</a>
-
-
-
-
+                          <a
+                            href={e.ticketUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
+                          >
+                            Acquista
+                          </a>
                         ) : (
                           <span className="text-xs text-white/60">Ticket soon</span>
                         )}
@@ -1660,6 +1693,9 @@ export default function Moment2() {
                         <div className="text-xs font-semibold tracking-[0.12em] uppercase text-amber-100">
                           Accesso esclusivamente con tessera attiva
                         </div>
+                        <div className="mt-1 text-xs text-white/70">
+                          L’acquisto è riservato ai soci. Accedi con l’email associata alla tessera.
+                        </div>
                         {!account ? (
                           <button
                             type="button"
@@ -1668,7 +1704,7 @@ export default function Moment2() {
                               setLoginSent(false);
                               setLoginOpen(true);
                             }}
-                            className="mt-1 text-xs text-white/70 underline decoration-white/35 underline-offset-4 hover:text-white"
+                            className="mt-2 text-xs text-white/70 underline decoration-white/35 underline-offset-4 hover:text-white"
                           >
                             Tessera non attiva? Accedi per attivarla
                           </button>
