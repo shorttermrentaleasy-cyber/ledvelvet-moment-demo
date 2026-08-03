@@ -10,7 +10,7 @@ const YT_STUDIO_VIDEOS_URL =
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminTopbarClient from "../../AdminTopbarClient";
-import { isValidMemberTicketBaseUrl } from "@/lib/member-ticket";
+import { buildMemberTicketBaseUrl } from "@/lib/member-ticket";
 
 type SponsorOption = { id: string; label: string };
 
@@ -109,7 +109,7 @@ export default function AdminCreateEventPage() {
     RequireTicket: true,
     RequireMembership: true,
     RequireActiveMembership: false,
-    MemberTicketUrl: "",
+    MemberTicketCode: "",
     MemberTicketEnabled: false,
   });
 
@@ -247,7 +247,7 @@ export default function AdminCreateEventPage() {
     // ✅ clean inputs (trim) + Drive normalize
     const ticketPlatform = String(form.TicketPlatform || "").trim();
     const ticketUrl = String(form.TicketUrl || "").trim();
-    const memberTicketUrl = String(form.MemberTicketUrl || "").trim();
+    const memberTicketCode = String(form.MemberTicketCode || "").trim();
     const teaser = String(form.TeaserUrl || "").trim();
 
     const heroRaw = String(form.HeroImageUrl || "").trim();
@@ -256,11 +256,15 @@ export default function AdminCreateEventPage() {
     // ✅ validate ONLY if not empty
     if (
       (ticketUrl && !isHttpUrl(ticketUrl)) ||
-      (memberTicketUrl && !isValidMemberTicketBaseUrl(memberTicketUrl)) ||
+      (memberTicketCode && !buildMemberTicketBaseUrl(ticketUrl, memberTicketCode)) ||
       (teaser && !isHttpUrl(teaser)) ||
       (hero && !isHttpUrl(hero))
     ) {
-      return setErr("URL non valido (Ticket/Teaser/Hero)");
+      return setErr("Controlla il link Xceed, il codice univoco e gli altri URL.");
+    }
+
+    if (form.MemberTicketEnabled && !memberTicketCode) {
+      return setErr("Inserisci il codice univoco Xceed prima di abilitare l'acquisto soci.");
     }
 
     setLoading(true);
@@ -276,7 +280,7 @@ export default function AdminCreateEventPage() {
         // ✅ empty -> null (così Airtable pulisce davvero il campo)
         TicketPlatform: ticketPlatform || null,
         TicketUrl: ticketUrl || null,
-        MemberTicketUrl: memberTicketUrl || null,
+        MemberTicketCode: memberTicketCode || null,
         TeaserUrl: teaser || null,
 
         // ✅ attachment via URL diretto (Drive normalizzato)
@@ -366,14 +370,15 @@ export default function AdminCreateEventPage() {
               <input name="TicketUrl" value={form.TicketUrl} onChange={onChange} style={styles.input} />
             </Field>
 
-            <Field label="Checkout riservato soci (Xceed)">
+            <Field label="Codice univoco Xceed per i soci">
               <input
-                name="MemberTicketUrl"
-                value={form.MemberTicketUrl}
+                name="MemberTicketCode"
+                value={form.MemberTicketCode}
                 onChange={onChange}
                 style={styles.input}
-                placeholder="Link Xceed con promocode"
+                placeholder="Inserisci il codice configurato su Xceed"
               />
+              <span style={styles.smallMuted}>Il checkout hidden viene generato automaticamente dal link Ticket URL.</span>
             </Field>
 
             <Field label="Hero Google Drive URL (o direct image URL)">

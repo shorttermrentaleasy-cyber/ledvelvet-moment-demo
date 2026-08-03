@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import AdminTopbarClient from "../../AdminTopbarClient";
-import { isValidMemberTicketBaseUrl } from "@/lib/member-ticket";
+import { buildMemberTicketBaseUrl, getMemberTicketPromoCode } from "@/lib/member-ticket";
 
 const HERO_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/16wk3mKNNsjg3idhix5pygKP6lMHZ_S5O";
 const YT_STUDIO_VIDEOS_URL = "https://studio.youtube.com/channel/UCfQf25gurELioXHUNN8fSNQ/videos/";
@@ -354,13 +354,12 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     const hero = normalizeDriveImageUrl(heroRaw);
     const teaser = String(formData.get("teaserUrl") || "").trim();
     const after = String(formData.get("aftermovieUrl") || "").trim();
-    const memberTicketUrl = String(formData.get("memberTicketUrl") || "").trim();
+    const memberTicketCode = String(formData.get("memberTicketCode") || "").trim();
 
     if (
       (hero && !isHttpUrl(hero)) ||
       (teaser && !isHttpUrl(teaser)) ||
-      (after && !isHttpUrl(after)) ||
-      (memberTicketUrl && !isValidMemberTicketBaseUrl(memberTicketUrl))
+      (after && !isHttpUrl(after))
     ) {
       redirect(`/admin/events/edit?id=${id}`);
     }
@@ -376,6 +375,14 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     const requireTicket = formData.get("requireTicket") === "on";
     const requireMembership = formData.get("requireMembership") === "on";
     const requireActiveMembership = formData.get("requireActiveMembership") === "on";
+    const memberTicketEnabled = formData.get("memberTicketEnabled") === "on";
+    const memberTicketUrl = memberTicketCode
+      ? buildMemberTicketBaseUrl(ticketUrl, memberTicketCode)
+      : null;
+
+    if ((memberTicketCode && !memberTicketUrl) || (memberTicketEnabled && !memberTicketUrl)) {
+      redirect(`/admin/events/edit?id=${id}`);
+    }
 
     const fields: Record<string, any> = {
       "Event Name": eventName,
@@ -445,7 +452,7 @@ const updatePayload = {
   require_membership: requireMembership,
   require_active_membership: requireActiveMembership,
   member_ticket_url: memberTicketUrl || null,
-  member_ticket_enabled: formData.get("memberTicketEnabled") === "on",
+  member_ticket_enabled: memberTicketEnabled,
 };
 
     const { error: supabaseError } = await supabase
@@ -502,11 +509,15 @@ const updatePayload = {
 
             <Input label="Ticket URL" name="ticketUrl" defaultValue={f["Ticket Url"]} />
 
-            <Input
-              label="Checkout riservato soci (Xceed)"
-              name="memberTicketUrl"
-              defaultValue={supabaseEvent?.member_ticket_url || ""}
-            />
+            <Field label="Codice univoco Xceed per i soci">
+              <input
+                name="memberTicketCode"
+                defaultValue={getMemberTicketPromoCode(supabaseEvent?.member_ticket_url || "")}
+                placeholder="Inserisci il codice configurato su Xceed"
+                style={styles.input}
+              />
+              <span style={styles.smallMuted}>Il checkout hidden viene generato automaticamente dal link Ticket URL.</span>
+            </Field>
 
             <Field label="Hero Google Drive URL (o direct image URL)">
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>

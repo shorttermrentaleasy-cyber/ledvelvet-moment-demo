@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
-import { isValidMemberTicketBaseUrl } from "@/lib/member-ticket";
+import { buildMemberTicketBaseUrl } from "@/lib/member-ticket";
 
 export const runtime = "nodejs";
 
@@ -223,15 +223,33 @@ export async function POST(req: Request) {
     const HeroImageUrl = asString(body?.HeroImageUrl);
     const TeaserUrl = asString(body?.TeaserUrl);
     const AftermovieUrl = asString(body?.AftermovieUrl);
-    const memberTicketUrl = asString(body?.MemberTicketUrl);
+    const ticketUrl = asString(body?.TicketUrl);
+    const memberTicketCode = asString(body?.MemberTicketCode);
+    const memberTicketEnabled = asBoolean(body?.MemberTicketEnabled, false);
+    const memberTicketUrl = memberTicketCode
+      ? buildMemberTicketBaseUrl(ticketUrl, memberTicketCode)
+      : null;
 
     if (
       !isHttpUrl(HeroImageUrl) ||
       !isHttpUrl(TeaserUrl) ||
-      !isHttpUrl(AftermovieUrl) ||
-      (memberTicketUrl && !isValidMemberTicketBaseUrl(memberTicketUrl))
+      !isHttpUrl(AftermovieUrl)
     ) {
       return NextResponse.json({ ok: false, error: "Invalid URL" }, { status: 400 });
+    }
+
+    if (memberTicketCode && !memberTicketUrl) {
+      return NextResponse.json(
+        { ok: false, error: "Il codice soci richiede un link evento Xceed valido." },
+        { status: 400 }
+      );
+    }
+
+    if (memberTicketEnabled && !memberTicketUrl) {
+      return NextResponse.json(
+        { ok: false, error: "Inserisci il codice univoco Xceed prima di abilitare l'acquisto soci." },
+        { status: 400 }
+      );
     }
 
     const fields: Record<string, any> = {
@@ -291,7 +309,6 @@ export async function POST(req: Request) {
     const created = airtableText ? JSON.parse(airtableText) : {};
 
     // ---- bridge minimo verso Supabase events ----
-    const ticketUrl = asString(body?.TicketUrl);
     const parsedXceed = parseXceedPublicUrl(ticketUrl);
 
     let xceedEventRef: number | null = null;
@@ -327,7 +344,7 @@ export async function POST(req: Request) {
       require_membership: requireMembership,
       require_active_membership: requireActiveMembership,
       member_ticket_url: memberTicketUrl || null,
-      member_ticket_enabled: asBoolean(body?.MemberTicketEnabled, false),
+      member_ticket_enabled: memberTicketEnabled,
     };
 
     const { data: insertedEvent, error: supabaseError } = await supabase
