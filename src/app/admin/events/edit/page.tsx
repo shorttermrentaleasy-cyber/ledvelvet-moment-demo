@@ -376,11 +376,22 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     const requireMembership = formData.get("requireMembership") === "on";
     const requireActiveMembership = formData.get("requireActiveMembership") === "on";
     const memberTicketEnabled = formData.get("memberTicketEnabled") === "on";
-    const memberTicketUrl = memberTicketCode
-      ? buildMemberTicketBaseUrl(ticketUrl, memberTicketCode)
+    const parsedXceed = parseXceedPublicUrl(ticketUrl);
+
+    let xceedEventRef: number | null = null;
+    let xceedEventUuid: string | null = null;
+
+    if (parsedXceed.isXceed && parsedXceed.legacyId) {
+      const xceedData = await fetchXceedEventByLegacyId(parsedXceed.legacyId, parsedXceed.channel);
+      xceedEventRef = xceedData.legacyId;
+      xceedEventUuid = xceedData.eventUuid;
+    }
+
+    const memberTicketUrl = memberTicketCode && xceedEventUuid
+      ? buildMemberTicketBaseUrl(ticketUrl, xceedEventUuid, memberTicketCode)
       : null;
 
-    if ((memberTicketCode && !memberTicketUrl) || (memberTicketEnabled && !memberTicketUrl)) {
+    if ((memberTicketCode || memberTicketEnabled) && !memberTicketUrl) {
       redirect(`/admin/events/edit?id=${id}`);
     }
 
@@ -420,23 +431,11 @@ export default async function AdminEditEventPage({ searchParams }: { searchParam
     }
 
     // ---- sync minima verso Supabase events ----
-    const parsedXceed = parseXceedPublicUrl(ticketUrl);
-
-    let xceedEventRef: number | null = null;
-    let xceedEventUuid: string | null = null;
-
     let finalName = eventName;
     let finalStartsAt = toStartsAt(date);
     let finalVenue = venue || null;
     let finalCity = city || null;
     let finalXceedUrl = parsedXceed.isXceed ? parsedXceed.xceedUrl : null;
-
-    if (parsedXceed.isXceed && parsedXceed.legacyId) {
-      const xceedData = await fetchXceedEventByLegacyId(parsedXceed.legacyId, parsedXceed.channel);
-
-      xceedEventRef = xceedData.legacyId;
-      xceedEventUuid = xceedData.eventUuid;
-    }
 
     const supabase = supabaseAdmin();
 

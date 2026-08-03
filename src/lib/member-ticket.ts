@@ -25,19 +25,44 @@ export function isValidMemberTicketBaseUrl(value: string) {
   }
 }
 
-function isXceedEventUrl(url: URL) {
+function getXceedEventUrlParts(url: URL) {
   const host = url.hostname.toLowerCase();
   const isXceed = host === "xceed.me" || host.endsWith(".xceed.me");
-  if (url.protocol !== "https:" || !isXceed) return false;
+  if (url.protocol !== "https:" || !isXceed) return null;
 
   const parts = url.pathname.split("/").filter(Boolean);
   const eventIndex = parts.findIndex((part) => part.toLowerCase() === "event");
-  return eventIndex >= 0 && parts.slice(eventIndex + 1).some((part) => /^\d+$/.test(part));
+  const slug = eventIndex >= 0 ? parts[eventIndex + 1] : "";
+  const legacyId = eventIndex >= 0 ? parts[eventIndex + 2] : "";
+  if (!slug || !/^\d+$/.test(legacyId)) return null;
+
+  const channelIndex = parts.findIndex((part) => part.toLowerCase() === "channel");
+  const channel =
+    (channelIndex >= 0 ? parts[channelIndex + 1] : "") || url.searchParams.get("channel") || "";
+
+  return {
+    prefix: parts.slice(0, eventIndex),
+    slug,
+    channel,
+  };
 }
 
-export function buildMemberTicketBaseUrl(eventUrl: string, promoCode: string) {
+export function isValidXceedEventUrl(value: string) {
+  try {
+    return Boolean(getXceedEventUrlParts(new URL(value)));
+  } catch {
+    return false;
+  }
+}
+
+export function buildMemberTicketBaseUrl(
+  eventUrl: string,
+  eventUuid: string,
+  promoCode: string
+) {
   const code = promoCode.trim();
-  if (!code) return null;
+  const uuid = eventUuid.trim();
+  if (!code || !/^[0-9a-f-]{36}$/i.test(uuid)) return null;
 
   let url: URL;
   try {
@@ -46,16 +71,21 @@ export function buildMemberTicketBaseUrl(eventUrl: string, promoCode: string) {
     return null;
   }
 
-  if (!isXceedEventUrl(url)) return null;
+  const event = getXceedEventUrlParts(url);
+  if (!event) return null;
 
-  const parts = url.pathname.split("/").filter(Boolean);
-  const checkoutIndex = parts.findIndex((part) => part.toLowerCase() === "checkout");
-  if (checkoutIndex >= 0) parts.splice(checkoutIndex, 3);
-
-  const channelIndex = parts.findIndex((part) => part.toLowerCase() === "channel");
-  const insertAt = channelIndex >= 0 ? channelIndex : parts.length;
-  parts.splice(insertAt, 0, "checkout", "promocode", code);
+  const parts = [
+    ...event.prefix,
+    "checkout",
+    "promocode",
+    event.slug,
+    uuid,
+    "promocode",
+    code,
+  ];
   url.pathname = `/${parts.map((part) => encodeURIComponent(part)).join("/")}`;
+  url.search = "";
+  if (event.channel) url.searchParams.set("channel", event.channel);
 
   return isValidMemberTicketBaseUrl(url.toString()) ? url.toString() : null;
 }
@@ -64,7 +94,10 @@ export function getMemberTicketPromoCode(baseUrl: string) {
   if (!isValidMemberTicketBaseUrl(baseUrl)) return "";
 
   const parts = new URL(baseUrl).pathname.split("/").filter(Boolean);
-  const promoIndex = parts.findIndex((part) => part.toLowerCase() === "promocode");
+  let promoIndex = -1;
+  for (let index = 0; index < parts.length; index += 1) {
+    if (parts[index].toLowerCase() === "promocode") promoIndex = index;
+  }
   if (promoIndex < 0 || !parts[promoIndex + 1]) return "";
 
   try {

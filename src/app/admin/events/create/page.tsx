@@ -10,7 +10,7 @@ const YT_STUDIO_VIDEOS_URL =
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminTopbarClient from "../../AdminTopbarClient";
-import { buildMemberTicketBaseUrl } from "@/lib/member-ticket";
+import { isValidXceedEventUrl } from "@/lib/member-ticket";
 
 type SponsorOption = { id: string; label: string };
 
@@ -256,7 +256,7 @@ export default function AdminCreateEventPage() {
     // ✅ validate ONLY if not empty
     if (
       (ticketUrl && !isHttpUrl(ticketUrl)) ||
-      (memberTicketCode && !buildMemberTicketBaseUrl(ticketUrl, memberTicketCode)) ||
+      (memberTicketCode && !isValidXceedEventUrl(ticketUrl)) ||
       (teaser && !isHttpUrl(teaser)) ||
       (hero && !isHttpUrl(hero))
     ) {

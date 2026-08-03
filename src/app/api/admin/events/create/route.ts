@@ -226,9 +226,6 @@ export async function POST(req: Request) {
     const ticketUrl = asString(body?.TicketUrl);
     const memberTicketCode = asString(body?.MemberTicketCode);
     const memberTicketEnabled = asBoolean(body?.MemberTicketEnabled, false);
-    const memberTicketUrl = memberTicketCode
-      ? buildMemberTicketBaseUrl(ticketUrl, memberTicketCode)
-      : null;
 
     if (
       !isHttpUrl(HeroImageUrl) ||
@@ -238,16 +235,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Invalid URL" }, { status: 400 });
     }
 
-    if (memberTicketCode && !memberTicketUrl) {
-      return NextResponse.json(
-        { ok: false, error: "Il codice soci richiede un link evento Xceed valido." },
-        { status: 400 }
-      );
+    const parsedXceed = parseXceedPublicUrl(ticketUrl);
+
+    let xceedEventRef: number | null = null;
+    let xceedEventUuid: string | null = null;
+
+    if (parsedXceed.isXceed && parsedXceed.legacyId) {
+      const xceedData = await fetchXceedEventByLegacyId(parsedXceed.legacyId, parsedXceed.channel);
+      xceedEventRef = xceedData.legacyId;
+      xceedEventUuid = xceedData.eventUuid;
     }
 
-    if (memberTicketEnabled && !memberTicketUrl) {
+    const memberTicketUrl = memberTicketCode && xceedEventUuid
+      ? buildMemberTicketBaseUrl(ticketUrl, xceedEventUuid, memberTicketCode)
+      : null;
+
+    if ((memberTicketCode || memberTicketEnabled) && !memberTicketUrl) {
       return NextResponse.json(
-        { ok: false, error: "Inserisci il codice univoco Xceed prima di abilitare l'acquisto soci." },
+        {
+          ok: false,
+          error: "Il codice soci richiede un link evento Xceed valido e un UUID riconosciuto.",
+        },
         { status: 400 }
       );
     }
@@ -309,23 +317,11 @@ export async function POST(req: Request) {
     const created = airtableText ? JSON.parse(airtableText) : {};
 
     // ---- bridge minimo verso Supabase events ----
-    const parsedXceed = parseXceedPublicUrl(ticketUrl);
-
-    let xceedEventRef: number | null = null;
-    let xceedEventUuid: string | null = null;
-
     let finalName = eventName;
     let finalStartsAt = toStartsAt(asString(body?.date));
     let finalVenue = asString(body?.Venue) || null;
     let finalCity = asString(body?.City) || null;
     let finalXceedUrl = parsedXceed.isXceed ? parsedXceed.xceedUrl : null;
-
-    if (parsedXceed.isXceed && parsedXceed.legacyId) {
-      const xceedData = await fetchXceedEventByLegacyId(parsedXceed.legacyId, parsedXceed.channel);
-
-      xceedEventRef = xceedData.legacyId;
-      xceedEventUuid = xceedData.eventUuid;
-    }
 
     const supabase = supabaseAdmin();
     const requireTicket = asBoolean(body?.RequireTicket, true);
