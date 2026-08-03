@@ -438,7 +438,7 @@ export default function DeepDiveOverlay({
             </div>
           </header>
 
-          <div className="h-full overflow-y-auto overflow-x-hidden bg-[#070708]">
+          <div className="experience-scrollbar h-full overflow-y-auto overflow-x-hidden bg-[#070708]">
             {loading ? (
               <div className="grid min-h-full place-items-center px-6 text-sm tracking-[0.2em] uppercase text-white/55">
                 Caricamento Experience…
@@ -835,6 +835,32 @@ export default function DeepDiveOverlay({
               </div>
             </div>
           ) : null}
+
+          <style jsx>{`
+            .experience-scrollbar {
+              scrollbar-color: #b51216 #0a0a0b;
+              scrollbar-width: thin;
+            }
+
+            .experience-scrollbar::-webkit-scrollbar {
+              width: 8px;
+            }
+
+            .experience-scrollbar::-webkit-scrollbar-track {
+              background: #0a0a0b;
+            }
+
+            .experience-scrollbar::-webkit-scrollbar-thumb {
+              border: 2px solid #0a0a0b;
+              border-radius: 999px;
+              background: linear-gradient(180deg, #ef3438 0%, #930b0c 58%, #650708 100%);
+              box-shadow: 0 0 12px rgba(239, 52, 56, 0.42);
+            }
+
+            .experience-scrollbar::-webkit-scrollbar-thumb:hover {
+              background: linear-gradient(180deg, #ff5558 0%, #c31418 58%, #82090b 100%);
+            }
+          `}</style>
         </div>
       </div>
     </div>
