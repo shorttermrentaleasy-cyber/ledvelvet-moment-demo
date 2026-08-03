@@ -173,10 +173,10 @@ function Pill({ children, tone }: { children: React.ReactNode; tone: "sound" | "
 
 function SectionCard({ label, title, children }: { label: string; title?: string; children: React.ReactNode }) {
   return (
-    <article className="rounded-2xl border border-white/10 bg-white/5 p-6 overflow-x-hidden">
-      <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">{label}</div>
-      {title ? <h3 className="mt-2 text-xl font-semibold text-white">{title}</h3> : null}
-      <div className="mt-4 text-white/85 leading-relaxed whitespace-pre-line break-words [overflow-wrap:anywhere]">
+    <article className="relative overflow-x-hidden border-l border-[var(--red-acc)]/70 pl-5 md:pl-8">
+      <div className="text-[10px] font-medium tracking-[0.34em] uppercase text-[var(--red-light)]">{label}</div>
+      {title ? <h3 className="mt-3 text-2xl font-semibold text-white">{title}</h3> : null}
+      <div className="mt-4 max-w-3xl text-base leading-8 text-white/75 whitespace-pre-line break-words [overflow-wrap:anywhere] md:text-lg">
         {children}
       </div>
     </article>
@@ -207,8 +207,6 @@ export default function DeepDiveOverlay({
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
-
-  const galleryScrollRef = useRef<HTMLDivElement | null>(null);
 
   const stopMood = useCallback(() => {
     const el = moodAudioRef.current;
@@ -379,16 +377,6 @@ export default function DeepDiveOverlay({
     setLightboxIndex((i) => (i - 1 + gallery.length) % gallery.length);
   }, [gallery]);
 
-  const scrollGalleryBy = useCallback((direction: "left" | "right") => {
-    const el = galleryScrollRef.current;
-    if (!el) return;
-    const amount = Math.max(280, Math.floor(el.clientWidth * 0.75));
-    el.scrollBy({
-      left: direction === "left" ? -amount : amount,
-      behavior: "smooth",
-    });
-  }, []);
-
   useEffect(() => {
     if (!open || !lightboxOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -403,65 +391,138 @@ export default function DeepDiveOverlay({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[999] overflow-hidden" style={{ ["--red-acc" as any]: "#930b0c" }}>
-      <div className="absolute inset-0 bg-black/85" onClick={handleClose} aria-hidden="true" />
+    <div
+      className="fixed inset-0 z-[999] overflow-hidden bg-black"
+      style={{
+        ["--red-acc" as any]: "#930b0c",
+        ["--red-light" as any]: "#ff4b4e",
+      }}
+    >
+      <div
+        className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(147,11,12,0.26),transparent_42%),#020202]"
+        onClick={handleClose}
+        aria-hidden="true"
+      />
 
-      <div className="absolute inset-0 flex justify-center overflow-hidden">
-        <div className="relative w-full max-w-5xl h-full bg-[#0B0B0C] overflow-hidden">
-          <div className="sticky top-0 z-10 border-b border-[var(--red-acc)]/30 bg-[#0B0B0C]">
-            <div className="px-6 py-4 flex items-center justify-between gap-4 min-w-0">
-              <div className="min-w-0">
-                <div className="text-[11px] tracking-[0.22em] uppercase text-white/60 break-words [overflow-wrap:anywhere]">
-                  {city ? city : "Led Velvet"} {dateLabel ? `• ${dateLabel}` : ""}
+      <div className="absolute inset-0 flex items-center justify-center md:p-5">
+        <div className="relative h-full w-full max-w-7xl overflow-hidden bg-[#070708] shadow-[0_30px_120px_rgba(0,0,0,0.9)] md:h-[calc(100vh-40px)] md:rounded-[28px] md:border md:border-white/10">
+          <header className="absolute inset-x-0 top-0 z-40">
+            <div className="flex items-center justify-between gap-4 px-4 py-4 md:px-7">
+              <div className="min-w-0 rounded-full border border-white/10 bg-black/35 px-4 py-2 backdrop-blur-xl">
+                <div className="truncate text-[9px] font-medium tracking-[0.3em] uppercase text-white/55">
+                  LEDVELVET · EXPERIENCE
                 </div>
-                <div className="text-sm md:text-base font-medium text-white truncate">{title}</div>
               </div>
 
-              <div className="flex items-center gap-2 flex-none">
+              <div className="flex flex-none items-center gap-2">
                 {ticketUrl ? (
                   <a
                     href={ticketUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="px-4 py-2 bg-[var(--red-acc)] text-black text-xs tracking-[0.18em] uppercase hover:opacity-90"
+                    className="hidden rounded-full bg-[var(--red-acc)] px-4 py-2.5 text-[10px] font-semibold tracking-[0.2em] uppercase text-white transition hover:bg-red-700 sm:inline-flex"
                   >
                     Acquista
                   </a>
                 ) : null}
-
                 <button
+                  type="button"
                   onClick={handleClose}
-                  className="px-4 py-2 bg-white/10 border border-white/20 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/15 hover:border-white/35"
+                  className="grid h-11 w-11 place-items-center rounded-full border border-white/20 bg-black/45 text-lg text-white backdrop-blur-xl transition hover:border-white/40 hover:bg-white/15"
+                  aria-label="Chiudi Experience"
+                  title="Chiudi"
                 >
-                  ✕ Close
+                  ✕
                 </button>
               </div>
             </div>
-          </div>
+          </header>
 
-          <div className="h-[calc(100%-60px)] overflow-y-auto overflow-x-hidden pb-28">
-            <div className="px-6 py-8 overflow-x-hidden">
-              {loading ? (
-                <div className="text-white/70">Caricamento…</div>
-              ) : err ? (
-                <div className="text-red-300 break-words [overflow-wrap:anywhere]">{err}</div>
-              ) : data ? (
-                <div className="grid gap-6 md:grid-cols-2 md:items-center min-w-0">
-                  <div className="min-w-0">
-                    <h1 className="text-4xl md:text-5xl font-semibold leading-tight break-words [overflow-wrap:anywhere]">
+          <div className="h-full overflow-y-auto overflow-x-hidden bg-[#070708]">
+            {loading ? (
+              <div className="grid min-h-full place-items-center px-6 text-sm tracking-[0.2em] uppercase text-white/55">
+                Caricamento Experience…
+              </div>
+            ) : err ? (
+              <div className="grid min-h-full place-items-center px-6 text-center text-red-300">
+                {err}
+              </div>
+            ) : data ? (
+              <>
+                <section className="relative flex min-h-[86svh] items-end overflow-hidden md:min-h-[720px]">
+                  <div className="absolute inset-0 bg-black">
+                    {heroType === "youtube" && heroYouTube ? (
+                      <iframe
+                        className="h-full w-full"
+                        src={heroYouTube}
+                        title={`${title} – aftermovie`}
+                        loading="lazy"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        referrerPolicy="strict-origin-when-cross-origin"
+                      />
+                    ) : heroType === "mp4" && heroMp4 ? (
+                      <video
+                        className="h-full w-full object-cover"
+                        src={heroMp4}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        controls
+                        preload="metadata"
+                      />
+                    ) : heroImg ? (
+                      <img
+                        src={heroImg}
+                        alt={title}
+                        className="h-full w-full object-cover"
+                        loading="eager"
+                      />
+                    ) : (
+                      <div className="h-full w-full bg-[radial-gradient(circle_at_70%_25%,rgba(147,11,12,0.45),transparent_34%),linear-gradient(145deg,#171719,#020202_65%)]" />
+                    )}
+                  </div>
+
+                  <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.18)_0%,rgba(0,0,0,0.06)_34%,rgba(0,0,0,0.93)_100%)]" />
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-[radial-gradient(ellipse_at_20%_100%,rgba(147,11,12,0.34),transparent_56%)]" />
+
+                  <div className="relative z-10 w-full px-5 pb-12 pt-32 md:px-12 md:pb-16 lg:px-16">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[10px] font-medium tracking-[0.3em] uppercase text-white/65 md:text-xs">
+                      {dateLabel ? <span>{dateLabel}</span> : null}
+                      {dateLabel && city ? (
+                        <span className="h-1 w-1 rounded-full bg-[var(--red-light)]" />
+                      ) : null}
+                      {city ? <span>{city}</span> : null}
+                    </div>
+
+                    <h1 className="mt-5 max-w-5xl break-words text-[clamp(2.8rem,9vw,7.5rem)] font-black leading-[0.84] tracking-[-0.055em] text-white [overflow-wrap:anywhere]">
                       {title}
                     </h1>
 
                     {subtitle ? (
-                      <p className="mt-4 max-w-xl text-base md:text-lg text-white/80 whitespace-pre-line break-words [overflow-wrap:anywhere]">
+                      <p className="mt-6 max-w-2xl whitespace-pre-line text-base leading-7 text-white/75 md:text-xl md:leading-8">
                         {subtitle}
                       </p>
                     ) : null}
 
-                    <div className="mt-6 flex flex-wrap gap-3">
+                    <div className="mt-7 flex flex-wrap items-center gap-3">
+                      {moodTrackUrl ? (
+                        <button
+                          type="button"
+                          onClick={toggleMood}
+                          className="pointer-events-auto inline-flex items-center gap-3 rounded-full border border-white/25 bg-white/10 px-5 py-3 text-[10px] font-semibold tracking-[0.22em] uppercase text-white backdrop-blur-xl transition hover:bg-white/20"
+                        >
+                          <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--red-acc)] text-[9px]">
+                            {isMoodPlaying ? "■" : "▶"}
+                          </span>
+                          {isMoodPlaying ? "Stop mood" : "Play mood"}
+                        </button>
+                      ) : null}
+
                       <a
                         href={lvPeopleHref}
-                        className="inline-flex items-center rounded-full border border-[var(--red-acc)]/40 bg-[var(--red-acc)]/10 px-4 py-2 text-xs tracking-[0.18em] uppercase text-white/90 hover:bg-[var(--red-acc)]/15 hover:border-[var(--red-acc)]/60"
+                        className="pointer-events-auto inline-flex rounded-full border border-white/20 bg-black/25 px-5 py-3 text-[10px] font-semibold tracking-[0.22em] uppercase text-white/85 backdrop-blur-xl transition hover:border-white/40 hover:bg-white/10"
                       >
                         LV PEOPLE
                       </a>
@@ -471,7 +532,7 @@ export default function DeepDiveOverlay({
                           href={ticketUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center rounded-full bg-[var(--red-acc)] px-4 py-2 text-xs tracking-[0.18em] uppercase text-black hover:opacity-90"
+                          className="pointer-events-auto inline-flex rounded-full bg-[var(--red-acc)] px-5 py-3 text-[10px] font-semibold tracking-[0.22em] uppercase text-white transition hover:bg-red-700 sm:hidden"
                         >
                           Acquista
                         </a>
@@ -479,221 +540,209 @@ export default function DeepDiveOverlay({
                     </div>
 
                     {moodTrackUrl ? (
-                      <div className="mt-6 flex flex-wrap items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={toggleMood}
-                          className="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs tracking-[0.18em] uppercase text-white/85 hover:bg-white/10"
+                      <audio
+                        ref={moodAudioRef}
+                        src={moodTrackUrl}
+                        preload="none"
+                        onEnded={() => setIsMoodPlaying(false)}
+                      />
+                    ) : null}
+                  </div>
+                </section>
+
+                <main className="relative">
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(ellipse_at_65%_0%,rgba(147,11,12,0.16),transparent_64%)]" />
+
+                  <div className="relative mx-auto max-w-6xl space-y-20 px-5 py-16 md:space-y-28 md:px-10 md:py-24">
+                    {concept || placeStory ? (
+                      <section className="grid gap-12 md:grid-cols-2 md:gap-16">
+                        {concept ? (
+                          <SectionCard label="Concept">{concept}</SectionCard>
+                        ) : null}
+                        {placeStory ? (
+                          <SectionCard label="Il luogo">
+                            {placeStory}
+                          </SectionCard>
+                        ) : null}
+                      </section>
+                    ) : null}
+
+                    {lineup || lineupVideo ? (
+                      <section className="relative overflow-hidden border-y border-white/10 py-12 md:py-20">
+                        <div className="absolute -right-16 top-4 select-none text-[8rem] font-black leading-none text-white/[0.025] md:text-[15rem]">
+                          LIVE
+                        </div>
+                        <div
+                          className={
+                            lineup && lineupVideo
+                              ? "grid items-center gap-10 md:grid-cols-[1.15fr_0.85fr] md:gap-16"
+                              : ""
+                          }
                         >
-                          {isMoodPlaying ? "■ Stop Mood" : "▶ Play Mood"}
-                        </button>
+                          {lineup ? (
+                            <div className="relative z-10">
+                              <div className="text-[10px] font-semibold tracking-[0.38em] uppercase text-[var(--red-light)]">
+                                Line-up
+                              </div>
+                              <div className="mt-6 whitespace-pre-line break-words text-[clamp(2.25rem,7vw,5.5rem)] font-black leading-[0.92] tracking-[-0.045em] text-white [overflow-wrap:anywhere]">
+                                {lineup}
+                              </div>
+                            </div>
+                          ) : null}
 
-                        <span className="text-[11px] tracking-[0.18em] uppercase text-white/50">Led Velvet Mood</span>
+                          {lineupVideo ? (
+                            <div className="relative mx-auto w-full max-w-[390px]">
+                              <div className="absolute -inset-5 bg-[var(--red-acc)]/20 blur-3xl" />
+                              <div className="relative overflow-hidden rounded-[28px] border border-white/15 bg-black shadow-[0_30px_90px_rgba(0,0,0,0.65)]">
+                                <video
+                                  src={lineupVideo}
+                                  className="aspect-[9/16] w-full object-cover"
+                                  autoPlay
+                                  muted
+                                  loop
+                                  playsInline
+                                  controls
+                                  preload="metadata"
+                                />
+                              </div>
+                              <div className="mt-4 text-center text-[9px] tracking-[0.32em] uppercase text-white/45">
+                                Event reel
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </section>
+                    ) : null}
 
-                        <audio
-                          ref={moodAudioRef}
-                          src={moodTrackUrl}
-                          preload="none"
-                          onEnded={() => setIsMoodPlaying(false)}
-                        />
-                      </div>
+                    {gallery.length ? (
+                      <section>
+                        <div className="mb-8 flex items-end justify-between gap-5 md:mb-12">
+                          <div>
+                            <div className="text-[10px] font-semibold tracking-[0.38em] uppercase text-[var(--red-light)]">
+                              The night
+                            </div>
+                            <h2 className="mt-3 text-4xl font-black tracking-[-0.04em] text-white md:text-6xl">
+                              Moments
+                            </h2>
+                          </div>
+                          <div className="text-[10px] tracking-[0.24em] uppercase text-white/40">
+                            {gallery.length} shots
+                          </div>
+                        </div>
+
+                        <div className="columns-1 gap-3 sm:columns-2 md:columns-3 md:gap-4">
+                          {gallery.map((url, i) => (
+                            <button
+                              key={`g-${i}`}
+                              type="button"
+                              onClick={() => openLightbox(i)}
+                              className="group relative mb-3 block w-full break-inside-avoid overflow-hidden rounded-2xl border border-white/10 bg-black/30 text-left focus:outline-none focus:ring-2 focus:ring-[var(--red-acc)]/70 md:mb-4"
+                              aria-label={`Apri immagine ${i + 1} di ${gallery.length}`}
+                            >
+                              <img
+                                src={url}
+                                alt={`Gallery ${i + 1}`}
+                                className={`w-full object-cover transition duration-700 group-hover:scale-[1.035] group-hover:opacity-90 ${
+                                  i % 5 === 0
+                                    ? "aspect-[4/5]"
+                                    : i % 3 === 0
+                                      ? "aspect-square"
+                                      : "aspect-[4/3]"
+                                }`}
+                                loading="lazy"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-transparent opacity-35 transition group-hover:opacity-80" />
+                              <div className="absolute inset-x-0 bottom-0 flex translate-y-2 items-center justify-between p-4 text-[9px] tracking-[0.28em] uppercase text-white/80 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                                <span>
+                                  Shot {String(i + 1).padStart(2, "0")}
+                                </span>
+                                <span>View ↗</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
                     ) : null}
 
                     {showAtmos ? (
-                      <div className="mt-8">
-                        <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Atmosphere</div>
-
-                        {sound.length ? (
-                          <div className="mt-3">
-                            <div className="text-[10px] tracking-[0.26em] uppercase text-white/50">Sound</div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {sound.map((t, i) => (
-                                <Pill key={`sound-${i}`} tone="sound">
-                                  {t}
-                                </Pill>
-                              ))}
+                      <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,rgba(147,11,12,0.14),rgba(255,255,255,0.025))] p-6 md:p-10">
+                        <div className="text-[10px] font-semibold tracking-[0.38em] uppercase text-[var(--red-light)]">
+                          Atmosphere
+                        </div>
+                        <div className="mt-6 grid gap-7 md:grid-cols-3">
+                          {sound.length ? (
+                            <div>
+                              <div className="text-[9px] tracking-[0.28em] uppercase text-white/40">
+                                Sound
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {sound.map((t, i) => (
+                                  <Pill key={`sound-${i}`} tone="sound">
+                                    {t}
+                                  </Pill>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ) : null}
-
-                        {light.length ? (
-                          <div className="mt-4">
-                            <div className="text-[10px] tracking-[0.26em] uppercase text-white/50">Light</div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {light.map((t, i) => (
-                                <Pill key={`light-${i}`} tone="light">
-                                  {t}
-                                </Pill>
-                              ))}
+                          ) : null}
+                          {light.length ? (
+                            <div>
+                              <div className="text-[9px] tracking-[0.28em] uppercase text-white/40">
+                                Light
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {light.map((t, i) => (
+                                  <Pill key={`light-${i}`} tone="light">
+                                    {t}
+                                  </Pill>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ) : null}
-
-                        {energy.length ? (
-                          <div className="mt-4">
-                            <div className="text-[10px] tracking-[0.26em] uppercase text-white/50">Energy</div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {energy.map((t, i) => (
-                                <Pill key={`energy-${i}`} tone="energy">
-                                  {t}
-                                </Pill>
-                              ))}
+                          ) : null}
+                          {energy.length ? (
+                            <div>
+                              <div className="text-[9px] tracking-[0.28em] uppercase text-white/40">
+                                Energy
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {energy.map((t, i) => (
+                                  <Pill key={`energy-${i}`} tone="energy">
+                                    {t}
+                                  </Pill>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden min-w-0">
-                    {heroType === "youtube" && heroYouTube ? (
-
-                      
-<div className="relative w-full aspect-video">
-  <iframe
-    className="w-full h-full"
-    src={heroYouTube}
-    title="Hero video"
-    loading="lazy"
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-    allowFullScreen
-    referrerPolicy="strict-origin-when-cross-origin"
-  />
-</div>
-
-
-
-
-                    ) : heroType === "mp4" && heroMp4 ? (
-                      <video className="w-full aspect-video object-cover" src={heroMp4} autoPlay muted loop playsInline />
-                    ) : heroImg ? (
-                      <img src={heroImg} alt={title} className="w-full aspect-video object-cover" loading="lazy" />
-                    ) : (
-                      <div className="w-full aspect-video bg-black/40" />
-                    )}
-                  </div>
-                </div>
-              ) : null}
-
-              {data ? (
-                <section className="mt-10 grid gap-8 overflow-x-hidden">
-                  {concept ? <SectionCard label="Concept">{concept}</SectionCard> : null}
-                  {placeStory ? <SectionCard label="Luogo">{placeStory}</SectionCard> : null}
-
-                  {lineupVideo ? (
-                    <article className="rounded-2xl border border-white/10 bg-white/5 p-4 overflow-hidden">
-                      <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Promo Reel</div>
-
-                      <div className="mt-4 flex justify-center">
-                        <video
-                          src={lineupVideo}
-                          className="w-full max-w-[420px] aspect-[9/16] object-cover rounded-xl bg-black/40"
-                          autoPlay
-                          muted
-                          loop
-                          playsInline
-                          controls
-                          preload="metadata"
-                        />
-                      </div>
-                    </article>
-                  ) : null}
-
-                  {lineup ? <SectionCard label="Line-up">{lineup}</SectionCard> : null}
-
-                  {gallery?.length ? (
-                    <article className="rounded-2xl border border-white/10 bg-white/5 p-6 overflow-x-hidden">
-                      <div className="flex items-center justify-between gap-3 min-w-0">
-                        <div className="text-[11px] tracking-[0.22em] uppercase text-white/50">Gallery</div>
-
-                        <div className="flex items-center gap-2 flex-none">
-                          <div className="text-[11px] tracking-[0.18em] uppercase text-white/40">
-                            {gallery.length} shots
-                          </div>
-
-                          {gallery.length > 1 ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => scrollGalleryBy("left")}
-                                className="w-10 h-10 rounded-full grid place-items-center border border-white/20 bg-white/5 text-white hover:bg-white/10 hover:border-white/35"
-                                aria-label="Scorri gallery a sinistra"
-                                title="Scorri a sinistra"
-                              >
-                                ‹
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => scrollGalleryBy("right")}
-                                className="w-10 h-10 rounded-full grid place-items-center border border-white/20 bg-white/5 text-white hover:bg-white/10 hover:border-white/35"
-                                aria-label="Scorri gallery a destra"
-                                title="Scorri a destra"
-                              >
-                                ›
-                              </button>
-                            </>
                           ) : null}
                         </div>
-                      </div>
+                      </section>
+                    ) : null}
 
-                      <div
-                        ref={galleryScrollRef}
-                        className={[
-                          "mt-4 flex gap-3 overflow-x-auto overflow-y-hidden pb-2",
-                          "snap-x snap-mandatory",
-                          "overscroll-x-contain",
-                        ].join(" ")}
-                        style={{
-                          WebkitOverflowScrolling: "touch",
-                          touchAction: "pan-x",
-                        }}
+                    {invite ? (
+                      <section className="relative overflow-hidden rounded-[28px] border border-[var(--red-acc)]/35 bg-[var(--red-acc)]/10 px-6 py-12 text-center md:px-14 md:py-16">
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(147,11,12,0.6),transparent_58%)]" />
+                        <div className="relative">
+                          <div className="text-[10px] font-semibold tracking-[0.38em] uppercase text-[var(--red-light)]">
+                            Until next time
+                          </div>
+                          <div className="mx-auto mt-6 max-w-3xl whitespace-pre-line break-words text-xl leading-8 text-white/85 md:text-3xl md:leading-10">
+                            {invite}
+                          </div>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    <div className="flex justify-center pb-10">
+                      <button
+                        type="button"
+                        onClick={handleClose}
+                        className="rounded-full border border-white/20 bg-white/5 px-7 py-3 text-[10px] font-semibold tracking-[0.24em] uppercase text-white transition hover:border-white/40 hover:bg-white/10"
                       >
-                        {gallery.map((url, i) => (
-                          <button
-                            key={`g-${i}`}
-                            type="button"
-                            onClick={() => openLightbox(i)}
-                            className={[
-                              "group relative flex-none snap-start overflow-hidden rounded-xl border border-white/10 bg-black/20",
-                              "focus:outline-none focus:ring-2 focus:ring-[var(--red-acc)]/60",
-                              "w-60 h-40 md:w-72 md:h-48",
-                            ].join(" ")}
-                            aria-label={`Apri immagine ${i + 1} di ${gallery.length}`}
-                          >
-                            <img
-                              src={url}
-                              alt={`Gallery ${i + 1}`}
-                              className="w-full h-full object-cover transition duration-300 group-hover:scale-[1.03] group-hover:opacity-95"
-                              loading="lazy"
-                            />
-                            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
-                            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition">
-                              <span className="text-[10px] tracking-[0.22em] uppercase text-white/80">Shot {i + 1}</span>
-                              <span className="text-[10px] tracking-[0.22em] uppercase text-white/80">View</span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </article>
-                  ) : null}
-
-                  {invite ? <SectionCard label="Invito">{invite}</SectionCard> : null}
-
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={handleClose}
-                      className="w-full md:w-auto px-6 py-3 rounded-full border border-white/20 bg-white/5 text-white text-xs tracking-[0.18em] uppercase hover:bg-white/10 hover:border-white/35"
-                    >
-                      ← Torna indietro
-                    </button>
+                        ← Torna agli eventi
+                      </button>
+                    </div>
                   </div>
-
-                  <div className="h-16" />
-                </section>
-              ) : null}
-            </div>
+                </main>
+              </>
+            ) : null}
           </div>
 
           {lightboxOpen && gallery?.length ? (
