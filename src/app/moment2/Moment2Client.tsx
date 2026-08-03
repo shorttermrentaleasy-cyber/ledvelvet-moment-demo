@@ -423,6 +423,12 @@ export default function Moment2() {
     event.preventDefault();
     if (!member.barcode || !memberPhone.trim() || memberVerifyBusy) return;
 
+    const memberWindow = window.open("about:blank", "_blank");
+    if (!memberWindow) {
+      setMemberVerifyError("Consenti l’apertura di nuove schede per aprire la tessera.");
+      return;
+    }
+
     setMemberVerifyBusy(true);
     setMemberVerifyError(null);
 
@@ -436,19 +442,17 @@ export default function Moment2() {
       const result = await response.json().catch(() => ({}));
 
       if (!response.ok || !result?.href) {
+        memberWindow.close();
         setMemberVerifyError(result?.error || "Cellulare non corretto.");
         return;
       }
 
-      const memberWindow = window.open(result.href, "_blank");
-      if (memberWindow) {
-        memberWindow.opener = null;
-      } else {
-        window.location.href = result.href;
-      }
+      memberWindow.opener = null;
+      memberWindow.location.href = result.href;
       setSelectedMemberBarcode(null);
       setMemberPhone("");
     } catch {
+      memberWindow.close();
       setMemberVerifyError("Verifica non riuscita. Riprova.");
     } finally {
       setMemberVerifyBusy(false);

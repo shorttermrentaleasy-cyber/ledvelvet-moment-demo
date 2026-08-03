@@ -10,21 +10,36 @@ export default function MemberChoiceVerification({ barcode, name }: { barcode: s
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
-    setError("");
-    const response = await fetch("/api/account/member-verify", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ barcode, phone }),
-    });
-    const result = await response.json().catch(() => ({}));
-    setBusy(false);
-    if (!response.ok || !result?.href) {
-      setError(result?.error || "Verifica non riuscita.");
+    const memberWindow = window.open("about:blank", "_blank");
+    if (!memberWindow) {
+      setError("Consenti l’apertura di nuove schede per aprire la tessera.");
       return;
     }
-    window.location.href = result.href;
+
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/account/member-verify", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barcode, phone }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.href) {
+        memberWindow.close();
+        setError(result?.error || "Verifica non riuscita.");
+        return;
+      }
+
+      memberWindow.opener = null;
+      memberWindow.location.href = result.href;
+    } catch {
+      memberWindow.close();
+      setError("Verifica non riuscita. Riprova.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!open) {
