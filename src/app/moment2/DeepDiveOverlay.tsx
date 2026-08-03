@@ -201,6 +201,8 @@ export default function DeepDiveOverlay({
   const [data, setData] = useState<DeepDive | null>(null);
 
   const moodAudioRef = useRef<HTMLAudioElement | null>(null);
+  const heroVideoRef = useRef<HTMLVideoElement | null>(null);
+  const lineupVideoRef = useRef<HTMLVideoElement | null>(null);
   const [isMoodPlaying, setIsMoodPlaying] = useState(false);
 
   const [returnTo, setReturnTo] = useState<string>("");
@@ -358,6 +360,67 @@ export default function DeepDiveOverlay({
   const lineupVideo = asUrl(data?.lineup_video_url);
   const invite = asString(data?.invite_text);
 
+  const playMutedVideo = useCallback((video: HTMLVideoElement | null) => {
+    if (!video) return;
+
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.setAttribute("muted", "");
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+
+    void video.play().catch(() => {
+      // Mobile browsers can still block autoplay in Low Power/Data Saver mode.
+      // Native controls remain available as a fallback.
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open || !data) return;
+
+    const videos = [heroVideoRef.current, lineupVideoRef.current].filter(
+      (video): video is HTMLVideoElement => Boolean(video),
+    );
+    if (!videos.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const video = entry.target as HTMLVideoElement;
+          if (entry.isIntersecting) {
+            playMutedVideo(video);
+          } else {
+            video.pause();
+          }
+        });
+      },
+      { threshold: 0.05 },
+    );
+
+    videos.forEach((video) => {
+      observer.observe(video);
+      if (video.getBoundingClientRect().top < window.innerHeight) playMutedVideo(video);
+    });
+
+    const resumeVisibleVideos = () => {
+      if (document.visibilityState !== "visible") return;
+      videos.forEach((video) => {
+        const rect = video.getBoundingClientRect();
+        if (rect.bottom > 0 && rect.top < window.innerHeight) playMutedVideo(video);
+      });
+    };
+
+    document.addEventListener("visibilitychange", resumeVisibleVideos);
+    window.addEventListener("pageshow", resumeVisibleVideos);
+
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", resumeVisibleVideos);
+      window.removeEventListener("pageshow", resumeVisibleVideos);
+    };
+  }, [data, heroMp4, lineupVideo, open, playMutedVideo]);
+
   const openLightbox = useCallback((idx: number) => {
     setLightboxIndex(Math.max(0, idx));
     setLightboxOpen(true);
@@ -453,16 +516,18 @@ export default function DeepDiveOverlay({
                   <div className="absolute inset-0 bg-black">
                     {heroType === "youtube" && heroYouTube ? (
                       <iframe
+                        key={`${slug}-${heroYouTube}`}
                         className="h-full w-full"
                         src={heroYouTube}
                         title={`${title} – aftermovie`}
-                        loading="lazy"
+                        loading="eager"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
                         referrerPolicy="strict-origin-when-cross-origin"
                       />
                     ) : heroType === "mp4" && heroMp4 ? (
                       <video
+                        ref={heroVideoRef}
                         className="h-full w-full object-cover"
                         src={heroMp4}
                         autoPlay
@@ -470,7 +535,8 @@ export default function DeepDiveOverlay({
                         loop
                         playsInline
                         controls
-                        preload="metadata"
+                        preload="auto"
+                        onCanPlay={(event) => playMutedVideo(event.currentTarget)}
                       />
                     ) : heroImg ? (
                       <img
@@ -595,6 +661,7 @@ export default function DeepDiveOverlay({
                               <div className="absolute -inset-5 bg-[var(--red-acc)]/20 blur-3xl" />
                               <div className="relative overflow-hidden rounded-[28px] border border-white/15 bg-black shadow-[0_30px_90px_rgba(0,0,0,0.65)]">
                                 <video
+                                  ref={lineupVideoRef}
                                   src={lineupVideo}
                                   className="aspect-[9/16] w-full object-cover"
                                   autoPlay
@@ -603,6 +670,7 @@ export default function DeepDiveOverlay({
                                   playsInline
                                   controls
                                   preload="metadata"
+                                  onCanPlay={(event) => playMutedVideo(event.currentTarget)}
                                 />
                               </div>
                               <div className="mt-4 text-center text-[9px] tracking-[0.32em] uppercase text-white/45">
