@@ -1,6 +1,7 @@
 import MemberQrCard from "./MemberQrCard";
 import MemberWallyforRefresh from "./MemberWallyforRefresh";
 import MemberChoiceVerification from "./MemberChoiceVerification";
+import MemberTicketPurchaseAction from "./MemberTicketPurchaseAction";
 import LVPeopleActions from "./LVPeopleActions";
 import React from "react";
 import { createHmac, timingSafeEqual } from "crypto";
@@ -478,14 +479,7 @@ export default async function LVPeopleHomePage({
                           Verifica acquisto momentaneamente non disponibile. Riprova tra poco.
                         </div>
                       ) : canBuyMemberTicket && hasCompleteTicketProfile && checkoutUrl ? (
-                        <a
-                          href={checkoutUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-3 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-[#8d003f] to-[#e00072] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-fuchsia-950/40 transition hover:brightness-110"
-                        >
-                          Acquista il tuo biglietto
-                        </a>
+                        <MemberTicketPurchaseAction checkoutUrl={checkoutUrl} />
                       ) : (
                         <div className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
                           {!canBuyMemberTicket
