@@ -161,13 +161,19 @@ export default function AboutClient() {
             </p>
           </div>
 
-          <a
-            href="#manifesto"
+          <button
+            type="button"
+            onClick={() =>
+              document.getElementById("manifesto")?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              })
+            }
             className="mt-14 inline-flex items-center gap-3 text-[9px] font-semibold tracking-[0.28em] uppercase text-white/45 transition hover:text-white md:mt-20"
           >
             <span className="grid h-9 w-9 place-items-center rounded-full border border-white/15">↓</span>
             {text.scroll}
-          </a>
+          </button>
         </div>
       </section>
 
@@ -221,6 +227,14 @@ export default function AboutClient() {
         <p className="max-w-4xl text-[clamp(2.5rem,7vw,6.5rem)] font-black leading-[0.9] tracking-[-0.055em] uppercase text-white">
           {text.closing}
         </p>
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="mt-14 inline-flex items-center gap-2 text-[10px] font-semibold tracking-[0.24em] uppercase text-white/65 transition hover:text-white"
+        >
+          <span aria-hidden="true">←</span>
+          {text.back}
+        </button>
         <div className="mt-16 flex flex-col gap-3 border-t border-white/10 pt-6 text-[9px] tracking-[0.28em] uppercase text-white/35 sm:flex-row sm:items-center sm:justify-between">
           <span>© {new Date().getFullYear()} LEDVELVET</span>
           <span>Cultural association · Toscana</span>
