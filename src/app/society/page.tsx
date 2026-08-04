@@ -61,7 +61,7 @@ export default function SocietyPage({ searchParams }: Props) {
 
           <div className="mt-8 flex flex-wrap gap-3">
             <a
-              href="#richiesta"
+              href="/become-member?from=/society"
               className="inline-flex items-center rounded-full border border-white/20 bg-white text-black px-5 py-2 text-xs tracking-[0.22em] uppercase hover:opacity-90"
             >
               Entra in LV PEOPLE
