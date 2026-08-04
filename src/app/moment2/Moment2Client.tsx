@@ -29,6 +29,11 @@ type AccountProfile = {
   canChangeMember: boolean;
 };
 
+type AccountTicketStatus = {
+  status: "checking" | "purchased" | "not_purchased" | "unavailable";
+  offerName: string | null;
+};
+
 type Product = {
   sku: string;
   name: string;
@@ -549,6 +554,9 @@ export default function Moment2() {
   const [memberPhone, setMemberPhone] = useState("");
   const [memberVerifyError, setMemberVerifyError] = useState<string | null>(null);
   const [memberVerifyBusy, setMemberVerifyBusy] = useState(false);
+  const [accountTicketStatuses, setAccountTicketStatuses] = useState<
+    Record<string, AccountTicketStatus>
+  >({});
   const accountSyncStarted = useRef(false);
 
   async function submitHomepageLogin(event: React.FormEvent<HTMLFormElement>) {
@@ -1257,6 +1265,72 @@ export default function Moment2() {
       .sort((a, b) => safeTimeMs(a.date) - safeTimeMs(b.date));
   }, [events]);
 
+  useEffect(() => {
+    const eventIds = upcomingEvents
+      .filter((event) => event.requireActiveMembership && event.ticketUrl)
+      .map((event) => event.id)
+      .slice(0, 5);
+
+    if (!account?.member?.barcode || eventIds.length === 0) {
+      setAccountTicketStatuses({});
+      return;
+    }
+
+    let alive = true;
+    const controller = new AbortController();
+    setAccountTicketStatuses(
+      Object.fromEntries(
+        eventIds.map((eventId) => [
+          eventId,
+          { status: "checking", offerName: null } satisfies AccountTicketStatus,
+        ])
+      )
+    );
+
+    void fetch("/api/account/ticket-status", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventIds }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!alive) return;
+
+        if (!response.ok || !payload?.ok || !payload?.statuses) {
+          setAccountTicketStatuses(
+            Object.fromEntries(
+              eventIds.map((eventId) => [
+                eventId,
+                { status: "unavailable", offerName: null } satisfies AccountTicketStatus,
+              ])
+            )
+          );
+          return;
+        }
+
+        setAccountTicketStatuses(payload.statuses);
+      })
+      .catch((error) => {
+        if (!alive || error?.name === "AbortError") return;
+        setAccountTicketStatuses(
+          Object.fromEntries(
+            eventIds.map((eventId) => [
+              eventId,
+              { status: "unavailable", offerName: null } satisfies AccountTicketStatus,
+            ])
+          )
+        );
+      });
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [account?.member?.barcode, upcomingEvents]);
+
   const pastEvents = events.filter((e) => e.phase === "past" && !e.heroOnly);
 
   const pastByYear = useMemo(() => {
@@ -1812,6 +1886,7 @@ export default function Moment2() {
             {upcomingEvents.map((e) => {
               const tag = (e.tag || "LISTE & TICKETS").toUpperCase();
               const soldOut = tag.includes("SOLD");
+              const ticketStatus = accountTicketStatuses[e.id]?.status;
 
               const yt = youTubeEmbedUrl(e.teaserUrl || "");
               
@@ -1850,7 +1925,22 @@ export default function Moment2() {
                           </button>
                         ) : null}
 
-                        {soldOut ? (
+                        {e.requireActiveMembership && ticketStatus === "purchased" ? (
+                          <Link
+                            href={account?.member?.barcode
+                              ? `/lvpeople?barcode=${encodeURIComponent(account.member.barcode)}`
+                              : "/lvpeople"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2 border border-emerald-200/40 bg-emerald-300/15 text-emerald-100 text-xs tracking-[0.18em] uppercase hover:bg-emerald-300/25"
+                          >
+                            ✓ Biglietto già acquistato
+                          </Link>
+                        ) : e.requireActiveMembership && ticketStatus === "checking" ? (
+                          <span className="px-4 py-2 border border-white/15 bg-white/10 text-white/65 text-xs tracking-[0.18em] uppercase">
+                            Verifica biglietto…
+                          </span>
+                        ) : soldOut ? (
                           <span className="text-xs text-white/60">Sold out</span>
                         ) : e.requireActiveMembership && !account ? (
                           <button
@@ -1887,7 +1977,9 @@ export default function Moment2() {
                             className="px-4 py-2 bg-gray-300 text-red-500 text-xs tracking-[0.18em] uppercase hover:bg-gray-400"
                           >
                             {isAccountMembershipActive(account.member)
-                              ? "Acquista il biglietto"
+                              ? ticketStatus === "unavailable"
+                                ? "Verifica nella scheda socio"
+                                : "Acquista il biglietto"
                               : "Attiva la tessera"}
                           </Link>
                         ) : e.requireActiveMembership && account ? (
