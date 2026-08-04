@@ -1514,7 +1514,7 @@ export default function Moment2() {
       ) : null}
 
       {/* HERO */}
-      <section id="home" className="relative h-[100svh] w-full bg-black">
+      <section id="home" className="relative lv-hero-viewport w-full bg-black">
         <div className="absolute inset-0">
           {heroMp4Resolved ? (
             <video
@@ -1593,7 +1593,7 @@ export default function Moment2() {
 
               return (
                 <article key={e.id} className="bg-black/25 overflow-hidden border border-white/10">
-                  <div className="relative aspect-[16/9] bg-black">
+                  <div className="relative lv-aspect-16-9 bg-black">
 
                     {yt ? (
   <iframe
@@ -1836,7 +1836,7 @@ export default function Moment2() {
                         
                         return (
                           <article key={e.id} className="bg-black/30 overflow-hidden border border-white/10">
-                            <div className="relative aspect-[16/9] bg-black">
+                            <div className="relative lv-aspect-16-9 bg-black">
 
 {yt ? (
   <iframe
@@ -1973,6 +1973,23 @@ export default function Moment2() {
         </div>
 
         <style suppressHydrationWarning>{`
+          .lv-hero-viewport {
+            height: 100vh;
+          }
+          .lv-aspect-16-9 {
+            height: 0;
+            padding-bottom: 56.25%;
+          }
+          @supports (height: 100svh) {
+            .lv-hero-viewport { height: 100svh; }
+          }
+          @supports (aspect-ratio: 16 / 9) {
+            .lv-aspect-16-9 {
+              height: auto;
+              padding-bottom: 0;
+              aspect-ratio: 16 / 9;
+            }
+          }
           #past details > summary::-webkit-details-marker { display:none; }
           #past details > summary { list-style:none; }
           #past .lv-details { border-radius: 0px; }
