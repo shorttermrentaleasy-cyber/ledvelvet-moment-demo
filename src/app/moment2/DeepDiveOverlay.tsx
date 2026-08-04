@@ -270,8 +270,6 @@ export default function DeepDiveOverlay({
   const [isMoodPlaying, setIsMoodPlaying] = useState(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
-  const [returnTo, setReturnTo] = useState<string>("");
-
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
@@ -329,22 +327,6 @@ export default function DeepDiveOverlay({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, handleClose, lightboxOpen]);
-
-  useEffect(() => {
-    if (!open || !slug) return;
-    try {
-      const u = new URL(window.location.href);
-      u.searchParams.set("experience", String(slug));
-      setReturnTo(u.pathname + "?" + u.searchParams.toString() + (u.hash || ""));
-    } catch {
-      setReturnTo(window.location.pathname + window.location.search + window.location.hash);
-    }
-  }, [open, slug]);
-
-  const lvPeopleHref = useMemo(() => {
-    if (!returnTo) return "/society";
-    return `/society?from=${encodeURIComponent(returnTo)}`;
-  }, [returnTo]);
 
   const slugToString = useCallback((v: any): string => {
     if (!v) return "";
@@ -712,13 +694,6 @@ export default function DeepDiveOverlay({
                           {isMoodPlaying ? "Stop mood" : "Play mood"}
                         </button>
                       ) : null}
-
-                      <a
-                        href={lvPeopleHref}
-                        className="pointer-events-auto inline-flex rounded-full border border-white/20 bg-black/25 px-5 py-3 text-[10px] font-semibold tracking-[0.22em] uppercase text-white/85 backdrop-blur-xl transition hover:border-white/40 hover:bg-white/10"
-                      >
-                        LV PEOPLE
-                      </a>
 
                       {ticketUrl ? (
                         <a
