@@ -48,6 +48,17 @@ type YouTubePlayerEvent = {
   data?: number;
 };
 
+const AUDIO_ACTIVE_EVENT = "ledvelvet:audio-active";
+
+function announceAudioSource(source: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(AUDIO_ACTIVE_EVENT, { detail: { source } }));
+}
+
+function audioEventSource(event: Event) {
+  return (event as CustomEvent<{ source?: string }>).detail?.source || "";
+}
+
 declare global {
   interface Window {
     YT?: {
@@ -283,19 +294,27 @@ export default function DeepDiveOverlay({
     setIsMoodPlaying(false);
   }, []);
 
+  const pauseMood = useCallback(() => {
+    moodAudioRef.current?.pause();
+    setIsMoodPlaying(false);
+  }, []);
+
   const toggleMood = useCallback(() => {
     const el = moodAudioRef.current;
     if (!el) return;
 
     if (isMoodPlaying) {
-      stopMood();
+      pauseMood();
       return;
     }
 
     el.play()
-      .then(() => setIsMoodPlaying(true))
+      .then(() => {
+        setIsMoodPlaying(true);
+        announceAudioSource("experience-mood");
+      })
       .catch(() => {});
-  }, [isMoodPlaying, stopMood]);
+  }, [isMoodPlaying, pauseMood]);
 
   const handleClose = useCallback(() => {
     stopMood();
@@ -370,6 +389,39 @@ export default function DeepDiveOverlay({
     if (!open) return;
     stopMood();
   }, [slug, open, stopMood]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const silenceExperienceAudio = (event?: Event) => {
+      const source = event ? audioEventSource(event) : "";
+
+      if (source !== "experience-mood") pauseMood();
+
+      [heroVideoRef.current, lineupVideoRef.current].forEach((video) => {
+        if (!video) return;
+        const videoSource = video === heroVideoRef.current ? "experience-hero" : "experience-lineup";
+        if (source === videoSource) return;
+        video.muted = true;
+        video.volume = 0;
+      });
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") silenceExperienceAudio();
+    };
+
+    window.addEventListener(AUDIO_ACTIVE_EVENT, silenceExperienceAudio);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener(AUDIO_ACTIVE_EVENT, silenceExperienceAudio);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [open, pauseMood]);
+
+  const coordinateExperienceVideo = useCallback((source: "experience-hero" | "experience-lineup", video: HTMLVideoElement) => {
+    if (!video.muted && video.volume > 0) announceAudioSource(source);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -646,6 +698,7 @@ export default function DeepDiveOverlay({
                         controls
                         preload="auto"
                         onCanPlay={(event) => playMutedVideo(event.currentTarget)}
+                        onVolumeChange={(event) => coordinateExperienceVideo("experience-hero", event.currentTarget)}
                       />
                     ) : heroImg ? (
                       <img
@@ -773,6 +826,7 @@ export default function DeepDiveOverlay({
                                   controls
                                   preload="metadata"
                                   onCanPlay={(event) => playMutedVideo(event.currentTarget)}
+                                  onVolumeChange={(event) => coordinateExperienceVideo("experience-lineup", event.currentTarget)}
                                 />
                               </div>
                               <div className="mt-4 text-center text-[9px] tracking-[0.32em] uppercase text-white/45">

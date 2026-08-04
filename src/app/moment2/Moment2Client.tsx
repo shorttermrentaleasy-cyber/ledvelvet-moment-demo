@@ -238,7 +238,10 @@ function youTubeEmbedUrl(urlRaw: string, autoplayMuted = true): string | null {
 
 type HomepageYouTubePlayer = {
   destroy: () => void;
+  getPlayerState: () => number;
+  isMuted: () => boolean;
   mute: () => void;
+  pauseVideo: () => void;
   playVideo: () => void;
 };
 
@@ -260,6 +263,17 @@ type HomepageYouTubeWindow = Window & {
 };
 
 let homepageYouTubeApiPromise: Promise<void> | null = null;
+
+const AUDIO_ACTIVE_EVENT = "ledvelvet:audio-active";
+
+function announceAudioSource(source: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(AUDIO_ACTIVE_EVENT, { detail: { source } }));
+}
+
+function audioEventSource(event: Event) {
+  return (event as CustomEvent<{ source?: string }>).detail?.source || "";
+}
 
 function loadHomepageYouTubeApi(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
@@ -294,6 +308,7 @@ function loadHomepageYouTubeApi(): Promise<void> {
 function HomepageAutoplayYouTube({ src, title }: { src: string; title: string }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const playerRef = useRef<HomepageYouTubePlayer | null>(null);
+  const youtubeWasAudibleRef = useRef(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   useEffect(() => {
@@ -322,7 +337,7 @@ function HomepageAutoplayYouTube({ src, title }: { src: string; title: string })
               if (alive) setAutoplayBlocked(true);
             },
           },
-        });
+        }) as unknown as HomepageYouTubePlayer;
         playerRef.current = player;
       })
       .catch(() => {
@@ -337,6 +352,42 @@ function HomepageAutoplayYouTube({ src, title }: { src: string; title: string })
       } catch {}
     };
   }, [src]);
+
+  useEffect(() => {
+    const checkAudibleYouTube = () => {
+      const player = playerRef.current;
+      if (!player) return;
+
+      try {
+        const youtubeWindow = window as HomepageYouTubeWindow;
+        const audible =
+          player.getPlayerState() === youtubeWindow.YT?.PlayerState?.PLAYING && !player.isMuted();
+
+        if (audible && !youtubeWasAudibleRef.current) announceAudioSource("home-youtube");
+        youtubeWasAudibleRef.current = audible;
+      } catch {
+        youtubeWasAudibleRef.current = false;
+      }
+    };
+
+    const onOtherAudio = (event: Event) => {
+      if (audioEventSource(event) === "home-youtube") return;
+      const player = playerRef.current;
+      if (!player) return;
+
+      try {
+        if (!player.isMuted()) player.pauseVideo();
+      } catch {}
+      youtubeWasAudibleRef.current = false;
+    };
+
+    const timer = window.setInterval(checkAudibleYouTube, 600);
+    window.addEventListener(AUDIO_ACTIVE_EVENT, onOtherAudio);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(AUDIO_ACTIVE_EVENT, onOtherAudio);
+    };
+  }, []);
 
   const startVideo = () => {
     const player = playerRef.current;
@@ -377,6 +428,7 @@ function SocialIcon({ href, label, children }: { href: string; label: string; ch
       href={href}
       target="_blank"
       rel="noreferrer"
+      onClick={() => announceAudioSource("external-media")}
       aria-label={label}
       title={label}
       className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/15 text-white/70 hover:text-[var(--red-accent)] hover:border-white/30 hover:bg-white/10 transition"
@@ -810,7 +862,10 @@ export default function Moment2() {
     ambientShouldAutoplayRef.current = true;
 
     a.play()
-      .then(() => setAmbientPlaying(true))
+      .then(() => {
+        setAmbientPlaying(true);
+        announceAudioSource("home-ambient");
+      })
       .catch(() => setAmbientPlaying(false));
   }
 
@@ -839,6 +894,38 @@ export default function Moment2() {
     const prev = ambientIdx - 1 >= 0 ? ambientIdx - 1 : ambientTracks.length - 1;
     setAmbientIdx(prev);
   }
+
+  useEffect(() => {
+    const silenceHomeAudio = (event?: Event) => {
+      const source = event ? audioEventSource(event) : "";
+
+      if (source !== "home-ambient") {
+        ambientShouldAutoplayRef.current = false;
+        ambientAudioRef.current?.pause();
+        setAmbientPlaying(false);
+      }
+
+      if (source !== "home-hero") {
+        const hero = heroVideoRef.current;
+        if (hero) {
+          hero.muted = true;
+          hero.volume = 0;
+        }
+        setMuted(true);
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") announceAudioSource("page-hidden");
+    };
+
+    window.addEventListener(AUDIO_ACTIVE_EVENT, silenceHomeAudio);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener(AUDIO_ACTIVE_EVENT, silenceHomeAudio);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   const [eventsReloadTick, setEventsReloadTick] = useState(0);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -1034,6 +1121,8 @@ export default function Moment2() {
       v.muted = nextMuted;
       v.volume = nextMuted ? 0 : 1;
       setMuted(nextMuted);
+
+      if (!nextMuted) announceAudioSource("home-hero");
 
       await v.play();
     } catch {
