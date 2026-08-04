@@ -230,9 +230,145 @@ function youTubeEmbedUrl(urlRaw: string, autoplayMuted = true): string | null {
   if (autoplayMuted) {
     params.set("autoplay", "1");
     params.set("mute", "1");
+    params.set("enablejsapi", "1");
   }
 
   return `${base}?${params.toString()}`;
+}
+
+type HomepageYouTubePlayer = {
+  destroy: () => void;
+  mute: () => void;
+  playVideo: () => void;
+};
+
+type HomepageYouTubeWindow = Window & {
+  YT?: {
+    Player: new (
+      element: HTMLIFrameElement,
+      options: {
+        events: {
+          onReady: (event: { target: HomepageYouTubePlayer }) => void;
+          onStateChange: (event: { target: HomepageYouTubePlayer; data?: number }) => void;
+          onAutoplayBlocked: () => void;
+        };
+      },
+    ) => HomepageYouTubePlayer;
+    PlayerState?: { PLAYING: number };
+  };
+  onYouTubeIframeAPIReady?: () => void;
+};
+
+let homepageYouTubeApiPromise: Promise<void> | null = null;
+
+function loadHomepageYouTubeApi(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+
+  const youtubeWindow = window as HomepageYouTubeWindow;
+  if (youtubeWindow.YT?.Player) return Promise.resolve();
+  if (homepageYouTubeApiPromise) return homepageYouTubeApiPromise;
+
+  homepageYouTubeApiPromise = new Promise((resolve, reject) => {
+    const previousReady = youtubeWindow.onYouTubeIframeAPIReady;
+    youtubeWindow.onYouTubeIframeAPIReady = () => {
+      previousReady?.();
+      resolve();
+    };
+
+    const existing = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]');
+    if (existing) {
+      existing.addEventListener("error", () => reject(new Error("YouTube API unavailable")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://www.youtube.com/iframe_api";
+    script.async = true;
+    script.addEventListener("error", () => reject(new Error("YouTube API unavailable")), { once: true });
+    document.head.appendChild(script);
+  });
+
+  return homepageYouTubeApiPromise;
+}
+
+function HomepageAutoplayYouTube({ src, title }: { src: string; title: string }) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const playerRef = useRef<HomepageYouTubePlayer | null>(null);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+
+  useEffect(() => {
+    if (!iframeRef.current) return;
+
+    let alive = true;
+    let player: HomepageYouTubePlayer | null = null;
+
+    void loadHomepageYouTubeApi()
+      .then(() => {
+        const youtubeWindow = window as HomepageYouTubeWindow;
+        if (!alive || !youtubeWindow.YT?.Player || !iframeRef.current) return;
+
+        player = new youtubeWindow.YT.Player(iframeRef.current, {
+          events: {
+            onReady: (event) => {
+              if (!alive) return;
+              event.target.mute();
+              event.target.playVideo();
+            },
+            onStateChange: (event) => {
+              if (!alive) return;
+              if (event.data === youtubeWindow.YT?.PlayerState?.PLAYING) setAutoplayBlocked(false);
+            },
+            onAutoplayBlocked: () => {
+              if (alive) setAutoplayBlocked(true);
+            },
+          },
+        });
+        playerRef.current = player;
+      })
+      .catch(() => {
+        if (alive) setAutoplayBlocked(true);
+      });
+
+    return () => {
+      alive = false;
+      if (playerRef.current === player) playerRef.current = null;
+      try {
+        player?.destroy();
+      } catch {}
+    };
+  }, [src]);
+
+  const startVideo = () => {
+    const player = playerRef.current;
+    if (!player) return;
+    player.mute();
+    player.playVideo();
+    setAutoplayBlocked(false);
+  };
+
+  return (
+    <>
+      <iframe
+        ref={iframeRef}
+        className="absolute inset-0 z-20 h-full w-full"
+        src={src}
+        title={title}
+        loading="lazy"
+        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+        allowFullScreen
+        referrerPolicy="strict-origin-when-cross-origin"
+      />
+      {autoplayBlocked ? (
+        <button
+          type="button"
+          onClick={startVideo}
+          className="absolute inset-x-4 bottom-4 z-40 mx-auto w-fit rounded-full border border-white/25 bg-[var(--red-accent)] px-5 py-3 text-[10px] font-semibold tracking-[0.18em] uppercase text-white shadow-[0_12px_35px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+        >
+          ▶ Tocca per avviare il video
+        </button>
+      ) : null}
+    </>
+  );
 }
 // ---- Social icons (NO lucide-react) ----
 function SocialIcon({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
@@ -1596,15 +1732,7 @@ export default function Moment2() {
                   <div className="relative lv-aspect-16-9 bg-black">
 
                     {yt ? (
-  <iframe
-    className="absolute inset-0 z-20 h-full w-full"
-    src={yt}
-    title={`LedVelvet – ${e.name}`}
-    loading="lazy"
-    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-    allowFullScreen
-    referrerPolicy="strict-origin-when-cross-origin"
-  />
+  <HomepageAutoplayYouTube src={yt} title={`LedVelvet – ${e.name}`} />
 ) : (
   <img src={e.posterSrc} alt={e.name} className="absolute inset-0 z-10 h-full w-full object-contain" loading="lazy" />
 )}
