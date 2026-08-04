@@ -620,7 +620,7 @@ export default function DeepDiveOverlay({
               </div>
             ) : data ? (
               <>
-                <section className="relative flex min-h-[86svh] items-end overflow-hidden md:min-h-[720px]">
+                <section className="relative flex lv-experience-hero items-end overflow-hidden">
                   <div className="absolute inset-0 bg-black">
                     {heroType === "youtube" && heroYouTube ? (
                       <iframe
@@ -761,11 +761,11 @@ export default function DeepDiveOverlay({
                           {lineupVideo ? (
                             <div className="relative mx-auto w-full max-w-[390px]">
                               <div className="absolute -inset-5 bg-[var(--red-acc)]/20 blur-3xl" />
-                              <div className="relative overflow-hidden rounded-[28px] border border-white/15 bg-black shadow-[0_30px_90px_rgba(0,0,0,0.65)]">
+                              <div className="relative lv-aspect-9-16 overflow-hidden rounded-[28px] border border-white/15 bg-black shadow-[0_30px_90px_rgba(0,0,0,0.65)]">
                                 <video
                                   ref={lineupVideoRef}
                                   src={lineupVideo}
-                                  className="aspect-[9/16] w-full object-cover"
+                                  className="absolute inset-0 h-full w-full object-cover"
                                   autoPlay
                                   muted
                                   loop
@@ -1017,6 +1017,31 @@ export default function DeepDiveOverlay({
           ) : null}
 
           <style jsx>{`
+            .lv-experience-hero {
+              min-height: 86vh;
+            }
+
+            .lv-aspect-9-16 {
+              height: 0;
+              padding-bottom: 177.7778%;
+            }
+
+            @supports (height: 100svh) {
+              .lv-experience-hero { min-height: 86svh; }
+            }
+
+            @supports (aspect-ratio: 9 / 16) {
+              .lv-aspect-9-16 {
+                height: auto;
+                padding-bottom: 0;
+                aspect-ratio: 9 / 16;
+              }
+            }
+
+            @media (min-width: 768px) {
+              .lv-experience-hero { min-height: 720px; }
+            }
+
             .experience-scrollbar {
               scrollbar-color: #b51216 #0a0a0b;
               scrollbar-width: thin;
