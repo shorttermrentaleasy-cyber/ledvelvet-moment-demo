@@ -2030,7 +2030,7 @@ export default function Moment2() {
             transition: max-height 420ms ease, opacity 240ms ease, transform 240ms ease;
           }
           #past details[open] .lv-content {
-            max-height: 3000px;
+            max-height: none;
             opacity: 1;
             transform: translateY(0px);
           }
