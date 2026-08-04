@@ -1,177 +1,231 @@
-// src/app/about/AboutClient.tsx
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+
+type Language = "it" | "en";
+
+const copy = {
+  it: {
+    back: "Indietro",
+    eyebrow: "Associazione culturale · Italia",
+    title: "Non creiamo solo eventi.",
+    titleAccent: "Creiamo ricordi.",
+    intro:
+      "LEDVELVET dà vita a esperienze immersive in cui musica, atmosfera e luoghi non convenzionali si incontrano in una dimensione sospesa tra passato e presente.",
+    scroll: "Scopri il manifesto",
+    chapters: [
+      {
+        number: "01",
+        label: "Visione",
+        title: "Oltre la notte",
+        body:
+          "Ogni progetto nasce da una ricerca attenta e consapevole. Non inseguiamo semplicemente l’intrattenimento: costruiamo occasioni in cui la musica dialoga con l’identità del luogo e lascia un segno nella memoria di chi le vive.",
+      },
+      {
+        number: "02",
+        label: "Esperienza",
+        title: "Sound. Light. Space.",
+        body:
+          "Spazi storici, borghi toscani e scenari inattesi diventano, per una notte, ambienti dal fascino contemporaneo e vellutato. Location, allestimento, luce e suono sono parte di un unico racconto; la musica ne è il cuore pulsante.",
+      },
+      {
+        number: "03",
+        label: "Community",
+        title: "LEDVELVET Society",
+        body:
+          "Una comunità curata per chi condivide la nostra visione e desidera partecipare alla sua evoluzione. Uno spazio di appartenenza e continuità, con progetti speciali, esperienze riservate e iniziative dedicate.",
+      },
+      {
+        number: "04",
+        label: "Evoluzione",
+        title: "Da un luogo a una città",
+        body:
+          "La nostra identità attraversa contesti urbani e culturali diversi. Milano Velluto, nato durante la Women’s Fashion Week, e Firenze Velluto sono espressioni di un percorso che continua a trasformarsi senza perdere la propria anima.",
+      },
+    ],
+    valuesLabel: "Il nostro codice",
+    values: ["Music", "Places", "Community"],
+    closing: "Notti irripetibili. Esperienze che restano.",
+  },
+  en: {
+    back: "Back",
+    eyebrow: "Cultural association · Italy",
+    title: "We don’t just create events.",
+    titleAccent: "We create memories.",
+    intro:
+      "LEDVELVET creates immersive experiences where music, atmosphere and unconventional places meet in a dimension suspended between past and present.",
+    scroll: "Discover the manifesto",
+    chapters: [
+      {
+        number: "01",
+        label: "Vision",
+        title: "Beyond the night",
+        body:
+          "Every project begins with thoughtful research and a conscious vision. We go beyond entertainment, creating occasions where music enters into dialogue with the identity of a place and leaves a lasting impression on those who experience it.",
+      },
+      {
+        number: "02",
+        label: "Experience",
+        title: "Sound. Light. Space.",
+        body:
+          "Historic spaces, Tuscan villages and unexpected settings become contemporary, velvet-toned environments for one night. Location, set design, light and sound belong to a single narrative; music is its beating heart.",
+      },
+      {
+        number: "03",
+        label: "Community",
+        title: "LEDVELVET Society",
+        body:
+          "A curated community for those who share our vision and want to take part in its evolution. A space for belonging and continuity, with special projects, reserved experiences and dedicated initiatives.",
+      },
+      {
+        number: "04",
+        label: "Evolution",
+        title: "From a place to a city",
+        body:
+          "Our identity moves through different urban and cultural settings. Milano Velluto, created during Women’s Fashion Week, and Firenze Velluto express a journey that keeps evolving without losing its soul.",
+      },
+    ],
+    valuesLabel: "Our code",
+    values: ["Music", "Places", "Community"],
+    closing: "Unrepeatable nights. Experiences that remain.",
+  },
+} as const;
 
 export default function AboutClient() {
   const router = useRouter();
+  const [language, setLanguage] = useState<Language>("it");
+  const text = copy[language];
 
   return (
-    <main className="min-h-screen bg-[#0B0B0C] text-[#EDEDED]">
-      {/* Top bar with Back */}
-      <div className="sticky top-0 z-30 border-b border-white/10 bg-black/40 backdrop-blur">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center">
+    <main className="min-h-screen overflow-hidden bg-[#050505] text-white">
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_75%_8%,rgba(147,11,12,0.24),transparent_32%),radial-gradient(circle_at_12%_55%,rgba(147,11,12,0.1),transparent_30%)]" />
+      <div className="fixed inset-0 pointer-events-none opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,0.8)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.8)_1px,transparent_1px)] [background-size:72px_72px]" />
+
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-black/55 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 md:px-10">
           <button
+            type="button"
             onClick={() => router.back()}
-            className="text-sm px-3 py-1.5 rounded-xl border border-white/20 bg-white/5 hover:bg-white/10 transition"
+            className="inline-flex items-center gap-2 text-[10px] font-semibold tracking-[0.24em] uppercase text-white/65 transition hover:text-white"
           >
-            ← Back
+            <span aria-hidden="true">←</span>
+            {text.back}
           </button>
-        </div>
-      </div>
 
-      {/* Hero */}
-      <section className="relative overflow-hidden border-b border-white/10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(215,38,255,0.18),transparent_45%),radial-gradient(circle_at_80%_40%,rgba(59,130,246,0.14),transparent_55%)]" />
-        <div className="relative max-w-5xl mx-auto px-4 py-16 md:py-20">
-          <p className="text-xs tracking-[0.22em] uppercase opacity-70">
-            Led Velvet
-          </p>
-          <h1 className="mt-3 text-4xl md:text-5xl font-semibold leading-tight">
-            About Us
+          <div
+            className="flex rounded-full border border-white/15 bg-white/[0.04] p-1"
+            aria-label="Seleziona lingua"
+          >
+            {(["it", "en"] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setLanguage(item)}
+                className={`rounded-full px-4 py-2 text-[9px] font-semibold tracking-[0.24em] uppercase transition ${
+                  language === item
+                    ? "bg-[#930b0c] text-white shadow-[0_0_22px_rgba(147,11,12,0.45)]"
+                    : "text-white/45 hover:text-white"
+                }`}
+                aria-pressed={language === item}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      <section className="relative mx-auto flex min-h-[calc(100svh-73px)] max-w-7xl items-end px-5 pb-14 pt-24 md:px-10 md:pb-20 md:pt-32">
+        <div className="absolute right-[-0.08em] top-8 select-none text-[clamp(8rem,27vw,24rem)] font-black leading-none tracking-[-0.09em] text-white/[0.025]">
+          LV
+        </div>
+
+        <div className="relative w-full">
+          <div className="mb-10 flex items-center gap-4 text-[9px] font-semibold tracking-[0.36em] uppercase text-[#ff4b4e] md:mb-14">
+            <span className="h-px w-10 bg-[#930b0c]" />
+            {text.eyebrow}
+          </div>
+
+          <h1 className="max-w-6xl text-[clamp(3.65rem,10vw,9rem)] font-black leading-[0.82] tracking-[-0.065em] uppercase">
+            <span className="block text-white">{text.title}</span>
+            <span className="block text-white/18">{text.titleAccent}</span>
           </h1>
-          <p className="mt-4 max-w-2xl text-base md:text-lg opacity-80">
-            An association devoted to orchestrating unparalleled and captivating
-            events, where music and unconventional venues merge into timeless
-            experiences.
-          </p>
+
+          <div className="mt-12 grid items-end gap-10 md:mt-16 md:grid-cols-[1fr_1.1fr]">
+            <div className="hidden text-[9px] tracking-[0.3em] uppercase text-white/35 md:block">
+              MUSIC / CULTURE / COMMUNITY
+            </div>
+            <p className="max-w-2xl border-l border-[#930b0c] pl-5 text-base leading-8 text-white/70 md:pl-7 md:text-xl md:leading-9">
+              {text.intro}
+            </p>
+          </div>
+
+          <a
+            href="#manifesto"
+            className="mt-14 inline-flex items-center gap-3 text-[9px] font-semibold tracking-[0.28em] uppercase text-white/45 transition hover:text-white md:mt-20"
+          >
+            <span className="grid h-9 w-9 place-items-center rounded-full border border-white/15">↓</span>
+            {text.scroll}
+          </a>
         </div>
       </section>
 
-      {/* Content */}
-      <section className="max-w-5xl mx-auto px-4 py-10 md:py-14">
-        <div className="grid gap-10">
-          {/* IT */}
-          <article className="rounded-2xl border border-white/10 bg-white/5 p-6 md:p-8">
-            <h2 className="text-2xl font-semibold">IT – Chi siamo</h2>
-            <p className="mt-4 opacity-85 leading-relaxed">
-              <b>Led Velvet</b> è un’associazione culturale dedicata alla creazione di eventi
-              unici e immersivi, in cui musica, atmosfera e luoghi non convenzionali si
-              fondono in esperienze senza tempo. Ogni progetto nasce da una ricerca attenta
-              e consapevole, con l’obiettivo di trasformare spazi storici e contesti
-              inaspettati in scenari evocativi, capaci di accogliere il pubblico in una
-              dimensione sospesa tra passato e presente.
-            </p>
-
-            <h3 className="mt-8 text-xl font-semibold">Missione</h3>
-            <p className="mt-3 opacity-85 leading-relaxed">
-              La missione di Led Velvet è dare forma a eventi che vadano oltre
-              l’intrattenimento, creando occasioni speciali in cui la musica dialoga con
-              l’identità del luogo. Attraverso selezioni musicali curate e atmosfere
-              raffinate, l’associazione costruisce serate pensate per lasciare un segno
-              duraturo nella memoria dei partecipanti.
-            </p>
-
-            <h3 className="mt-8 text-xl font-semibold">Eventi</h3>
-            <p className="mt-3 opacity-85 leading-relaxed">
-              Gli eventi Led Velvet sono viaggi sensoriali concepiti per valorizzare spazi
-              storici, borghi toscani e ambienti suggestivi trasformati, per una notte, in
-              lounge dal fascino vintage. Ogni dettaglio è studiato con attenzione: la
-              scelta della location, l’allestimento, la luce e il suono contribuiscono a
-              creare un’esperienza coerente, elegante e coinvolgente. La musica, affidata a
-              DJ selezionati per sensibilità e visione artistica, è l’elemento centrale che
-              accompagna e amplifica le emozioni della serata.
-            </p>
-
-            <h3 className="mt-8 text-xl font-semibold">Led Velvet Society</h3>
-            <p className="mt-3 opacity-85 leading-relaxed">
-              All’interno di questo percorso nasce <b>Led Velvet Society</b>, una comunità
-              curata che riunisce coloro che condividono la visione dell’associazione e
-              partecipano attivamente alla sua evoluzione. La Society è pensata come uno
-              spazio di appartenenza e continuità, in cui i membri possono accedere a
-              progetti speciali, esperienze riservate e iniziative dedicate, nel rispetto
-              dei valori e delle regole associative.
-            </p>
-
-            <h3 className="mt-8 text-xl font-semibold">
-              Progetti speciali e collaborazioni
-            </h3>
-            <p className="mt-3 opacity-85 leading-relaxed">
-              Led Velvet promuove la sperimentazione e l’innovazione, sviluppando format
-              ricorrenti che si adattano a contesti urbani e culturali diversi. Nel tempo,
-              questa visione ha dato vita a una serie di eventi ospitati in città chiave,
-              all’interno di club e spazi selezionati che diventano temporaneamente
-              espressione dell’identità Led Velvet. Progetti come <b>Milano Velluto</b>,
-              nato durante la Women’s Fashion Week, e <b>Firenze Velluto</b> rappresentano
-              l’evoluzione naturale di questo percorso.
-            </p>
-
-            <p className="mt-6 opacity-85 leading-relaxed">
-              Led Velvet è sinonimo di eleganza, attenzione al dettaglio e passione per la
-              musica. Attraverso un approccio distintivo e consapevole, l’associazione
-              continua a creare momenti irripetibili per la propria comunità, mantenendo
-              sempre al centro la qualità dell’esperienza.
-            </p>
-          </article>
-
-          {/* EN */}
-          <article className="rounded-2xl border border-white/10 bg-white/5 p-6 md:p-8">
-            <h2 className="text-2xl font-semibold">EN – About Us</h2>
-            <p className="mt-4 opacity-85 leading-relaxed">
-              <b>Led Velvet</b> is a cultural association devoted to the creation of unique
-              and immersive events, where music, atmosphere, and unconventional venues
-              merge into timeless experiences. Each project is born from careful research
-              and a conscious approach, with the aim of transforming historic spaces and
-              unexpected settings into evocative environments, capable of welcoming
-              participants into a dimension suspended between past and present.
-            </p>
-
-            <h3 className="mt-8 text-xl font-semibold">Mission</h3>
-            <p className="mt-3 opacity-85 leading-relaxed">
-              Led Velvet’s mission is to shape events that go beyond entertainment,
-              creating special occasions where music enters into dialogue with the identity
-              of the location. Through curated musical selections and refined atmospheres,
-              the association designs evenings intended to leave a lasting impression in
-              the memories of those who take part.
-            </p>
-
-            <h3 className="mt-8 text-xl font-semibold">Events</h3>
-            <p className="mt-3 opacity-85 leading-relaxed">
-              Led Velvet events are sensory journeys conceived to enhance historic spaces,
-              Tuscan villages, and evocative environments temporarily transformed into
-              vintage-inspired lounges. Every detail is carefully considered: from the
-              choice of location to the set design, lighting, and sound, all elements
-              contribute to a coherent, elegant, and engaging experience. Music, entrusted
-              to carefully selected DJs for their sensitivity and artistic vision, stands
-              at the core of each event, guiding and amplifying the emotions of the night.
-            </p>
-
-            <h3 className="mt-8 text-xl font-semibold">Led Velvet Society</h3>
-            <p className="mt-3 opacity-85 leading-relaxed">
-              Within this path, <b>Led Velvet Society</b> was created as a curated
-              community bringing together those who share the association’s vision and
-              actively participate in its evolution. The Society is conceived as a space
-              of belonging and continuity, offering its members access to special projects,
-              reserved experiences, and dedicated initiatives, in accordance with the
-              association’s values and regulations.
-            </p>
-
-            <h3 className="mt-8 text-xl font-semibold">
-              Special projects and collaborations
-            </h3>
-            <p className="mt-3 opacity-85 leading-relaxed">
-              Led Velvet embraces experimentation and innovation, developing recurring
-              formats that adapt to different urban and cultural contexts. Over time, this
-              vision has evolved into a series of special events hosted in key cities,
-              within selected clubs and venues that temporarily become expressions of the
-              Led Velvet identity. Projects such as <b>Milano Velluto</b>, created during
-              Women’s Fashion Week, and <b>Firenze Velluto</b> represent the natural
-              evolution of this journey.
-            </p>
-
-            <p className="mt-6 opacity-85 leading-relaxed">
-              Led Velvet stands for elegance, attention to detail, and a deep passion for
-              music. Through a distinctive and thoughtful approach to event creation, the
-              association continues to craft unrepeatable moments for its community, always
-              with a focus on quality and excellence.
-            </p>
-          </article>
-        </div>
-
-        <div className="mt-10 text-xs opacity-60">
-          © {new Date().getFullYear()} Led Velvet
+      <section id="manifesto" className="relative border-t border-white/10">
+        <div className="mx-auto max-w-7xl px-5 py-20 md:px-10 md:py-32">
+          <div className="space-y-20 md:space-y-32">
+            {text.chapters.map((chapter, index) => (
+              <article
+                key={chapter.number}
+                className={`grid gap-7 border-t border-white/10 pt-7 md:grid-cols-[0.25fr_0.75fr_1.2fr] md:gap-12 md:pt-10 ${
+                  index % 2 ? "md:ml-[8%]" : "md:mr-[8%]"
+                }`}
+              >
+                <div className="text-[11px] font-semibold tracking-[0.3em] text-[#ff4b4e]">
+                  {chapter.number}
+                </div>
+                <div>
+                  <div className="text-[9px] font-semibold tracking-[0.34em] uppercase text-white/35">
+                    {chapter.label}
+                  </div>
+                  <h2 className="mt-3 text-3xl font-bold leading-tight tracking-[-0.04em] md:text-5xl">
+                    {chapter.title}
+                  </h2>
+                </div>
+                <p className="max-w-2xl text-base leading-8 text-white/62 md:text-lg md:leading-9">
+                  {chapter.body}
+                </p>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
+
+      <section className="relative overflow-hidden border-y border-white/10 bg-[#930b0c]/10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(147,11,12,0.55),transparent_58%)]" />
+        <div className="relative mx-auto max-w-7xl px-5 py-20 md:px-10 md:py-28">
+          <div className="text-center text-[9px] font-semibold tracking-[0.36em] uppercase text-[#ff6b6e]">
+            {text.valuesLabel}
+          </div>
+          <div className="mt-10 flex flex-col items-center justify-center gap-2 text-center text-[clamp(3.2rem,9vw,8rem)] font-black leading-[0.88] tracking-[-0.06em] uppercase md:mt-14">
+            {text.values.map((value, index) => (
+              <div key={value} className={index === 1 ? "text-white/20" : "text-white"}>
+                {value}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <footer className="relative mx-auto max-w-7xl px-5 py-20 md:px-10 md:py-28">
+        <p className="max-w-4xl text-[clamp(2.5rem,7vw,6.5rem)] font-black leading-[0.9] tracking-[-0.055em] uppercase text-white">
+          {text.closing}
+        </p>
+        <div className="mt-16 flex flex-col gap-3 border-t border-white/10 pt-6 text-[9px] tracking-[0.28em] uppercase text-white/35 sm:flex-row sm:items-center sm:justify-between">
+          <span>© {new Date().getFullYear()} LEDVELVET</span>
+          <span>Cultural association · Toscana</span>
+        </div>
+      </footer>
     </main>
   );
 }
