@@ -696,7 +696,11 @@ export default function DeepDiveOverlay({
                         loop
                         playsInline
                         controls
+                        controlsList="nodownload"
+                        draggable={false}
                         preload="auto"
+                        onContextMenu={(event) => event.preventDefault()}
+                        style={{ WebkitTouchCallout: "none", userSelect: "none" }}
                         onCanPlay={(event) => playMutedVideo(event.currentTarget)}
                         onVolumeChange={(event) => coordinateExperienceVideo("experience-hero", event.currentTarget)}
                       />
@@ -824,7 +828,11 @@ export default function DeepDiveOverlay({
                                   loop
                                   playsInline
                                   controls
+                                  controlsList="nodownload"
+                                  draggable={false}
                                   preload="metadata"
+                                  onContextMenu={(event) => event.preventDefault()}
+                                  style={{ WebkitTouchCallout: "none", userSelect: "none" }}
                                   onCanPlay={(event) => playMutedVideo(event.currentTarget)}
                                   onVolumeChange={(event) => coordinateExperienceVideo("experience-lineup", event.currentTarget)}
                                 />

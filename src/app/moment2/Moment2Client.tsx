@@ -1826,6 +1826,10 @@ export default function Moment2() {
               muted={muted}
               playsInline
               preload="metadata"
+              controlsList="nodownload"
+              draggable={false}
+              onContextMenu={(event) => event.preventDefault()}
+              style={{ WebkitTouchCallout: "none", userSelect: "none" }}
             >
               <source src={heroMp4Resolved} type="video/mp4" />
             </video>
