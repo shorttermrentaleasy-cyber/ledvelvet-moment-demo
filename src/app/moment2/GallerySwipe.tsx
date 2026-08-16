@@ -65,5 +65,19 @@ export default function GallerySwipe() {
     };
   }, []);
 
-  return null;
+  return (
+    <style jsx global>{`
+      @media (max-width: 767px) and (orientation: portrait) {
+        .lv-experience-hero iframe {
+          position: absolute !important;
+          left: 50% !important;
+          top: 50% !important;
+          width: max(100%, calc(86svh * 16 / 9)) !important;
+          height: max(100%, calc(100vw * 9 / 16)) !important;
+          transform: translate(-50%, -50%) !important;
+          border: 0 !important;
+        }
+      }
+    `}</style>
+  );
 }
