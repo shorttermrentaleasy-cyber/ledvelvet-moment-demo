@@ -1,3 +1,4 @@
+import "./mobile-audit.css";
 import Providers from "./providers";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
