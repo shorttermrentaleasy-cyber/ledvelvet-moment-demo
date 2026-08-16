@@ -1,0 +1,48 @@
+@media (max-width: 640px) {
+  section[style*="width: min(760px, 96vw)"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 16px) !important;
+    box-sizing: border-box !important;
+    padding: 14px !important;
+    border-radius: 16px !important;
+    overflow-x: hidden !important;
+  }
+
+  section[style*="width: min(760px, 96vw)"] > div:nth-child(1),
+  section[style*="width: min(760px, 96vw)"] > div:nth-child(1) > div {
+    min-width: 0 !important;
+  }
+
+  section[style*="width: min(760px, 96vw)"] h2 {
+    font-size: 21px !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  section[style*="width: min(760px, 96vw)"] > div:nth-child(2) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+    min-width: 0 !important;
+  }
+
+  section[style*="width: min(760px, 96vw)"] > div:nth-child(2) > div {
+    min-width: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  section[style*="width: min(760px, 96vw)"] > div:nth-child(2) > div:nth-child(2) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  section[style*="width: min(760px, 96vw)"] > div:nth-child(2) svg {
+    width: min(190px, 70vw) !important;
+    height: auto !important;
+    max-width: 100% !important;
+  }
+
+  section[style*="width: min(760px, 96vw)"] strong,
+  section[style*="width: min(760px, 96vw)"] div {
+    overflow-wrap: anywhere;
+  }
+}
