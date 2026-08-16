@@ -50,13 +50,13 @@ type EventEmbed =
       name: string | null;
       city: string | null;
       venue: string | null;
-      start_at: string | null;
+      starts_at: string | null;
     }
   | {
       name: string | null;
       city: string | null;
       venue: string | null;
-      start_at: string | null;
+      starts_at: string | null;
     }[]
   | null
   | undefined;
@@ -64,8 +64,8 @@ type EventEmbed =
 type AccessRow = {
   id: string;
   event_id: string;
-  checkin_at: string | null; // timestamptz
-  created_at: string | null; // timestamptz (fallback)
+  checkin_at: string | null;
+  created_at: string | null;
   result: "allowed" | "denied";
   reason: string | null;
   method: string | null;
@@ -133,9 +133,9 @@ function pickEvent(a: AccessRow) {
 }
 
 function pickWhen(a: AccessRow) {
-  // priorità: checkin_at -> created_at -> event.start_at
+  // priorità: checkin_at -> created_at -> event.starts_at
   const ev = pickEvent(a);
-  return (a.checkin_at || a.created_at || ev?.start_at || null) as string | null;
+  return (a.checkin_at || a.created_at || ev?.starts_at || null) as string | null;
 }
 
 function isCheckedInTicket(ticket: XceedTicketRow) {
@@ -187,7 +187,6 @@ function getPassIdentity(ticket: XceedTicketRow) {
   };
 }
 
-
 export default async function LVPeopleAccessiPage({
   searchParams,
 }: {
@@ -198,12 +197,10 @@ export default async function LVPeopleAccessiPage({
   const params = await searchParams;
   const selectedBarcode = String(params?.barcode || "").trim();
 
-  // entrypoint unico
   if (!email) redirect("/login");
 
   const supabase = getSupabaseAdmin();
 
-  // 1) identifica la tessera Wallyfor esatta, come nella scheda LV People
   const { data: ownedMemberships, error: ownedMembershipsError } = await supabase
     .from("wallyfor_members")
     .select("barcode")
@@ -211,9 +208,7 @@ export default async function LVPeopleAccessiPage({
     .eq("source", "wallyfor_api")
     .eq("is_present", true);
 
-  if (ownedMembershipsError) {
-    throw ownedMembershipsError;
-  }
+  if (ownedMembershipsError) throw ownedMembershipsError;
 
   const ownedBarcodes = (ownedMemberships || [])
     .map((row) => String(row.barcode || "").trim())
@@ -230,7 +225,6 @@ export default async function LVPeopleAccessiPage({
 
   if (!memberBarcode) redirect("/lvpeople");
 
-  // 2) collega la tessera al record interno usato dallo storico check-in
   const { data: member, error: memberErr } = await supabase
     .from("members")
     .select("id, first_name, last_name, email, phone, legacy, legacy_barcode, created_at, membership_group, status, membership_expires_at")
@@ -253,9 +247,7 @@ export default async function LVPeopleAccessiPage({
     );
   }
 
-  if (!member) {
-    redirect("/lvpeople");
-  }
+  if (!member) redirect("/lvpeople");
 
   const status = member.status?.trim() || "Stato non disponibile";
   const normalizedStatus = status.toUpperCase();
@@ -279,15 +271,13 @@ export default async function LVPeopleAccessiPage({
   }
 
   const raw = wally?.raw || null;
-
   const codiceGruppo = member.membership_group || getRawField(raw, "codiceGruppo") || "—";
   const validita = status;
   const dataPrimaIscrizione = fmtDateIT(getRawField(raw, "data_prima_iscrizione"));
   const scadenza = fmtDateIT(member.membership_expires_at || getRawField(raw, "scadenza"));
   const barcode = wally?.barcode || (member.legacy_barcode || "") || "—";
 
-  // 4) carica ultimi accessi (past inclusi)
-  const { data: accessData } = await supabase
+  const { data: accessData, error: accessError } = await supabase
     .from("checkins")
     .select(
       `
@@ -304,13 +294,15 @@ export default async function LVPeopleAccessiPage({
           name,
           city,
           venue,
-          start_at
+          starts_at
         )
       `
     )
     .eq("member_id", member.id)
     .order("checkin_at", { ascending: false })
     .limit(30);
+
+  if (accessError) throw accessError;
 
   const accessi = (accessData ?? []) as AccessRow[];
 
@@ -380,27 +372,22 @@ export default async function LVPeopleAccessiPage({
     for (const [eventId, transactions] of transactionsByEvent.entries()) {
       if (transactions.size !== 1) continue;
       const transactionId = Array.from(transactions)[0];
-      const usedTickets =
-      usedTicketsByBooking.get(`${eventId}__${transactionId}`) || 0;
+      const usedTickets = usedTicketsByBooking.get(`${eventId}__${transactionId}`) || 0;
       if (usedTickets < 1) continue;
 
       for (const accesso of accessi) {
-        if (accesso.event_id === eventId) {
-          ticketUsageByCheckinId.set(accesso.id, usedTickets);
-        }
+        if (accesso.event_id === eventId) ticketUsageByCheckinId.set(accesso.id, usedTickets);
       }
     }
   }
 
-  // metriche
   const accessCount = accessi.length;
   const lastAccess = accessi.length > 0 ? pickWhen(accessi[0]) : null;
 
-  // “LISTA”: numero eventi distinti (dedupe su name+start_at+venue)
   const distinctEventKeys = new Set<string>();
   for (const a of accessi) {
     const ev = pickEvent(a);
-    const key = `${ev?.name || ""}__${ev?.start_at || ""}__${ev?.venue || ""}`;
+    const key = `${ev?.name || ""}__${ev?.starts_at || ""}__${ev?.venue || ""}`;
     if (ev?.name) distinctEventKeys.add(key);
   }
   const listaCount = distinctEventKeys.size;
@@ -437,7 +424,6 @@ export default async function LVPeopleAccessiPage({
               </a>
             </header>
 
-            
             <section className="mt-6 rounded-3xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 backdrop-blur-md shadow-[0_20px_80px_rgba(0,0,0,0.60)] overflow-hidden">
               <div className="p-6">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -470,17 +456,10 @@ export default async function LVPeopleAccessiPage({
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <div className="text-xs tracking-[0.26em] uppercase text-white/55">Stato</div>
-
                         <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2">
-                          <span
-                            className={[
-                              "h-2 w-2 rounded-full",
-                              isActive ? "bg-emerald-300" : "bg-rose-300",
-                            ].join(" ")}
-                          />
+                          <span className={["h-2 w-2 rounded-full", isActive ? "bg-emerald-300" : "bg-rose-300"].join(" ")} />
                           <span className="text-sm font-semibold">{status}</span>
                         </div>
-
                         <div className="mt-3 text-sm text-white/70">
                           Iscritto: <span className="text-white/85">{fmtDateTimeIT(member.created_at)}</span>
                         </div>
@@ -488,7 +467,6 @@ export default async function LVPeopleAccessiPage({
                           Ultimo accesso: <span className="text-white/85">{lastAccess ? fmtDateTimeIT(lastAccess) : "—"}</span>
                         </div>
                       </div>
-
                       <div className="text-xs text-white/45 text-right">
                         <div>Dati aggiornati da Wallyfor</div>
                       </div>
@@ -499,19 +477,16 @@ export default async function LVPeopleAccessiPage({
                         <div className="text-xs tracking-[0.22em] uppercase text-white/55">Accessi</div>
                         <div className="mt-2 text-3xl font-extrabold">{accessCount}</div>
                       </div>
-
                       <div className="rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-4 text-center">
                         <div className="text-xs tracking-[0.22em] uppercase text-white/55">Lista</div>
                         <div className="mt-2 text-3xl font-extrabold">{listaCount}</div>
                       </div>
                     </div>
-
                   </div>
                 </div>
               </div>
             </section>
 
-            
             <section className="mt-6 rounded-3xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 backdrop-blur-md shadow-[0_20px_80px_rgba(0,0,0,0.60)] overflow-hidden">
               <div className="p-6 border-b border-white/10">
                 <div className="text-xs tracking-[0.26em] uppercase text-white/55">Timeline</div>
@@ -528,7 +503,7 @@ export default async function LVPeopleAccessiPage({
                       const ev = pickEvent(a);
                       const evName = ev?.name || "Evento";
                       const where = [ev?.venue, ev?.city].filter(Boolean).join(" · ");
-                      const whenEvent = ev?.start_at || null;
+                      const whenEvent = ev?.starts_at || null;
                       const whenCheckin = pickWhen(a);
 
                       const ok = a.result === "allowed";
@@ -566,12 +541,10 @@ export default async function LVPeopleAccessiPage({
                                   {additionalTickets > 0 ? (
                                     <>
                                       <div className="mt-1 text-xs text-white/65">
-                                        Biglietti utilizzati nella prenotazione:{" "}
-                                        <span className="font-semibold text-white/85">{usedTickets}</span>
+                                        Biglietti utilizzati nella prenotazione: <span className="font-semibold text-white/85">{usedTickets}</span>
                                       </div>
                                       <div className="mt-1 text-xs text-white/50">
-                                        1 presenza personale · {additionalTickets}{" "}
-                                        {additionalTickets === 1 ? "biglietto aggiuntivo" : "biglietti aggiuntivi"}
+                                        1 presenza personale · {additionalTickets} {additionalTickets === 1 ? "biglietto aggiuntivo" : "biglietti aggiuntivi"}
                                       </div>
                                     </>
                                   ) : null}
@@ -614,7 +587,6 @@ export default async function LVPeopleAccessiPage({
                 </div>
               </div>
             </section>
-
           </div>
         </div>
       </div>
