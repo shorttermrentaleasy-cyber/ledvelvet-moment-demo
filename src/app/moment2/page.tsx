@@ -4,13 +4,13 @@ export const revalidate = false;
 import { Suspense } from "react";
 import Moment2Client from "./Moment2Client";
 import GallerySwipe from "./GallerySwipe";
-import NonMemberCta from "./NonMemberCta";
+import MemberLoginGate from "./MemberLoginGate";
 
 export default function Page() {
   return (
     <Suspense fallback={null}>
       <GallerySwipe />
-      <NonMemberCta />
+      <MemberLoginGate />
       <Moment2Client />
     </Suspense>
   );
