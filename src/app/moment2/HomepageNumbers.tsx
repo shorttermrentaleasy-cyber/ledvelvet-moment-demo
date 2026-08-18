@@ -113,33 +113,34 @@ export default function HomepageNumbers() {
 
   return createPortal(
     <section className="relative overflow-hidden border-y border-white/10 bg-[#070707] text-white" aria-label="LEDVELVET in numbers">
-      <div className="pointer-events-none absolute inset-0 opacity-70" style={{ background: "radial-gradient(700px circle at 16% 20%, rgba(147,11,12,.28), transparent 58%), radial-gradient(650px circle at 88% 80%, rgba(255,255,255,.06), transparent 62%)" }} />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-red-500/80 to-transparent" />
+      <div className="pointer-events-none absolute inset-0 opacity-80" style={{ background: "radial-gradient(800px circle at 50% -10%, rgba(147,11,12,.30), transparent 58%), radial-gradient(700px circle at 10% 70%, rgba(147,11,12,.14), transparent 60%), radial-gradient(650px circle at 92% 80%, rgba(255,255,255,.055), transparent 62%)" }} />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-red-500/90 to-transparent" />
 
       <div className="relative mx-auto max-w-7xl px-5 py-14 md:px-8 md:py-20">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-red-300/80">LEDVELVET IN NUMBERS</div>
-            <h2 className="mt-3 max-w-2xl text-3xl font-semibold tracking-tight md:text-5xl">A community measured in real moments.</h2>
-          </div>
-          <p className="max-w-md text-sm leading-6 text-white/50 md:text-right">People, tickets, entrances and events. Four numbers that grow with every LEDVELVET experience.</p>
+        <div className="mx-auto max-w-4xl text-center">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.38em] text-red-300/85">LEDVELVET IN NUMBERS</div>
+          <h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">A community measured in real moments.</h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-white/55 md:text-base">
+            Real people. Real tickets. Real entrances. Real experiences.
+          </p>
         </div>
 
-        <div className="mt-10 grid grid-cols-2 border-l border-t border-white/10 lg:grid-cols-4">
+        <div className="mt-11 grid grid-cols-2 border-l border-t border-white/10 lg:grid-cols-4">
           {items.map((item) => (
-            <div key={item.label} className="group relative min-h-[160px] border-b border-r border-white/10 bg-white/[0.025] p-5 transition duration-300 hover:bg-white/[0.055] md:min-h-[190px] md:p-7">
-              <div className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-red-500 transition-transform duration-500 group-hover:scale-x-100" />
-              <div className="text-[10px] uppercase tracking-[0.26em] text-white/45">{item.note}</div>
-              <div className="mt-5 text-4xl font-semibold tracking-[-0.04em] tabular-nums sm:text-5xl md:text-6xl">
+            <div key={item.label} className="group relative flex min-h-[170px] flex-col items-center justify-center border-b border-r border-white/10 bg-white/[0.025] p-5 text-center transition duration-300 hover:bg-white/[0.06] md:min-h-[205px] md:p-7">
+              <div className="absolute inset-x-0 top-0 h-px origin-center scale-x-0 bg-red-500 transition-transform duration-500 group-hover:scale-x-100" />
+              <div className="absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-600/0 blur-3xl transition duration-500 group-hover:bg-red-600/10" />
+              <div className="relative text-[10px] uppercase tracking-[0.28em] text-white/42">{item.note}</div>
+              <div className="relative mt-5 text-4xl font-semibold tracking-[-0.045em] tabular-nums drop-shadow-[0_0_28px_rgba(255,255,255,0.05)] sm:text-5xl md:text-6xl lg:text-7xl">
                 <AnimatedNumber value={item.value} />
               </div>
-              <div className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-white/80">{item.label}</div>
+              <div className="relative mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-white/82">{item.label}</div>
             </div>
           ))}
         </div>
 
-        <div className="mt-5 flex items-center gap-3 text-[10px] uppercase tracking-[0.22em] text-white/35">
-          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+        <div className="mt-6 flex items-center justify-center gap-3 text-[10px] uppercase tracking-[0.24em] text-white/35">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,.8)]" />
           Live data from LEDVELVET operations
         </div>
       </div>
