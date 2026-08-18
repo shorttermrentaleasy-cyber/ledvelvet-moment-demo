@@ -1,23 +1,31 @@
 export default function MainMenuOrder() {
   return (
     <style>{`
-      /* Desktop: ordine stabile già al primo paint, senza DOM mutation post-render. */
-      nav > a[href="#home"] { order: 10; }
-      nav > a[href="#eventi"] { order: 20; }
-      nav > a[href="#past"] { order: 30; }
-      nav > a[href="/about"] { order: 40; }
-      nav > div:has(a[href="/society"]) { order: 50; }
-      nav > a[href="#sponsor"] { order: 60; }
-      nav > a[href="/legal"] { order: 70; }
+      /*
+       * Il markup originale di Moment2Client ha ancora questo ordine DOM:
+       * Home, Upcoming, Past, Sponsor, About, Legal, Society.
+       *
+       * Impostiamo l'ordine direttamente sui figli reali del menu, senza :has()
+       * e senza JavaScript post-render, così Society non può ricadere a order:0.
+       */
 
-      /* Mobile: stessa sequenza del desktop. */
-      div.grid:has(> a[href="#home"]):has(> a[href="#eventi"]) > a[href="#home"] { order: 10; }
-      div.grid:has(> a[href="#home"]):has(> a[href="#eventi"]) > a[href="#eventi"] { order: 20; }
-      div.grid:has(> a[href="#home"]):has(> a[href="#eventi"]) > a[href="#past"] { order: 30; }
-      div.grid:has(> a[href="#home"]):has(> a[href="#eventi"]) > a[href="/about"] { order: 40; }
-      div.grid:has(> a[href="#home"]):has(> a[href="#eventi"]) > div:has(a[href="/society"]) { order: 50; }
-      div.grid:has(> a[href="#home"]):has(> a[href="#eventi"]) > a[href="#sponsor"] { order: 60; }
-      div.grid:has(> a[href="#home"]):has(> a[href="#eventi"]) > a[href="/legal"] { order: 70; }
+      /* Desktop */
+      nav.hidden.lg\\:flex > :nth-child(1) { order: 10; } /* Home */
+      nav.hidden.lg\\:flex > :nth-child(2) { order: 20; } /* Upcoming */
+      nav.hidden.lg\\:flex > :nth-child(3) { order: 30; } /* Past */
+      nav.hidden.lg\\:flex > :nth-child(5) { order: 40; } /* About */
+      nav.hidden.lg\\:flex > :nth-child(7) { order: 50; } /* Society */
+      nav.hidden.lg\\:flex > :nth-child(4) { order: 60; } /* Sponsor */
+      nav.hidden.lg\\:flex > :nth-child(6) { order: 70; } /* Legal */
+
+      /* Mobile: stesso ordine del desktop. */
+      div.grid.gap-1.text-xs.tracking-\\[0\\.22em\\].uppercase > :nth-child(1) { order: 10; } /* Home */
+      div.grid.gap-1.text-xs.tracking-\\[0\\.22em\\].uppercase > :nth-child(2) { order: 20; } /* Upcoming */
+      div.grid.gap-1.text-xs.tracking-\\[0\\.22em\\].uppercase > :nth-child(3) { order: 30; } /* Past */
+      div.grid.gap-1.text-xs.tracking-\\[0\\.22em\\].uppercase > :nth-child(5) { order: 40; } /* About */
+      div.grid.gap-1.text-xs.tracking-\\[0\\.22em\\].uppercase > :nth-child(7) { order: 50; } /* Society */
+      div.grid.gap-1.text-xs.tracking-\\[0\\.22em\\].uppercase > :nth-child(4) { order: 60; } /* Sponsor */
+      div.grid.gap-1.text-xs.tracking-\\[0\\.22em\\].uppercase > :nth-child(6) { order: 70; } /* Legal */
     `}</style>
   );
 }
