@@ -81,7 +81,9 @@ export async function GET() {
     ? "Amministratore e socio"
     : isAdmin
       ? "Amministratore"
-      : "Socio";
+      : isMember
+        ? "Socio"
+        : "Non socio";
 
   return Response.json({
     ok: true,
