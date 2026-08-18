@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,8 +16,26 @@ function normalize(value: unknown): string {
   return String(value || "").trim();
 }
 
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  if (!allowed.includes(email)) {
+    return NextResponse.json({ ok: false, error: "AccessDenied" }, { status: 403 });
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdmin();
+    if (unauthorized) return unauthorized;
+
     const body = await req.json().catch(() => ({}));
     const eventId = normalize(body?.event_id);
     const gateId = normalize(body?.gate_id);
