@@ -6,6 +6,7 @@ import Moment2Client from "./Moment2Client";
 import GallerySwipe from "./GallerySwipe";
 import MemberLoginGate from "./MemberLoginGate";
 import HomepageNumbers from "./HomepageNumbers";
+import MoodLoadingFeedback from "./MoodLoadingFeedback";
 
 export default function Page() {
   return (
@@ -13,6 +14,7 @@ export default function Page() {
       <GallerySwipe />
       <MemberLoginGate />
       <HomepageNumbers />
+      <MoodLoadingFeedback />
       <Moment2Client />
     </Suspense>
   );
