@@ -1,7 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const dynamic = "force-dynamic";
+
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  if (!allowed.includes(email)) {
+    return NextResponse.json({ ok: false, error: "AccessDenied" }, { status: 403 });
+  }
+  return null;
+}
 
 function supabaseAdmin() {
   const url = process.env.SUPABASE_URL;
@@ -21,6 +38,9 @@ function sanitizeFilename(name: string) {
 
 export async function POST(req: Request) {
   try {
+    const unauthorized = await requireAdmin();
+    if (unauthorized) return unauthorized;
+
     const supabase = supabaseAdmin();
 
     const form = await req.formData();

@@ -1,8 +1,25 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const dynamic = "force-dynamic";
+
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  if (!allowed.includes(email)) {
+    return NextResponse.json({ ok: false, error: "AccessDenied" }, { status: 403 });
+  }
+  return null;
+}
 
 function supabaseAdmin() {
   const url = process.env.SUPABASE_URL;
@@ -100,10 +117,13 @@ async function updateBatch(
 }
 
 export async function POST(req: Request) {
-  const supabase = supabaseAdmin();
-
   let batch_id = "";
+  let supabase: ReturnType<typeof supabaseAdmin> | null = null;
   try {
+    const unauthorized = await requireAdmin();
+    if (unauthorized) return unauthorized;
+
+    supabase = supabaseAdmin();
     const body = await req.json();
     batch_id = String(body?.batch_id || "").trim();
     if (!batch_id) {
@@ -238,7 +258,7 @@ export async function POST(req: Request) {
       rows_inserted: inserted,
     });
   } catch (e: any) {
-    if (batch_id) {
+    if (batch_id && supabase) {
       try {
         await updateBatch(supabase, batch_id, { status: "failed", error: e?.message || "Unknown error" });
       } catch {}
