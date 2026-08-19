@@ -4,33 +4,22 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const expected = (process.env.DOOR_API_KEY || "").trim();
-    if (!expected) {
+    const apiKey = (req.headers.get("x-api-key") || "").trim();
+    if (!apiKey) {
       return NextResponse.json(
-        { ok: false, error: "Server misconfigured: DOOR_API_KEY missing" },
-        { status: 500 }
+        { ok: false, error: "Missing API key" },
+        { status: 401, headers: { "Cache-Control": "no-store" } }
       );
     }
 
     const bodyText = await req.text();
-
-    // Costruisce l'origin in modo robusto (dev + prod)
-    const proto = req.headers.get("x-forwarded-proto") || "http";
-    const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
-    if (!host) {
-      return NextResponse.json(
-        { ok: false, error: "Missing host header" },
-        { status: 500 }
-      );
-    }
-
-    const url = `${proto}://${host}/api/doorcheck`;
+    const url = new URL("/api/doorcheck", req.url);
 
     const upstream = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": expected, // SERVER-SIDE ONLY
+        "x-api-key": apiKey,
       },
       body: bodyText,
       cache: "no-store",
