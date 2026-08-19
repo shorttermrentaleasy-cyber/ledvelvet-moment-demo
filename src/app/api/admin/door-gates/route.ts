@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
@@ -7,6 +9,21 @@ const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
   auth: { persistSession: false },
 });
+
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  if (!allowed.includes(email)) {
+    return NextResponse.json({ ok: false, error: "AccessDenied" }, { status: 403 });
+  }
+  return null;
+}
 
 function gateErrorResponse(error: any) {
   const msg = error?.message || "";
@@ -36,6 +53,9 @@ function gateErrorResponse(error: any) {
 
 export async function GET(req: NextRequest) {
   try {
+    const unauthorized = await requireAdmin();
+    if (unauthorized) return unauthorized;
+
     const { data, error } = await supabase
       .from("door_gates")
       .select("*")
@@ -59,6 +79,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const unauthorized = await requireAdmin();
+    if (unauthorized) return unauthorized;
+
     const body = await req.json();
 
     const gate_id = String(body.gate_id || "").trim();
