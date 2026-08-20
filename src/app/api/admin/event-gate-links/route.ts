@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import {
+  createFastCheckAccessToken,
+  FastCheckDoorRole,
+} from "@/lib/door/fast-check-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +18,23 @@ function assertEnv(name: string): string {
 
 function normalize(value: unknown): string {
   return String(value || "").trim();
+}
+
+function normalizeDoorRole(value: unknown): FastCheckDoorRole | null {
+  const role = normalize(value).toLowerCase();
+  return role === "ordinary" || role === "loyalty" || role === "privileged"
+    ? role
+    : null;
+}
+
+function linkExpiresAt(startsAt: unknown): number {
+  const minimumExpiration = Date.now() + 24 * 60 * 60 * 1000;
+  const eventTimestamp = Date.parse(normalize(startsAt));
+  const eventExpiration = Number.isFinite(eventTimestamp)
+    ? eventTimestamp + 48 * 60 * 60 * 1000
+    : minimumExpiration;
+
+  return Math.floor(Math.max(minimumExpiration, eventExpiration) / 1000);
 }
 
 async function requireAdmin() {
@@ -124,13 +145,32 @@ export async function POST(req: NextRequest) {
       snapshotCreated = true;
     }
 
+    const doorRole = normalizeDoorRole(snapshot?.door_role || gate.door_role);
+    if (!doorRole) {
+      return NextResponse.json(
+        { ok: false, error: "Ruolo del gate non valido." },
+        { status: 400 }
+      );
+    }
+
+    const expiresAt = linkExpiresAt(event.starts_at);
+    const doorToken = createFastCheckAccessToken({
+      eventId,
+      gateId,
+      gateRole: doorRole,
+      expiresAt,
+    });
     const fastCheckUrl = new URL("/door/fast", req.nextUrl.origin);
     fastCheckUrl.searchParams.set("event_id", eventId);
     fastCheckUrl.searchParams.set("gate_id", gateId);
+    fastCheckUrl.hash = new URLSearchParams({
+      door_token: doorToken,
+    }).toString();
 
     return NextResponse.json({
       ok: true,
       link: fastCheckUrl.toString(),
+      access_expires_at: new Date(expiresAt * 1000).toISOString(),
       snapshot_created: snapshotCreated,
       event: {
         id: event.id,
@@ -140,7 +180,7 @@ export async function POST(req: NextRequest) {
       gate: {
         gate_id: gate.gate_id,
         name: gate.name,
-        door_role: snapshot?.door_role || gate.door_role,
+        door_role: doorRole,
         xceed_email: snapshot?.scanner_email || gate.xceed_email,
       },
     });

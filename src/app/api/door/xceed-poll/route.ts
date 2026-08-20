@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveDoorGateByXceedEmail } from "@/lib/door/resolve-door-gate";
+import {
+  createFastCheckAccessToken,
+  fastCheckAccessHeader,
+  readFastCheckAccessToken,
+  verifyFastCheckAccessToken,
+} from "@/lib/door/fast-check-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -102,11 +108,22 @@ async function fetchXceedTickets(params: {
 
 export async function POST(req: NextRequest) {
   try {
+    const access = verifyFastCheckAccessToken(
+      readFastCheckAccessToken(req)
+    );
+    if (!access) {
+      return json({ ok: false, error: "Unauthorized" }, 401);
+    }
+
     const body = await req.json().catch(() => ({}));
     const eventId = normalize(body?.event_id);
 
     if (!eventId) {
       return json({ ok: false, error: "Missing event_id" }, 400);
+    }
+
+    if (access.event_id !== eventId) {
+      return json({ ok: false, error: "AccessDenied" }, 403);
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -213,14 +230,29 @@ export async function POST(req: NextRequest) {
 
       if (ticketUpdateError) throw ticketUpdateError;
 
+      const internalToken = createFastCheckAccessToken({
+        eventId,
+        gateId: gate.gate_id,
+        gateRole: gate.door_role,
+        expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+      });
+      const internalHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...fastCheckAccessHeader(internalToken),
+      };
+      const previewCookie = req.headers.get("cookie");
+      if (previewCookie) {
+        internalHeaders.Cookie = previewCookie;
+      }
       const fastResponse = await fetch(
-        "https://www.ledvelvet.it/api/door/fast-check",
+        new URL("/api/door/fast-check", req.nextUrl.origin),
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: internalHeaders,
           body: JSON.stringify({
             event_id: eventId,
             code: qrCode,
+            gate_id: gate.gate_id,
             gate_role: gate.door_role,
           }),
           cache: "no-store",
