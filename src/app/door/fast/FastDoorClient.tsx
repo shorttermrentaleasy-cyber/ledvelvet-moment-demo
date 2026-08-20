@@ -86,6 +86,7 @@ export default function FastDoorClient() {
   const [lastScanAt, setLastScanAt] = useState<Date | null>(null);
   const [wallyQrOpen, setWallyQrOpen] = useState(false);
   const [advanceMode, setAdvanceMode] = useState<AdvanceMode>("automatic");
+  const [doorToken, setDoorToken] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,6 +99,9 @@ export default function FastDoorClient() {
   const gateId = searchParams.get("gate_id")?.trim() || "";
 
   useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    setDoorToken(hashParams.get("door_token")?.trim() || "");
+
     inputRef.current?.focus();
 
     const savedMode = window.localStorage.getItem("fast-check-advance-mode");
@@ -199,7 +203,7 @@ export default function FastDoorClient() {
   }, [playAttentionFeedback, playOkFeedback]);
 
   const loadLatestGateResult = useCallback(async (applyResult: boolean) => {
-    if (!gateId) return;
+    if (!gateId || !doorToken) return;
 
     const params = new URLSearchParams({
       eventId,
@@ -207,6 +211,7 @@ export default function FastDoorClient() {
     });
     const response = await fetch(`/api/door/live-latest?${params.toString()}`, {
       cache: "no-store",
+      headers: { "X-Fast-Check-Token": doorToken },
     });
 
     if (!response.ok) return;
@@ -225,7 +230,7 @@ export default function FastDoorClient() {
       applyDecision(item.payload_json);
       scheduleReset(item.payload_json.decision);
     }
-  }, [applyDecision, eventId, gateId, scheduleReset]);
+  }, [applyDecision, doorToken, eventId, gateId, scheduleReset]);
 
   useEffect(() => {
     if (!eventId || !gateId) return;
@@ -248,7 +253,7 @@ export default function FastDoorClient() {
   }, [eventId, gateId]);
 
   useEffect(() => {
-    if (!gateId) return;
+    if (!gateId || !doorToken) return;
 
     let cancelled = false;
 
@@ -258,12 +263,19 @@ export default function FastDoorClient() {
       pollingRef.current = true;
 
       try {
-        await fetch("/api/door/xceed-poll", {
+        const response = await fetch("/api/door/xceed-poll", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Fast-Check-Token": doorToken,
+          },
           body: JSON.stringify({ event_id: eventId }),
           cache: "no-store",
         });
+
+        if (!response.ok) {
+          throw new Error("Fast Check polling denied");
+        }
 
         setConnectionState("online");
 
@@ -297,7 +309,7 @@ export default function FastDoorClient() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [eventId, gateId, loadLatestGateResult]);
+  }, [doorToken, eventId, gateId, loadLatestGateResult]);
 
   async function handleScan(value: string) {
     const code = value.trim();
@@ -316,10 +328,12 @@ export default function FastDoorClient() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Fast-Check-Token": doorToken,
         },
         body: JSON.stringify({
           event_id: eventId,
           code,
+          gate_id: gateId,
           gate_role: context?.gate?.door_role || null,
         }),
       });

@@ -4,6 +4,10 @@ import {
   findWallyforMembersByEmail,
   WallyforApiError,
 } from "@/lib/wallyfor";
+import {
+  readFastCheckAccessToken,
+  verifyFastCheckAccessToken,
+} from "@/lib/door/fast-check-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -100,7 +104,8 @@ function jsonFast(
   ok: boolean,
   decision: FastDecision,
   message: string,
-  extra?: Record<string, unknown>
+  extra?: Record<string, unknown>,
+  status = 200
 ) {
   return NextResponse.json(
     {
@@ -110,6 +115,7 @@ function jsonFast(
       ...(extra || {}),
     },
     {
+      status,
       headers: {
         "Cache-Control": "no-store",
       },
@@ -225,11 +231,25 @@ export async function POST(req: NextRequest) {
   const startedAt = Date.now();
 
   try {
+    const access = verifyFastCheckAccessToken(
+      readFastCheckAccessToken(req)
+    );
+    if (!access) {
+      return jsonFast(
+        false,
+        "FATAL_ERROR",
+        "Unauthorized",
+        { ms: Date.now() - startedAt },
+        401
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
 
     const eventId = normalize(body?.event_id);
     const code = normalize(body?.code);
-    const gateRole = normalizeDoorRole(body?.gate_role);
+    const gateId = normalize(body?.gate_id);
+    const gateRole = normalizeDoorRole(access.gate_role);
 
     if (!eventId || !code) {
       return jsonFast(
@@ -239,6 +259,20 @@ export async function POST(req: NextRequest) {
         {
           ms: Date.now() - startedAt,
         }
+      );
+    }
+
+    if (
+      access.event_id !== eventId ||
+      access.gate_id !== gateId ||
+      !gateRole
+    ) {
+      return jsonFast(
+        false,
+        "FATAL_ERROR",
+        "AccessDenied",
+        { ms: Date.now() - startedAt },
+        403
       );
     }
 

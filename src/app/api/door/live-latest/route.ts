@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  readFastCheckAccessToken,
+  verifyFastCheckAccessToken,
+} from "@/lib/door/fast-check-access";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 // 🔐 Env
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -24,15 +31,32 @@ const supabaseAdmin = createClient(
 
 export async function GET(req: NextRequest) {
   try {
+    const access = verifyFastCheckAccessToken(
+      readFastCheckAccessToken(req)
+    );
+    if (!access) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized" },
+        { status: 401, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
     const supabase = supabaseAdmin;
 
     const { searchParams } = new URL(req.url);
     const eventId = String(searchParams.get("eventId") || "").trim();
     const gateId = String(searchParams.get("gateId") || "").trim();
-    if (!eventId) {
+    if (!eventId || !gateId) {
       return NextResponse.json(
-        { ok: false, error: "Missing eventId" },
+        { ok: false, error: "Missing eventId or gateId" },
         { status: 400 }
+      );
+    }
+
+    if (access.event_id !== eventId || access.gate_id !== gateId) {
+      return NextResponse.json(
+        { ok: false, error: "AccessDenied" },
+        { status: 403, headers: { "Cache-Control": "no-store" } }
       );
     }
 
@@ -59,10 +83,13 @@ const { data, error } = await query.maybeSingle();
       );
     }
 
-    return NextResponse.json({
-      ok: true,
-      item: data || null,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        item: data || null,
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (error) {
     return NextResponse.json(
       {
