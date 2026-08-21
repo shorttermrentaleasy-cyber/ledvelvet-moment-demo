@@ -1,6 +1,24 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  if (!allowed.includes(email)) {
+    return NextResponse.json({ ok: false, error: "AccessDenied" }, { status: 403 });
+  }
+  return null;
+}
 
 function json(ok: boolean, payload: any, status = 200) {
   return NextResponse.json({ ok, ...payload }, { status });
@@ -55,6 +73,9 @@ async function airtableFetch(url: string, init?: RequestInit) {
 
 export async function GET(_req: Request, ctx: { params: { id: string } }) {
   try {
+    const authError = await requireAdmin();
+    if (authError) return authError;
+
     const id = ctx.params.id;
     if (!id) return json(false, { error: "Missing id" }, 400);
 
@@ -75,6 +96,9 @@ export async function GET(_req: Request, ctx: { params: { id: string } }) {
 
 export async function PATCH(req: Request, ctx: { params: { id: string } }) {
   try {
+    const authError = await requireAdmin();
+    if (authError) return authError;
+
     const id = ctx.params.id;
     if (!id) return json(false, { error: "Missing id" }, 400);
 
@@ -113,6 +137,9 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
 
 export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
   try {
+    const authError = await requireAdmin();
+    if (authError) return authError;
+
     const id = ctx.params.id;
     if (!id) return json(false, { error: "Missing id" }, 400);
 
