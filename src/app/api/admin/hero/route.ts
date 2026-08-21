@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +16,21 @@ type HeroFields = {
   posterUrl?: string;
   imageUrl?: string;
 };
+
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!email) return jsonNoStore({ ok: false, error: "Unauthorized" }, 401);
+  if (!allowed.includes(email)) {
+    return jsonNoStore({ ok: false, error: "AccessDenied" }, 403);
+  }
+  return null;
+}
 
 function envOrThrow(key: string) {
   const v = process.env[key];
@@ -62,6 +79,9 @@ async function getHeroRecord() {
 
 export async function GET() {
   try {
+    const authError = await requireAdmin();
+    if (authError) return authError;
+
     const { rec } = await getHeroRecord();
     return jsonNoStore(
       {
@@ -80,6 +100,9 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const authError = await requireAdmin();
+    if (authError) return authError;
+
     const body = await req.json().catch(() => ({}));
 
     const id = s(body?.id);
