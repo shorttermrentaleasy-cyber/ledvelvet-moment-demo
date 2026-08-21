@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,34 +14,19 @@ function pickEnv(names: string[]): string {
   throw new Error(`Missing env: tried ${names.join(", ")}`);
 }
 
-function unauthorized() {
-  return new NextResponse("Unauthorized", {
-    status: 401,
-    headers: {
-      "WWW-Authenticate": 'Basic realm="LedVelvet Staging"',
-    },
-  });
-}
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
 
-function checkBasicAuth(req: NextRequest) {
-  const user = process.env.BASIC_AUTH_USER || "";
-  const pass = process.env.BASIC_AUTH_PASS || "";
-
-  if (!user || !pass) return true;
-
-  const auth = req.headers.get("authorization");
-  if (!auth?.startsWith("Basic ")) return false;
-
-  const b64 = auth.split(" ")[1] || "";
-  let decoded = "";
-  try {
-    decoded = atob(b64);
-  } catch {
-    return false;
+  if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  if (!allowed.includes(email)) {
+    return NextResponse.json({ ok: false, error: "AccessDenied" }, { status: 403 });
   }
-
-  const [u, p] = decoded.split(":");
-  return u === user && p === pass;
+  return null;
 }
 
 function safeSlug(v: string) {
@@ -53,7 +40,8 @@ function safeSlug(v: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    if (!checkBasicAuth(req)) return unauthorized();
+    const authError = await requireAdmin();
+    if (authError) return authError;
 
     const body = await req.json().catch(() => null);
     const slug = safeSlug(body?.slug || "");
