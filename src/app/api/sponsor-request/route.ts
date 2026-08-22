@@ -265,20 +265,22 @@ export async function POST(req: Request) {
 
     // IMPORTANT: non scriviamo "Request ID" (formula) né "createdat" se è Created time (read-only)
     // "select" lo lasciamo vuoto
-    const record = await createAirtableRecord({
+    const airtableFields: Record<string, any> = {
       company,
       contact,
       email,
       phone: phone || "",
       budget: budget || "",
       message: message || "",
-      "interest type": interestType || "",
       source,
 
       // ✅ map to Airtable checkbox fields you created
       privacy_gdpr: privacy_gdpr,
       marketing_optin: marketing_optin,
-    });
+    };
+    if (interestType) airtableFields["interest type"] = interestType;
+
+    const record = await createAirtableRecord(airtableFields);
 
     // mail notify
     const notifyTo = process.env.SPONSOR_NOTIFY_TO;
