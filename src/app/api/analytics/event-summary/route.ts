@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -8,6 +10,31 @@ function assertEnv(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env: ${name}`);
   return v;
+}
+
+async function requireAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = (session?.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!email) {
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  if (!allowed.includes(email)) {
+    return NextResponse.json(
+      { ok: false, error: "AccessDenied" },
+      { status: 403 }
+    );
+  }
+
+  return null;
 }
 
 function toCents(v: any): number | null {
@@ -229,6 +256,9 @@ function isNewPollingEvent(d: any) {
 
 export async function GET(req: NextRequest) {
   try {
+    const unauthorized = await requireAdmin();
+    if (unauthorized) return unauthorized;
+
     const eventId = req.nextUrl.searchParams.get("eventId");
     if (!eventId) {
       return NextResponse.json({ ok: false, error: "Missing eventId" }, { status: 400 });
