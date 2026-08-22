@@ -93,6 +93,16 @@ type SponsorForm = {
   marketingOptin: boolean; // opzionale
 };
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: HTMLElement, options: Record<string, unknown>) => string;
+      reset: (widgetId?: string) => void;
+      remove: (widgetId: string) => void;
+    };
+  }
+}
+
 type MetaOption = { id?: string; name: string; color?: string | null };
 
 type HeroPublic = {
@@ -767,6 +777,10 @@ export default function Moment2() {
   const [sponsorSending, setSponsorSending] = useState(false);
   const [sponsorSentOk, setSponsorSentOk] = useState<string | null>(null);
   const [sponsorSentErr, setSponsorSentErr] = useState<string | null>(null);
+  const [sponsorHoneypot, setSponsorHoneypot] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   // ✅ GDPR flags (Sponsor Request)
   const [privacyOk, setPrivacyOk] = useState(false);     // required
@@ -774,6 +788,45 @@ export default function Moment2() {
   const [muted, setMuted] = useState(true);
   const [fsErr, setFsErr] = useState<string | null>(null);
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const sitekey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!sitekey) return;
+
+    const renderWidget = () => {
+      if (!window.turnstile || !turnstileContainerRef.current || turnstileWidgetIdRef.current) return;
+      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey,
+        action: "sponsor_request",
+        theme: "dark",
+        callback: (token: string) => setTurnstileToken(token),
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => setTurnstileToken(""),
+      });
+    };
+
+    const existing = document.querySelector<HTMLScriptElement>('script[data-lv-turnstile="true"]');
+    if (existing) {
+      if (window.turnstile) renderWidget();
+      else existing.addEventListener("load", renderWidget, { once: true });
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.lvTurnstile = "true";
+      script.addEventListener("load", renderWidget, { once: true });
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      if (existing && !window.turnstile) existing.removeEventListener("load", renderWidget);
+      if (turnstileWidgetIdRef.current && window.turnstile) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
+    };
+  }, []);
 
   const menuRef = useRef<HTMLDetailsElement | null>(null);
   const accountMenuRef = useRef<HTMLDetailsElement | null>(null);
@@ -1211,6 +1264,7 @@ export default function Moment2() {
     if (!sponsor.privacyAccepted) {
       return setSponsorSentErr("Devi accettare l’Informativa Privacy per inviare la richiesta.");
     }
+    if (!turnstileToken) return setSponsorSentErr("Completa la verifica anti-bot.");
 
     setSponsorSending(true);
     try {
@@ -1224,6 +1278,8 @@ export default function Moment2() {
         // ✅ espliciti
         privacy_gdpr: Boolean(sponsor.privacyAccepted),
         marketing_optin: Boolean(sponsor.marketingOptin),
+        turnstileToken,
+        website: sponsorHoneypot,
       };
 
       const res = await fetch("/api/sponsor-request", {
@@ -1251,8 +1307,13 @@ export default function Moment2() {
         privacyAccepted: false,
         marketingOptin: false,
       });
+      setSponsorHoneypot("");
+      setTurnstileToken("");
+      if (turnstileWidgetIdRef.current) window.turnstile?.reset(turnstileWidgetIdRef.current);
     } catch (err: any) {
       setSponsorSentErr(err?.message || "Errore invio richiesta.");
+      setTurnstileToken("");
+      if (turnstileWidgetIdRef.current) window.turnstile?.reset(turnstileWidgetIdRef.current);
     } finally {
       setSponsorSending(false);
     }
@@ -2431,6 +2492,17 @@ export default function Moment2() {
 
               {/* ✅ GDPR checkboxes */}
               <div className="mt-4 space-y-3">
+                <div aria-hidden="true" className="absolute -left-[10000px] h-px w-px overflow-hidden">
+                  <label htmlFor="sponsor-website">Sito web</label>
+                  <input
+                    id="sponsor-website"
+                    name="website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={sponsorHoneypot}
+                    onChange={(e) => setSponsorHoneypot(e.target.value)}
+                  />
+                </div>
                 <label className="flex items-start gap-3 text-xs text-white/75">
                   <input
                     type="checkbox"
@@ -2468,6 +2540,8 @@ export default function Moment2() {
                   </span>
                 </label>
               </div>
+
+              <div ref={turnstileContainerRef} className="mt-4 min-h-[65px]" />
 
               {sponsorSentErr ? <div className="mt-4 text-sm text-red-200">{sponsorSentErr}</div> : null}
               {sponsorSentOk ? <div className="mt-4 text-sm text-green-200">{sponsorSentOk}</div> : null}
