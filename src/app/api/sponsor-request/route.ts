@@ -15,7 +15,24 @@ type SponsorPayload = {
   // ✅ GDPR flags (frontend -> backend)
   privacy_gdpr?: boolean; // required true
   marketing_optin?: boolean; // optional
+  turnstileToken?: string;
+  website?: string; // honeypot: deve restare vuoto
 };
+
+const MAX_BODY_BYTES = 16_384;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMIT_MAX_ATTEMPTS = 5;
+const attemptsByIp = new Map<string, number[]>();
+
+const FIELD_LIMITS = {
+  company: 120,
+  contact: 120,
+  email: 254,
+  phone: 40,
+  budget: 80,
+  message: 2_000,
+  interestType: 100,
+} as const;
 
 function json(ok: boolean, data: any, status = 200) {
   return NextResponse.json({ ok, ...data }, { status });
@@ -23,6 +40,42 @@ function json(ok: boolean, data: any, status = 200) {
 
 function isValidEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || "").trim());
+}
+
+function getClientIp(req: Request) {
+  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || req.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
+function isRateLimited(ip: string) {
+  const now = Date.now();
+  const recent = (attemptsByIp.get(ip) || []).filter((time) => now - time < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX_ATTEMPTS) {
+    attemptsByIp.set(ip, recent);
+    return true;
+  }
+  recent.push(now);
+  attemptsByIp.set(ip, recent);
+  return false;
+}
+
+async function verifyTurnstile(token: string, ip: string) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) throw new Error("Missing TURNSTILE_SECRET_KEY");
+
+  const body = new URLSearchParams({ secret, response: token });
+  if (ip !== "unknown") body.set("remoteip", ip);
+
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+    cache: "no-store",
+  });
+  if (!response.ok) return false;
+
+  const result = (await response.json()) as { success?: boolean; action?: string };
+  return result.success === true && (!result.action || result.action === "sponsor_request");
 }
 
 function normalizePhone(raw: string) {
@@ -137,7 +190,37 @@ function escapeHtml(s: string) {
 
 export async function POST(req: Request) {
   try {
-    const raw = (await req.json()) as SponsorPayload & Record<string, any>;
+    const contentLength = Number(req.headers.get("content-length") || 0);
+    if (contentLength > MAX_BODY_BYTES) return json(false, { error: "Request too large" }, 413);
+
+    const bodyText = await req.text();
+    if (Buffer.byteLength(bodyText, "utf8") > MAX_BODY_BYTES) {
+      return json(false, { error: "Request too large" }, 413);
+    }
+
+    let raw: SponsorPayload & Record<string, any>;
+    try {
+      raw = JSON.parse(bodyText);
+    } catch {
+      return json(false, { error: "Invalid JSON" }, 400);
+    }
+
+    if (String(raw.website || "").trim()) {
+      return json(false, { error: "Request rejected" }, 400);
+    }
+
+    const clientIp = getClientIp(req);
+    if (isRateLimited(clientIp)) {
+      return json(false, { error: "Too many requests. Riprova più tardi." }, 429);
+    }
+
+    const turnstileToken = String(raw.turnstileToken || "").trim();
+    if (!turnstileToken || turnstileToken.length > 2_048) {
+      return json(false, { error: "Verifica anti-bot richiesta" }, 400);
+    }
+    if (!(await verifyTurnstile(turnstileToken, clientIp))) {
+      return json(false, { error: "Verifica anti-bot non valida. Riprova." }, 400);
+    }
 
     // compat: /moment manda brand/name/note
     const company = String(raw.company ?? raw.brand ?? "").trim();
@@ -148,6 +231,12 @@ export async function POST(req: Request) {
     const message = String(raw.message ?? raw.note ?? "").trim();
     const interestType = String(raw.interestType ?? raw["interest type"] ?? "").trim();
     const source = "website";
+
+    const values = { company, contact, email, phone: phoneRaw, budget, message, interestType };
+    for (const [field, value] of Object.entries(values)) {
+      const limit = FIELD_LIMITS[field as keyof typeof FIELD_LIMITS];
+      if (value.length > limit) return json(false, { error: `${field} too long` }, 400);
+    }
 
     // ✅ GDPR flags (accept both new keys and Airtable-ish keys)
     const privacy_gdpr = Boolean(raw.privacy_gdpr ?? raw.privacy ?? false);
