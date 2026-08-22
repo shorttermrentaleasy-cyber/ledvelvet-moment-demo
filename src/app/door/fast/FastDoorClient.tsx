@@ -233,24 +233,27 @@ export default function FastDoorClient() {
   }, [applyDecision, doorToken, eventId, gateId, scheduleReset]);
 
   useEffect(() => {
-    if (!eventId || !gateId) return;
+    if (!doorToken) return;
 
-    Promise.all([
-      fetch("/api/admin/analytics-events", { cache: "no-store" }).then((response) =>
-        response.json()
-      ),
-      fetch("/api/admin/door-gates", { cache: "no-store" }).then((response) =>
-        response.json()
-      ),
-    ])
-      .then(([eventsData, gatesData]) => {
+    fetch("/api/door/fast-check-context", {
+      cache: "no-store",
+      headers: { "X-Fast-Check-Token": doorToken },
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Fast Check context denied");
+        }
+
+        return response.json();
+      })
+      .then((data) => {
         setContext({
-          event: eventsData?.events?.find((event: any) => event.id === eventId) || null,
-          gate: gatesData?.gates?.find((gate: any) => gate.gate_id === gateId) || null,
+          event: data?.event || null,
+          gate: data?.gate || null,
         });
       })
       .catch(() => {});
-  }, [eventId, gateId]);
+  }, [doorToken]);
 
   useEffect(() => {
     if (!gateId || !doorToken) return;
