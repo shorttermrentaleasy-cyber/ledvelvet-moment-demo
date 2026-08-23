@@ -115,6 +115,14 @@ export default function MemberLoginGate() {
     let widgetContainer: HTMLDivElement | null = null;
     let submitAfterChallenge = false;
 
+    const removeChallenge = () => {
+      if (widgetId) getTurnstile()?.remove(widgetId);
+      widgetId = null;
+      widgetContainer?.remove();
+      widgetContainer = null;
+      turnstileToken = "";
+    };
+
     const loadTurnstile = async () => {
       if (getTurnstile()) return getTurnstile();
 
@@ -252,7 +260,7 @@ export default function MemberLoginGate() {
         setSubmitState(form, "idle");
       } finally {
         submitAfterChallenge = false;
-        if (widgetId) getTurnstile()?.reset(widgetId);
+        removeChallenge();
       }
     };
 
@@ -276,8 +284,7 @@ export default function MemberLoginGate() {
     return () => {
       document.removeEventListener("submit", onSubmit, true);
       document.removeEventListener("input", onInput, true);
-      if (widgetId) getTurnstile()?.remove(widgetId);
-      widgetContainer = null;
+      removeChallenge();
     };
   }, []);
 
