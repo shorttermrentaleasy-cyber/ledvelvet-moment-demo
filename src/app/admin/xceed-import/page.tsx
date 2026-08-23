@@ -2,6 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = new Set(["csv", "xlsx", "xls"]);
+const ALLOWED_TYPES = new Set([
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+]);
+
 type AirtableEvent = {
   id: string; // rec...
   name?: string;
@@ -100,6 +108,16 @@ export default function AdminXceedImportPage() {
   async function doUpload() {
     if (!eventId || !file) {
       setError("Seleziona evento e file");
+      return;
+    }
+
+    const extension = file.name.toLowerCase().split(".").pop() || "";
+    if (!ALLOWED_EXTENSIONS.has(extension) || !ALLOWED_TYPES.has(file.type)) {
+      setError("Formato non valido. Usa CSV, XLSX o XLS.");
+      return;
+    }
+    if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
+      setError("File troppo grande (max 10 MB).");
       return;
     }
 

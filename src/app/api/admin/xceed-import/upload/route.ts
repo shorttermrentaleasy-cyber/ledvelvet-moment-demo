@@ -5,6 +5,15 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 
 export const dynamic = "force-dynamic";
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_REQUEST_SIZE = MAX_FILE_SIZE + 1024 * 1024;
+const ALLOWED_EXTENSIONS = new Set(["csv", "xlsx", "xls"]);
+const ALLOWED_TYPES = new Set([
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+]);
+
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   const email = (session?.user?.email || "").toLowerCase().trim();
@@ -41,6 +50,11 @@ export async function POST(req: Request) {
     const unauthorized = await requireAdmin();
     if (unauthorized) return unauthorized;
 
+    const contentLength = Number(req.headers.get("content-length") || "0");
+    if (contentLength > MAX_REQUEST_SIZE) {
+      return NextResponse.json({ ok: false, error: "File troppo grande (max 10 MB)" }, { status: 413 });
+    }
+
     const supabase = supabaseAdmin();
 
     const form = await req.formData();
@@ -52,6 +66,17 @@ export async function POST(req: Request) {
     }
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ ok: false, error: "Missing file" }, { status: 400 });
+    }
+
+    const extension = file.name.toLowerCase().split(".").pop() || "";
+    if (!ALLOWED_EXTENSIONS.has(extension) || !ALLOWED_TYPES.has(file.type)) {
+      return NextResponse.json(
+        { ok: false, error: "Formato non valido. Usa CSV, XLSX o XLS." },
+        { status: 400 }
+      );
+    }
+    if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ ok: false, error: "File troppo grande (max 10 MB)" }, { status: 413 });
     }
 
     const filename = sanitizeFilename(file.name || "xceed_import");
