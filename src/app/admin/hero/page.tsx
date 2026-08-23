@@ -458,3 +458,8 @@ export default function AdminHeroPage() {
               </div>
             </form>
           )}
+        </div>
+      </div>
+    </main>
+  );
+}
