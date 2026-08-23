@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +26,16 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+type TurnstileApi = {
+  render: (container: HTMLElement, options: Record<string, unknown>) => string;
+  reset: (widgetId?: string) => void;
+  remove: (widgetId: string) => void;
+};
+
+function getTurnstile() {
+  return (window as Window & { turnstile?: TurnstileApi }).turnstile;
+}
+
 export default function LoginPage({
   searchParams,
 }: {
@@ -48,19 +58,70 @@ export default function LoginPage({
   const [code, setCode] = useState("");
   const [checkingCode, setCheckingCode] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
 
   const callbackUrl = safeCallbackUrl(searchParams?.callbackUrl);
   const err = firstValue(searchParams?.err);
   const nextAuthError = firstValue(searchParams?.error);
   const isDenied = err === "not_allowed" || nextAuthError === "AccessDenied";
   const canSend = useMemo(
-    () => isValidEmail(email) && !sending,
-    [email, sending],
+    () => isValidEmail(email) && Boolean(turnstileToken) && !sending,
+    [email, turnstileToken, sending],
   );
   const canCheckCode = useMemo(
     () => isValidEmail(email) && code.length === 8 && !checkingCode,
     [email, code, checkingCode],
   );
+
+  useEffect(() => {
+    if (sent) return;
+    const sitekey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!sitekey) {
+      setMessage("Verifica anti-bot non disponibile. Riprova più tardi.");
+      return;
+    }
+
+    const renderWidget = () => {
+      const turnstile = getTurnstile();
+      if (!turnstile || !turnstileContainerRef.current || turnstileWidgetIdRef.current) return;
+      turnstileWidgetIdRef.current = turnstile.render(turnstileContainerRef.current, {
+        sitekey,
+        action: "member_login",
+        theme: "dark",
+        callback: (token: string) => setTurnstileToken(token),
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => {
+          setTurnstileToken("");
+          setMessage("Verifica anti-bot non riuscita. Riprova.");
+        },
+      });
+    };
+
+    let script = document.querySelector<HTMLScriptElement>('script[data-lv-turnstile="true"]');
+    if (getTurnstile()) {
+      renderWidget();
+    } else if (script) {
+      script.addEventListener("load", renderWidget, { once: true });
+    } else {
+      script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.lvTurnstile = "true";
+      script.addEventListener("load", renderWidget, { once: true });
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      script?.removeEventListener("load", renderWidget);
+      if (turnstileWidgetIdRef.current) {
+        getTurnstile()?.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
+    };
+  }, [sent]);
 
   async function sendAccess(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -70,6 +131,30 @@ export default function LoginPage({
     setMessage(null);
 
     try {
+      const precheckResponse = await fetch("/api/public/member-login-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          turnstileToken,
+        }),
+      });
+      const precheck = await precheckResponse.json().catch(() => null);
+
+      if (!precheckResponse.ok || !precheck?.ok) {
+        setMessage(
+          precheckResponse.status === 429
+            ? "Troppi tentativi. Attendi qualche minuto prima di riprovare."
+            : "Verifica socio non disponibile. Riprova più tardi.",
+        );
+        return;
+      }
+
+      if (!precheck.allowed) {
+        setMessage("Questa email non risulta associata a un socio LEDVELVET.");
+        return;
+      }
+
       const result = await signIn("email", {
         email: email.trim(),
         callbackUrl,
@@ -89,6 +174,10 @@ export default function LoginPage({
       setMessage("Non è stato possibile inviare l’accesso. Riprova tra poco.");
     } finally {
       setSending(false);
+      setTurnstileToken("");
+      if (turnstileWidgetIdRef.current) {
+        getTurnstile()?.reset(turnstileWidgetIdRef.current);
+      }
     }
   }
 
@@ -311,6 +400,8 @@ export default function LoginPage({
                       {message}
                     </div>
                   ) : null}
+
+                  <div ref={turnstileContainerRef} className="min-h-[65px]" />
 
                   <button
                     type="submit"
