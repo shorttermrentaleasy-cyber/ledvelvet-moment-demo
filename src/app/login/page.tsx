@@ -58,6 +58,7 @@ export default function LoginPage({
   const [code, setCode] = useState("");
   const [checkingCode, setCheckingCode] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [emailRejected, setEmailRejected] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
@@ -67,8 +68,8 @@ export default function LoginPage({
   const nextAuthError = firstValue(searchParams?.error);
   const isDenied = err === "not_allowed" || nextAuthError === "AccessDenied";
   const canSend = useMemo(
-    () => isValidEmail(email) && Boolean(turnstileToken) && !sending,
-    [email, turnstileToken, sending],
+    () => isValidEmail(email) && Boolean(turnstileToken) && !emailRejected && !sending,
+    [email, turnstileToken, emailRejected, sending],
   );
   const canCheckCode = useMemo(
     () => isValidEmail(email) && code.length === 8 && !checkingCode,
@@ -151,6 +152,7 @@ export default function LoginPage({
       }
 
       if (!precheck.allowed) {
+        setEmailRejected(true);
         setMessage("Questa email non risulta associata a un socio LEDVELVET.");
         return;
       }
@@ -224,6 +226,7 @@ export default function LoginPage({
     setSent(false);
     setCode("");
     setMessage(null);
+    setEmailRejected(false);
   }
 
   return (
@@ -387,7 +390,11 @@ export default function LoginPage({
                     id="admin-login-email"
                     type="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={(event) => {
+                      setEmail(event.target.value);
+                      setEmailRejected(false);
+                      setMessage(null);
+                    }}
                     placeholder="nome@dominio.com"
                     autoComplete="email"
                     inputMode="email"
@@ -399,6 +406,15 @@ export default function LoginPage({
                     <div className="rounded-xl border border-red-300/20 bg-red-300/10 px-3 py-2 text-sm text-red-100">
                       {message}
                     </div>
+                  ) : null}
+
+                  {emailRejected ? (
+                    <a
+                      href="/become-member"
+                      className="inline-flex rounded-full bg-[var(--red-accent)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-white hover:opacity-90"
+                    >
+                      Unisciti a LV People
+                    </a>
                   ) : null}
 
                   <div ref={turnstileContainerRef} className="min-h-[65px]" />
@@ -413,7 +429,11 @@ export default function LoginPage({
                         : "cursor-not-allowed bg-white/10 text-white/50",
                     ].join(" ")}
                   >
-                    {sending ? "Invio in corso…" : "Invia link e codice"}
+                    {emailRejected
+                      ? "Email non associata"
+                      : sending
+                        ? "Verifica in corso…"
+                        : "Invia link e codice"}
                   </button>
 
                   <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
