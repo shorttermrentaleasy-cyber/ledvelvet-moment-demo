@@ -21,7 +21,9 @@ function getTurnstile() {
 
 function findSubmitButton(form: HTMLFormElement) {
   return Array.from(form.querySelectorAll("button")).find(
-    (button) => button.textContent?.trim().toUpperCase() === LOGIN_BUTTON_TEXT,
+    (button) =>
+      button.dataset.lvLoginSubmit === "true" ||
+      button.textContent?.trim().toUpperCase() === LOGIN_BUTTON_TEXT,
   );
 }
 
