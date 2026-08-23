@@ -6,6 +6,8 @@ const LOGIN_BUTTON_TEXT = "INVIA LINK DI ACCESSO";
 const CTA_ID = "lv-non-member-login-cta";
 const ERROR_ID = "lv-member-login-error";
 const CHALLENGE_ID = "lv-member-login-turnstile";
+const CHECKING_BUTTON_TEXT = "VERIFICA IN CORSO…";
+const BLOCKED_BUTTON_TEXT = "EMAIL NON ASSOCIATA";
 
 type TurnstileApi = {
   render: (container: HTMLElement, options: Record<string, unknown>) => string;
@@ -21,6 +23,20 @@ function findSubmitButton(form: HTMLFormElement) {
   return Array.from(form.querySelectorAll("button")).find(
     (button) => button.textContent?.trim().toUpperCase() === LOGIN_BUTTON_TEXT,
   );
+}
+
+function setSubmitState(form: HTMLFormElement, state: "idle" | "checking" | "blocked") {
+  const button = findSubmitButton(form) || form.querySelector<HTMLButtonElement>('button[data-lv-login-submit="true"]');
+  if (!button) return;
+  button.dataset.lvLoginSubmit = "true";
+  button.dataset.lvLoginState = state;
+  button.disabled = state !== "idle";
+  button.textContent =
+    state === "checking"
+      ? CHECKING_BUTTON_TEXT
+      : state === "blocked"
+        ? BLOCKED_BUTTON_TEXT
+        : LOGIN_BUTTON_TEXT;
 }
 
 function removeExistingCta(form: HTMLFormElement) {
@@ -83,7 +99,9 @@ function isHomepageLoginForm(form: HTMLFormElement) {
   const emailInput = form.querySelector<HTMLInputElement>('input[type="email"]');
   if (!emailInput) return false;
   return Array.from(form.querySelectorAll("button")).some(
-    (button) => button.textContent?.trim().toUpperCase() === LOGIN_BUTTON_TEXT,
+    (button) =>
+      button.dataset.lvLoginSubmit === "true" ||
+      button.textContent?.trim().toUpperCase() === LOGIN_BUTTON_TEXT,
   );
 }
 
@@ -118,6 +136,7 @@ export default function MemberLoginGate() {
     const showChallenge = async (form: HTMLFormElement) => {
       if (!sitekey) {
         showGateError(form, "Verifica anti-bot non disponibile. Riprova più tardi.");
+        setSubmitState(form, "idle");
         return;
       }
 
@@ -133,6 +152,7 @@ export default function MemberLoginGate() {
       const turnstile = await loadTurnstile();
       if (!turnstile) {
         showGateError(form, "Verifica anti-bot non disponibile. Riprova più tardi.");
+        setSubmitState(form, "idle");
         return;
       }
 
@@ -163,6 +183,7 @@ export default function MemberLoginGate() {
             turnstileToken = "";
             submitAfterChallenge = false;
             showGateError(form, "Verifica anti-bot non riuscita. Riprova.");
+            setSubmitState(form, "idle");
           },
         });
       } else {
@@ -186,6 +207,7 @@ export default function MemberLoginGate() {
       const emailInput = form.querySelector<HTMLInputElement>('input[type="email"]');
       const email = emailInput?.value.trim().toLowerCase() || "";
       if (!email) return;
+      setSubmitState(form, "checking");
 
       if (!turnstileToken) {
         await showChallenge(form);
@@ -210,27 +232,48 @@ export default function MemberLoginGate() {
               ? "Troppi tentativi. Attendi qualche minuto prima di riprovare."
               : "Verifica socio non disponibile. Riprova più tardi.",
           );
+          setSubmitState(form, "idle");
           return;
         }
 
         if (!result.allowed) {
           showNonMemberCta(form);
+          setSubmitState(form, "blocked");
           return;
         }
 
+        setSubmitState(form, "idle");
         form.dataset.lvMemberCheck = "passed";
         form.requestSubmit();
       } catch {
         showGateError(form, "Verifica socio non disponibile. Riprova più tardi.");
+        setSubmitState(form, "idle");
       } finally {
         submitAfterChallenge = false;
         if (widgetId) getTurnstile()?.reset(widgetId);
       }
     };
 
+    const onInput = (event: Event) => {
+      const input = event.target instanceof HTMLInputElement ? event.target : null;
+      const form = input?.form;
+      if (!input || input.type !== "email" || !form || !isHomepageLoginForm(form)) return;
+      const button = form.querySelector<HTMLButtonElement>('button[data-lv-login-submit="true"]');
+      if (button?.dataset.lvLoginState === "idle" || !button) return;
+
+      delete form.dataset.lvMemberCheck;
+      removeExistingCta(form);
+      turnstileToken = "";
+      submitAfterChallenge = false;
+      if (widgetId) getTurnstile()?.reset(widgetId);
+      setSubmitState(form, "idle");
+    };
+
     document.addEventListener("submit", onSubmit, true);
+    document.addEventListener("input", onInput, true);
     return () => {
       document.removeEventListener("submit", onSubmit, true);
+      document.removeEventListener("input", onInput, true);
       if (widgetId) getTurnstile()?.remove(widgetId);
       widgetContainer = null;
     };
