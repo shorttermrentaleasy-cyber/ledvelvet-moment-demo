@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +26,16 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+type TurnstileApi = {
+  render: (container: HTMLElement, options: Record<string, unknown>) => string;
+  reset: (widgetId?: string) => void;
+  remove: (widgetId: string) => void;
+};
+
+function getTurnstile() {
+  return (window as Window & { turnstile?: TurnstileApi }).turnstile;
+}
+
 export default function LoginPage({
   searchParams,
 }: {
@@ -48,19 +58,71 @@ export default function LoginPage({
   const [code, setCode] = useState("");
   const [checkingCode, setCheckingCode] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [emailRejected, setEmailRejected] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
 
   const callbackUrl = safeCallbackUrl(searchParams?.callbackUrl);
   const err = firstValue(searchParams?.err);
   const nextAuthError = firstValue(searchParams?.error);
   const isDenied = err === "not_allowed" || nextAuthError === "AccessDenied";
   const canSend = useMemo(
-    () => isValidEmail(email) && !sending,
-    [email, sending],
+    () => isValidEmail(email) && Boolean(turnstileToken) && !emailRejected && !sending,
+    [email, turnstileToken, emailRejected, sending],
   );
   const canCheckCode = useMemo(
     () => isValidEmail(email) && code.length === 8 && !checkingCode,
     [email, code, checkingCode],
   );
+
+  useEffect(() => {
+    if (sent) return;
+    const sitekey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!sitekey) {
+      setMessage("Verifica anti-bot non disponibile. Riprova più tardi.");
+      return;
+    }
+
+    const renderWidget = () => {
+      const turnstile = getTurnstile();
+      if (!turnstile || !turnstileContainerRef.current || turnstileWidgetIdRef.current) return;
+      turnstileWidgetIdRef.current = turnstile.render(turnstileContainerRef.current, {
+        sitekey,
+        action: "member_login",
+        theme: "dark",
+        callback: (token: string) => setTurnstileToken(token),
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => {
+          setTurnstileToken("");
+          setMessage("Verifica anti-bot non riuscita. Riprova.");
+        },
+      });
+    };
+
+    let script = document.querySelector<HTMLScriptElement>('script[data-lv-turnstile="true"]');
+    if (getTurnstile()) {
+      renderWidget();
+    } else if (script) {
+      script.addEventListener("load", renderWidget, { once: true });
+    } else {
+      script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.lvTurnstile = "true";
+      script.addEventListener("load", renderWidget, { once: true });
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      script?.removeEventListener("load", renderWidget);
+      if (turnstileWidgetIdRef.current) {
+        getTurnstile()?.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
+    };
+  }, [sent]);
 
   async function sendAccess(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -70,6 +132,31 @@ export default function LoginPage({
     setMessage(null);
 
     try {
+      const precheckResponse = await fetch("/api/public/member-login-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          turnstileToken,
+        }),
+      });
+      const precheck = await precheckResponse.json().catch(() => null);
+
+      if (!precheckResponse.ok || !precheck?.ok) {
+        setMessage(
+          precheckResponse.status === 429
+            ? "Troppi tentativi. Attendi qualche minuto prima di riprovare."
+            : "Verifica socio non disponibile. Riprova più tardi.",
+        );
+        return;
+      }
+
+      if (!precheck.allowed) {
+        setEmailRejected(true);
+        setMessage("Questa email non risulta associata a un socio LEDVELVET.");
+        return;
+      }
+
       const result = await signIn("email", {
         email: email.trim(),
         callbackUrl,
@@ -89,6 +176,10 @@ export default function LoginPage({
       setMessage("Non è stato possibile inviare l’accesso. Riprova tra poco.");
     } finally {
       setSending(false);
+      setTurnstileToken("");
+      if (turnstileWidgetIdRef.current) {
+        getTurnstile()?.reset(turnstileWidgetIdRef.current);
+      }
     }
   }
 
@@ -135,6 +226,7 @@ export default function LoginPage({
     setSent(false);
     setCode("");
     setMessage(null);
+    setEmailRejected(false);
   }
 
   return (
@@ -298,7 +390,11 @@ export default function LoginPage({
                     id="admin-login-email"
                     type="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={(event) => {
+                      setEmail(event.target.value);
+                      setEmailRejected(false);
+                      setMessage(null);
+                    }}
                     placeholder="nome@dominio.com"
                     autoComplete="email"
                     inputMode="email"
@@ -312,6 +408,17 @@ export default function LoginPage({
                     </div>
                   ) : null}
 
+                  {emailRejected ? (
+                    <a
+                      href="/become-member"
+                      className="inline-flex rounded-full bg-[var(--red-accent)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-white hover:opacity-90"
+                    >
+                      Unisciti a LV People
+                    </a>
+                  ) : null}
+
+                  <div ref={turnstileContainerRef} className="min-h-[65px]" />
+
                   <button
                     type="submit"
                     disabled={!canSend}
@@ -322,7 +429,11 @@ export default function LoginPage({
                         : "cursor-not-allowed bg-white/10 text-white/50",
                     ].join(" ")}
                   >
-                    {sending ? "Invio in corso…" : "Invia link e codice"}
+                    {emailRejected
+                      ? "Email non associata"
+                      : sending
+                        ? "Verifica in corso…"
+                        : "Invia link e codice"}
                   </button>
 
                   <div className="rounded-2xl border border-white/10 bg-black/30 p-4">

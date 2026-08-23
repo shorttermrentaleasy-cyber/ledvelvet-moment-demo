@@ -5,6 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@supabase/supabase-js";
 import { randomInt } from "crypto";
 
+const EMAIL_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const EMAIL_RATE_LIMIT_MAX_SENDS = 3;
+const sendsByEmail = new Map<string, number[]>();
+
 function getAllowedAdmins(): string[] {
   return (process.env.ADMIN_EMAILS || "")
     .split(",")
@@ -92,6 +96,20 @@ async function isMemberEmail(emailRaw: string): Promise<boolean> {
   }
 }
 
+function isEmailSendRateLimited(email: string) {
+  const now = Date.now();
+  const recent = (sendsByEmail.get(email) || []).filter(
+    (time) => now - time < EMAIL_RATE_LIMIT_WINDOW_MS,
+  );
+  if (recent.length >= EMAIL_RATE_LIMIT_MAX_SENDS) {
+    sendsByEmail.set(email, recent);
+    return true;
+  }
+  recent.push(now);
+  sendsByEmail.set(email, recent);
+  return false;
+}
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
@@ -102,6 +120,11 @@ export const authOptions: NextAuthOptions = {
         return randomInt(10_000_000, 100_000_000).toString();
       },
       async sendVerificationRequest({ identifier, url }) {
+        const email = identifier.toLowerCase().trim();
+        const isAllowed = getAllowedAdmins().includes(email) || (await isMemberEmail(email));
+        if (!isAllowed) return;
+        if (isEmailSendRateLimited(email)) throw new Error("Too many access email requests");
+
         // ✅ generico (non solo admin)
         const subject = "Il tuo accesso a LEDVELVET";
         const accessCode = new URL(url).searchParams.get("token") || "";
