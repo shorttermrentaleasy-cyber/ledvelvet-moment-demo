@@ -173,7 +173,7 @@ export default function AdminHeroPage() {
     setOkMsg(null);
 
     if (!file.type.includes("video")) throw new Error("File non valido: carica un MP4.");
-    if (file.size > 250 * 1024 * 1024) throw new Error("File troppo grande (max 250MB).");
+    if (file.size > 50 * 1024 * 1024) throw new Error("File troppo grande (max 50MB).");
 
     const signedRes = await fetch("/api/admin/hero-upload-url", {
       method: "POST",
@@ -458,8 +458,3 @@ export default function AdminHeroPage() {
               </div>
             </form>
           )}
-        </div>
-      </div>
-    </main>
-  );
-}
