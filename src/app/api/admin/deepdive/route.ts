@@ -56,11 +56,22 @@ async function airtableFetch<T>(path: string) {
 const s = (v: any) => (v == null ? "" : String(v)).trim();
 const arr = (v: any) => (Array.isArray(v) ? v : []);
 
-export async function GET(req: NextRequest) {
+async function isAdminRequest() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return jsonNoStore({ ok: false, error: "Unauthorized" }, 401);
+  const email = s(session?.user?.email).toLowerCase();
+  const allowed = s(process.env.ADMIN_EMAILS)
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return Boolean(email && allowed.includes(email));
+}
 
+export async function GET(req: NextRequest) {
   try {
+    if (!(await isAdminRequest())) {
+      return jsonNoStore({ ok: false, error: "Non autorizzato" }, 401);
+    }
+
     const url = new URL(req.url);
     const mode = s(url.searchParams.get("mode"));
 
@@ -132,10 +143,11 @@ export async function GET(req: NextRequest) {
 
 // ✅ POST: crea Experience MINIMA: event_ref + is_published
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return jsonNoStore({ ok: false, error: "Unauthorized" }, 401);
-
   try {
+    if (!(await isAdminRequest())) {
+      return jsonNoStore({ ok: false, error: "Non autorizzato" }, 401);
+    }
+
     const body = await req.json().catch(() => null);
     const eventId = s(body?.eventId);
     const is_published = Boolean(body?.is_published);
