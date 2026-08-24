@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const contentSecurityPolicyReportOnly = [
+const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
@@ -23,8 +23,8 @@ const nextConfig = {
         source: "/(.*)",
         headers: [
           {
-            key: "Content-Security-Policy-Report-Only",
-            value: contentSecurityPolicyReportOnly,
+            key: "Content-Security-Policy",
+            value: contentSecurityPolicy,
           },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
