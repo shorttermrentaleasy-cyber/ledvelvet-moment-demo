@@ -2,6 +2,7 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { fetchSponsorMetaFromAirtable } from "@/lib/sponsor-meta";
 import AdminTopbarClient from "../AdminTopbarClient";
 
 export const dynamic = "force-dynamic";
@@ -52,15 +53,12 @@ async function fetchSponsorsFromAirtable(): Promise<AirtableRec[]> {
 }
 
 async function fetchSponsorMeta(): Promise<{ status: MetaOption[]; category: MetaOption[] }> {
-  const base =
-    process.env.NEXTAUTH_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    "http://localhost:3000";
-
-  const r = await fetch(`${base}/api/meta/sponsors`, { cache: "no-store" });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data.ok) return { status: [], category: [] };
-  return { status: data.status || [], category: data.category || [] };
+  try {
+    return await fetchSponsorMetaFromAirtable();
+  } catch (error) {
+    console.error("Sponsor meta fetch failed:", error);
+    return { status: [], category: [] };
+  }
 }
 
 export default async function AdminSponsorsPage({
