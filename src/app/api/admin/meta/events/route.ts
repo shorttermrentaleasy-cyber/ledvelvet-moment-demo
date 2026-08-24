@@ -12,6 +12,16 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return json(false, { error: "Unauthorized" }, 401);
 
+  const email = session.user.email.toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!allowed.includes(email)) {
+    return json(false, { error: "Forbidden" }, 403);
+  }
+
   const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
   const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 
