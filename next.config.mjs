@@ -11,7 +11,7 @@ const contentSecurityPolicyReportOnly = [
   "font-src 'self' data: https:",
   "media-src 'self' blob: https:",
   "frame-src 'self' https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://wallyfor.com https://www.wallyfor.com https://widget.xceed.me",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://embeds.iubenda.com https://cdn.iubenda.com https://wallyfor.com https://www.wallyfor.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://embeds.iubenda.com https://cdn.iubenda.com https://idb.iubenda.com https://cpl.iubenda.com https://wallyfor.com https://www.wallyfor.com",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
 ].join("; ");
