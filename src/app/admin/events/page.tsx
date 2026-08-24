@@ -70,6 +70,16 @@ export default async function AdminEventsPage({
   const session = await getServerSession(authOptions);
   if (!session) redirect("/admin/login");
 
+  const email = (session.user?.email || "").toLowerCase().trim();
+  const allowed = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!email || !allowed.includes(email)) {
+    redirect("/admin/auth-error?error=AccessDenied");
+  }
+
   const {
     AIRTABLE_TOKEN,
     AIRTABLE_BASE_ID,
