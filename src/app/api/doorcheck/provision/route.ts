@@ -67,16 +67,25 @@ export async function POST(req: Request) {
     // 4) consuma token (incrementa uses)
     const nextUses = uses + 1;
 
-    const { error: uErr } = await supabase
+    const { data: consumed, error: uErr } = await supabase
       .from("door_provision_tokens")
       .update({
         uses: nextUses,
         used_at: nextUses >= maxUses ? new Date().toISOString() : (row as any).used_at,
         device_id: bindDeviceTo,
       })
-      .eq("id", (row as any).id);
+      .eq("id", (row as any).id)
+      .eq("uses", uses)
+      .select("id")
+      .maybeSingle();
 
     if (uErr) throw new Error(uErr.message);
+    if (!consumed) {
+      return NextResponse.json(
+        { ok: false, error: "Token already used" },
+        { status: 409 }
+      );
+    }
 
     // 5) ritorna la key (solo per installazione su device)
     const api_key = String((row as any).api_key || "").trim();
