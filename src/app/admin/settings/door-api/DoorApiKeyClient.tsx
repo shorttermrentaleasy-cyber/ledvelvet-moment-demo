@@ -207,10 +207,10 @@ export default function DoorApiKeyClient() {
 
       <div className="mt-3">
         <a
-          href="/admin/"
+          href="/admin"
           className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80 hover:bg-white/10"
         >
-          ← Torna a Settings
+          ← Back
         </a>
       </div>
 

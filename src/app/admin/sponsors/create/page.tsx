@@ -3,6 +3,7 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import AdminTopbarClient from "../../AdminTopbarClient";
 
 type MetaOption = { id: string; label: string };
 
@@ -122,17 +123,14 @@ export default function AdminCreateSponsorPage() {
   return (
     <div style={styles.page}>
       <div style={styles.wrap}>
+        <AdminTopbarClient backHref="/admin/sponsors" />
+
         <header style={styles.header}>
           <div>
             <div style={styles.kicker}>LED VELVET • ADMIN</div>
             <h1 style={styles.h1}>Create Sponsor</h1>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button onClick={() => router.back()} style={styles.secondaryBtn} type="button">
-              Back
-            </button>
-          </div>
         </header>
 
         {error && <div style={styles.alert}>{error}</div>}

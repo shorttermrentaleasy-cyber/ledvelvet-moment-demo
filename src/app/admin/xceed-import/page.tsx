@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import AdminTopbarClient from "../AdminTopbarClient";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(["csv", "xlsx", "xls"]);
@@ -249,6 +250,8 @@ export default function AdminXceedImportPage() {
   return (
     <div className="min-h-screen bg-black text-white flex justify-center px-4 py-10">
       <div className="w-full max-w-3xl space-y-6">
+        <AdminTopbarClient backHref="/admin" />
+
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Xceed Import</h1>
           <p className="text-sm text-white/50 mt-1">
