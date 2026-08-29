@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     const storedDevice = String((row as any).device_id || "").trim() || null;
 
     // Se il token aveva device_id fissato, deve combaciare
-    if (storedDevice && deviceId && storedDevice !== deviceId) {
+    if (storedDevice && storedDevice !== deviceId) {
       return NextResponse.json({ ok: false, error: "Device mismatch" }, { status: 403 });
     }
 
