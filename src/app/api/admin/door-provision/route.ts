@@ -103,7 +103,10 @@ export async function POST(req: Request) {
     if (insErr) throw new Error(insErr.message);
 
     const origin = baseUrlFromReq(req);
-    const provision_url = `${origin}/doorcheck/provision?t=${encodeURIComponent(token)}`;
+    const provisionPath = device_id
+      ? `/doorcheck?provision=${encodeURIComponent(token)}&device_id=${encodeURIComponent(device_id)}`
+      : `/doorcheck/provision?t=${encodeURIComponent(token)}`;
+    const provision_url = `${origin}${provisionPath}`;
 
     return NextResponse.json({
       ok: true,
