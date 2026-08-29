@@ -74,18 +74,21 @@ export async function GET() {
 
     if (hErr) throw new Error(hErr.message);
 
-    return NextResponse.json({
-      ok: true,
-      active: activeRow
-        ? {
-            id: (activeRow as any).id,
-            label: (activeRow as any).label,
-            api_key: (activeRow as any).api_key,
-            created_at: (activeRow as any).created_at,
-          }
-        : null,
-      history: history || [],
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        active: activeRow
+          ? {
+              id: (activeRow as any).id,
+              label: (activeRow as any).label,
+              api_key: (activeRow as any).api_key,
+              created_at: (activeRow as any).created_at,
+            }
+          : null,
+        history: history || [],
+      },
+      { headers: { "Cache-Control": "private, no-store" } }
+    );
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
@@ -211,15 +214,18 @@ export async function POST(req: Request) {
 
     if (insErr) throw new Error(insErr.message);
 
-    return NextResponse.json({
-      ok: true,
-      active: {
-        id: (ins as any)?.id || null,
-        label: (ins as any)?.label || label,
-        api_key: (ins as any)?.api_key || nextKey,
-        created_at: (ins as any)?.created_at || null,
+    return NextResponse.json(
+      {
+        ok: true,
+        active: {
+          id: (ins as any)?.id || null,
+          label: (ins as any)?.label || label,
+          api_key: (ins as any)?.api_key || nextKey,
+          created_at: (ins as any)?.created_at || null,
+        },
       },
-    });
+      { headers: { "Cache-Control": "private, no-store" } }
+    );
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
