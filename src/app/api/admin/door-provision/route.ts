@@ -108,14 +108,17 @@ export async function POST(req: Request) {
       : `/doorcheck/provision?t=${encodeURIComponent(token)}`;
     const provision_url = `${origin}${provisionPath}`;
 
-    return NextResponse.json({
-      ok: true,
-      token: ins?.token || token,
-      label: (ins as any)?.label ?? label,
-      device_id: (ins as any)?.device_id ?? device_id,
-      expires_at: (ins as any)?.expires_at ?? expires_at,
-      provision_url,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        token: ins?.token || token,
+        label: (ins as any)?.label ?? label,
+        device_id: (ins as any)?.device_id ?? device_id,
+        expires_at: (ins as any)?.expires_at ?? expires_at,
+        provision_url,
+      },
+      { headers: { "Cache-Control": "private, no-store" } }
+    );
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
