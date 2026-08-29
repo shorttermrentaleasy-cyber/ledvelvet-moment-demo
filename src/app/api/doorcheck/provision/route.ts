@@ -91,15 +91,18 @@ export async function POST(req: Request) {
     const api_key = String((row as any).api_key || "").trim();
     if (!api_key) return NextResponse.json({ ok: false, error: "Missing api_key on token" }, { status: 500 });
 
-    return NextResponse.json({
-      ok: true,
-      api_key,
-      label: (row as any).label || null,
-      device_id: bindDeviceTo,
-      expires_at: (row as any).expires_at,
-      uses: nextUses,
-      max_uses: maxUses,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        api_key,
+        label: (row as any).label || null,
+        device_id: bindDeviceTo,
+        expires_at: (row as any).expires_at,
+        uses: nextUses,
+        max_uses: maxUses,
+      },
+      { headers: { "Cache-Control": "private, no-store" } }
+    );
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
   }
