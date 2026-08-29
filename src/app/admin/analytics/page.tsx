@@ -147,6 +147,17 @@ const typeLabels: Record<string, string> = {
     }, 50);
   }
 
+  function closeEventDetail() {
+    setData(null);
+    setEventId("");
+    window.setTimeout(() => {
+      document.getElementById("events-archive")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+  }
+
   const conversion = data?.totals?.conversion_rate
     ? (data.totals.conversion_rate * 100).toFixed(1)
     : "0.0";
@@ -224,7 +235,10 @@ const typeLabels: Record<string, string> = {
           )}
         </div>
 
-        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-xl md:p-5">
+        <section
+          id="events-archive"
+          className="scroll-mt-4 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-xl md:p-5"
+        >
           <div className="mb-4">
             <div className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">
               Archivio eventi
@@ -354,12 +368,23 @@ const typeLabels: Record<string, string> = {
           <>
             {selectedEvent && (
               <section className="rounded-3xl border border-cyan-300/25 bg-gradient-to-r from-cyan-400/[0.12] via-white/[0.05] to-transparent p-5 shadow-xl md:p-6">
-                <div className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">
-                  Statistiche evento
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">
+                      Statistiche evento
+                    </div>
+                    <h2 className="mt-2 text-2xl font-bold text-white md:text-3xl">
+                      {selectedEvent.name}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeEventDetail}
+                    className="w-full rounded-xl border border-white/20 bg-white/[0.06] px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white/80 transition hover:border-cyan-300/60 hover:bg-cyan-400/10 hover:text-cyan-100 sm:w-auto"
+                  >
+                    Chiudi dettaglio
+                  </button>
                 </div>
-                <h2 className="mt-2 text-2xl font-bold text-white md:text-3xl">
-                  {selectedEvent.name}
-                </h2>
                 <div className="mt-4 flex flex-wrap gap-2 text-sm text-white/70">
                   {selectedEvent.starts_at && (
                     <Badge>
