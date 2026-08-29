@@ -5,21 +5,13 @@ import { useRouter } from "next/navigation";
 export default function AdminTopbarClient({ backHref }: { backHref?: string }) {
   const router = useRouter();
 
+  if (!backHref) return null;
+
   return (
     <div style={styles.wrap}>
-      <button
-        onClick={() => window.close()}
-        style={styles.ghostBtn}
-        title="Close"
-      >
-        Close
+      <button onClick={() => router.push(backHref)} style={styles.ghostBtn}>
+        ← Back
       </button>
-
-      {backHref ? (
-        <button onClick={() => router.push(backHref)} style={styles.ghostBtn}>
-          ← Back
-        </button>
-      ) : null}
     </div>
   );
 }
