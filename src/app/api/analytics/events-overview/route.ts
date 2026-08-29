@@ -37,6 +37,121 @@ async function requireAdmin() {
   return null;
 }
 
+
+function toCents(value: any): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const cleaned = String(value).replace(",", ".").replace(/[^\d.]/g, "");
+  const number = Number(cleaned);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  if (number > 1000) return Math.round(number);
+  return Math.round(number * 100);
+}
+
+function getQrCode(ticket: any): string | null {
+  const raw = ticket.raw || {};
+  return (
+    raw?.ticket?.qrCode ||
+    raw?.pass?.qrCode ||
+    raw?.["QR Code"] ||
+    raw?.qrCode ||
+    raw?.qr_code ||
+    null
+  );
+}
+
+function getAmountFromQr(qr: string | null): number | null {
+  if (!qr) return null;
+  const parts = String(qr).split("|");
+  if (parts.length < 5) return null;
+  const cents = Number(parts[4]);
+  return Number.isFinite(cents) && cents > 0 ? cents : null;
+}
+
+function normalizeTicketType(ticket: any): string {
+  const raw = ticket.raw || {};
+  const offerType = String(
+    raw?.offer?.type ||
+      raw?.ticket?.offer?.type ||
+      raw?.booking?.offer?.type ||
+      raw?.["Booking type"] ||
+      ""
+  ).toLowerCase();
+  const offerName = String(
+    raw?.offer?.name ||
+      raw?.ticket?.offer?.name ||
+      raw?.booking?.offer?.name ||
+      raw?.["Offer title"] ||
+      ""
+  ).toLowerCase();
+  const source = String(raw?.source || "").toLowerCase();
+  const combined = `${offerType} ${offerName} ${source}`;
+
+  if (
+    combined.includes("penale") ||
+    combined.includes("penalty") ||
+    combined.includes("late") ||
+    combined.includes("after") ||
+    combined.includes("fee")
+  ) return "penalty";
+  if (combined.includes("drink")) return "drink";
+  if (
+    combined.includes("guest") ||
+    combined.includes("guest-list") ||
+    combined.includes("guest list") ||
+    combined.includes("guestlist")
+  ) return "guest-list";
+  if (
+    combined.includes("bottle") ||
+    combined.includes("table") ||
+    combined.includes("bottle-service") ||
+    combined.includes("bottle service")
+  ) return "bottle-service";
+  if (combined.includes("cancel")) return "cancelled";
+  return "ticket";
+}
+
+function getTicketAmountCents(ticketRow: any): number | null {
+  const raw = ticketRow.raw || {};
+  const ticket = raw.ticket || {};
+  const booking = ticket.booking || raw.booking || {};
+  const offer = ticket.offer || raw.offer || {};
+  const qr = getQrCode(ticketRow);
+  const candidates = [
+    raw["Price"],
+    raw["Online Price"],
+    raw["Amount"],
+    raw["Total"],
+    raw["Paid"],
+    ticket?.offer?.price?.amount,
+    ticket?.offer?.price?.onlinePrice,
+    ticket?.offer?.price?.offlinePrice,
+    offer?.price?.amount,
+    offer?.price?.onlinePrice,
+    offer?.price?.offlinePrice,
+    ticket.price,
+    ticket.amount,
+    ticket.total,
+    ticket.paidAmount,
+    ticket.amountPaid,
+    booking.price,
+    booking.amount,
+    booking.total,
+    booking.totalPaid,
+    booking.amountPaid,
+    booking.finalPrice,
+    offer.price,
+    offer.amount,
+    getAmountFromQr(qr),
+    raw["Offline Price"],
+  ];
+
+  for (const candidate of candidates) {
+    const cents = toCents(candidate);
+    if (cents !== null) return cents;
+  }
+  return null;
+}
+
 export async function GET() {
   try {
     const unauthorized = await requireAdmin();
@@ -58,8 +173,18 @@ export async function GET() {
 
     const counts = new Map<
       string,
-      { total: number; checked_in: number; active: number; cancelled: number; other: number }
+      {
+        total: number;
+        checked_in: number;
+        active: number;
+        cancelled: number;
+        other: number;
+        revenue_cents: number;
+        missing_amount_tickets: number;
+      }
     >();
+
+    const bottleRevenueKeys = new Map<string, Set<string>>();
 
     const pageSize = 1000;
     let from = 0;
@@ -67,7 +192,7 @@ export async function GET() {
     while (true) {
       const { data: tickets, error: ticketsError } = await supabase
         .from("xceed_tickets")
-        .select("event_id, status")
+        .select("event_id, status, raw")
         .range(from, from + pageSize - 1);
 
       if (ticketsError) throw ticketsError;
@@ -81,6 +206,8 @@ export async function GET() {
           active: 0,
           cancelled: 0,
           other: 0,
+          revenue_cents: 0,
+          missing_amount_tickets: 0,
         };
         const status = String(ticket.status || "").trim().toLowerCase();
 
@@ -89,6 +216,34 @@ export async function GET() {
         else if (status === "active") current.active += 1;
         else if (status === "cancelled") current.cancelled += 1;
         else current.other += 1;
+
+        const qr = getQrCode(ticket);
+        const type = normalizeTicketType(ticket);
+        if (qr && (status !== "cancelled" || type === "penalty")) {
+          const amountCents = getTicketAmountCents(ticket);
+
+          if (amountCents === null) {
+            current.missing_amount_tickets += 1;
+          } else if (type === "bottle-service") {
+            const raw = ticket.raw || {};
+            const revenueKey = String(
+              raw?.booking?.paymentId ||
+                raw?.booking?.id ||
+                raw?.ticket?.booking?.paymentId ||
+                raw?.ticket?.booking?.bookingUuid ||
+                qr
+            );
+            const eventKeys = bottleRevenueKeys.get(ticket.event_id) || new Set<string>();
+
+            if (!eventKeys.has(revenueKey)) {
+              eventKeys.add(revenueKey);
+              bottleRevenueKeys.set(ticket.event_id, eventKeys);
+              current.revenue_cents += amountCents;
+            }
+          } else {
+            current.revenue_cents += amountCents;
+          }
+        }
 
         counts.set(ticket.event_id, current);
       }
@@ -106,6 +261,8 @@ export async function GET() {
           active: 0,
           cancelled: 0,
           other: 0,
+          revenue_cents: 0,
+          missing_amount_tickets: 0,
         };
         const validTickets = eventCounts.checked_in + eventCounts.active;
 
@@ -113,6 +270,7 @@ export async function GET() {
           ...event,
           ...eventCounts,
           valid_tickets: validTickets,
+          revenue_eur: eventCounts.revenue_cents / 100,
           conversion_rate:
             validTickets > 0 ? eventCounts.checked_in / validTickets : 0,
         };

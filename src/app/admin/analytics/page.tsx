@@ -19,6 +19,8 @@ type EventOverview = EventItem & {
   other: number;
   valid_tickets: number;
   conversion_rate: number;
+  revenue_eur: number;
+  missing_amount_tickets: number;
 };
 
 function euro(value: any) {
@@ -69,8 +71,19 @@ const typeLabels: Record<string, string> = {
         checked_in: sum.checked_in + event.checked_in,
         active: sum.active + event.active,
         cancelled: sum.cancelled + event.cancelled,
+        revenue_eur: sum.revenue_eur + Number(event.revenue_eur || 0),
+        missing_amount_tickets:
+          sum.missing_amount_tickets + Number(event.missing_amount_tickets || 0),
       }),
-      { events: 0, total: 0, checked_in: 0, active: 0, cancelled: 0 }
+      {
+        events: 0,
+        total: 0,
+        checked_in: 0,
+        active: 0,
+        cancelled: 0,
+        revenue_eur: 0,
+        missing_amount_tickets: 0,
+      }
     );
     const validTickets = totals.checked_in + totals.active;
 
@@ -128,6 +141,17 @@ const typeLabels: Record<string, string> = {
     loadData(id);
     window.setTimeout(() => {
       document.getElementById("event-detail")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+  }
+
+  function closeEventDetail() {
+    setData(null);
+    setEventId("");
+    window.setTimeout(() => {
+      document.getElementById("events-archive")?.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
@@ -211,7 +235,10 @@ const typeLabels: Record<string, string> = {
           )}
         </div>
 
-        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-xl md:p-5">
+        <section
+          id="events-archive"
+          className="scroll-mt-4 rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-xl md:p-5"
+        >
           <div className="mb-4">
             <div className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">
               Archivio eventi
@@ -226,13 +253,14 @@ const typeLabels: Record<string, string> = {
 
           {!overviewLoading && !overviewError && (
             <div className="overflow-hidden rounded-2xl border border-white/10">
-              <div className="hidden grid-cols-[minmax(240px,1fr)_100px_100px_120px_90px_100px_150px] gap-3 bg-white/10 px-4 py-3 text-[11px] uppercase tracking-[0.12em] text-white/45 lg:grid">
+              <div className="hidden grid-cols-[minmax(220px,1fr)_80px_80px_100px_80px_90px_120px_140px] gap-3 bg-white/10 px-4 py-3 text-[11px] uppercase tracking-[0.12em] text-white/45 lg:grid">
                 <div>Evento</div>
                 <div className="text-right">Titoli</div>
                 <div className="text-right">Ingressi</div>
                 <div className="text-right">Non entrati</div>
                 <div className="text-right">Annullati</div>
                 <div className="text-right">Ingresso</div>
+                <div className="text-right">Valore titoli</div>
                 <div />
               </div>
 
@@ -240,7 +268,7 @@ const typeLabels: Record<string, string> = {
                 {eventOverview.map((event) => (
                   <div
                     key={event.id}
-                    className="grid gap-4 bg-black/20 p-4 transition hover:bg-cyan-400/[0.06] lg:grid-cols-[minmax(240px,1fr)_100px_100px_120px_90px_100px_150px] lg:items-center lg:gap-3"
+                    className="grid gap-4 bg-black/20 p-4 transition hover:bg-cyan-400/[0.06] lg:grid-cols-[minmax(220px,1fr)_80px_80px_100px_80px_90px_120px_140px] lg:items-center lg:gap-3"
                   >
                     <div className="min-w-0">
                       <div className="font-semibold text-white">{event.name}</div>
@@ -252,7 +280,7 @@ const typeLabels: Record<string, string> = {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5 lg:contents">
+                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-6 lg:contents">
                       <OverviewValue label="Titoli" value={intNum(event.total)} />
                       <OverviewValue label="Ingressi" value={intNum(event.checked_in)} positive />
                       <OverviewValue label="Non entrati" value={intNum(event.active)} />
@@ -260,6 +288,11 @@ const typeLabels: Record<string, string> = {
                       <OverviewValue
                         label="Ingresso"
                         value={`${(event.conversion_rate * 100).toFixed(1)}%`}
+                        accent
+                      />
+                      <OverviewValue
+                        label="Valore titoli"
+                        value={euro(event.revenue_eur)}
                         accent
                       />
                     </div>
@@ -276,15 +309,20 @@ const typeLabels: Record<string, string> = {
               </div>
 
               <div className="border-t border-cyan-300/25 bg-cyan-400/[0.08] p-4">
-                <div className="mb-4 lg:mb-0 lg:grid lg:grid-cols-[minmax(240px,1fr)_100px_100px_120px_90px_100px_150px] lg:items-center lg:gap-3">
+                <div className="mb-4 lg:mb-0 lg:grid lg:grid-cols-[minmax(220px,1fr)_80px_80px_100px_80px_90px_120px_140px] lg:items-center lg:gap-3">
                   <div>
                     <div className="font-bold text-cyan-100">Totali complessivi</div>
                     <div className="mt-1 text-xs text-white/50">
                       {intNum(overviewTotals.events)} eventi
                     </div>
+                    {overviewTotals.missing_amount_tickets > 0 && (
+                      <div className="mt-1 text-xs text-amber-200/80">
+                        {intNum(overviewTotals.missing_amount_tickets)} titoli senza prezzo
+                      </div>
+                    )}
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5 lg:mt-0 lg:contents">
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-6 lg:mt-0 lg:contents">
                     <OverviewValue label="Titoli" value={intNum(overviewTotals.total)} />
                     <OverviewValue
                       label="Ingressi"
@@ -302,6 +340,11 @@ const typeLabels: Record<string, string> = {
                     <OverviewValue
                       label="Ingresso"
                       value={`${(overviewTotals.conversion_rate * 100).toFixed(1)}%`}
+                      accent
+                    />
+                    <OverviewValue
+                      label="Valore titoli"
+                      value={euro(overviewTotals.revenue_eur)}
                       accent
                     />
                   </div>
@@ -325,12 +368,23 @@ const typeLabels: Record<string, string> = {
           <>
             {selectedEvent && (
               <section className="rounded-3xl border border-cyan-300/25 bg-gradient-to-r from-cyan-400/[0.12] via-white/[0.05] to-transparent p-5 shadow-xl md:p-6">
-                <div className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">
-                  Statistiche evento
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">
+                      Statistiche evento
+                    </div>
+                    <h2 className="mt-2 text-2xl font-bold text-white md:text-3xl">
+                      {selectedEvent.name}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeEventDetail}
+                    className="w-full rounded-xl border border-white/20 bg-white/[0.06] px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white/80 transition hover:border-cyan-300/60 hover:bg-cyan-400/10 hover:text-cyan-100 sm:w-auto"
+                  >
+                    Chiudi dettaglio
+                  </button>
                 </div>
-                <h2 className="mt-2 text-2xl font-bold text-white md:text-3xl">
-                  {selectedEvent.name}
-                </h2>
                 <div className="mt-4 flex flex-wrap gap-2 text-sm text-white/70">
                   {selectedEvent.starts_at && (
                     <Badge>
