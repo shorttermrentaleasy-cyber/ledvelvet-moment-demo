@@ -554,6 +554,9 @@ export default function Moment2() {
   const [account, setAccount] = useState<AccountProfile | null>(null);
   const [accountLoading, setAccountLoading] = useState(true);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
+  const [logoutSuccess, setLogoutSuccess] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginSending, setLoginSending] = useState(false);
   const [loginSent, setLoginSent] = useState(false);
@@ -568,6 +571,14 @@ export default function Moment2() {
     Record<string, AccountTicketStatus>
   >({});
   const accountSyncStarted = useRef(false);
+
+  useEffect(() => {
+    if (sp.get("logout") !== "success") return;
+
+    setLogoutSuccess(true);
+    router.replace("/", { scroll: false });
+    window.setTimeout(() => setLogoutSuccess(false), 4500);
+  }, [router, sp]);
 
   async function submitHomepageLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -680,11 +691,18 @@ export default function Moment2() {
   }
 
   async function signOutAccount() {
-    await fetch("/api/account/member-verify", {
-      method: "DELETE",
-      credentials: "include",
-    }).catch(() => null);
-    await signOut({ callbackUrl: "/" });
+    if (logoutBusy) return;
+    setLogoutBusy(true);
+
+    try {
+      await fetch("/api/account/member-verify", {
+        method: "DELETE",
+        credentials: "include",
+      }).catch(() => null);
+      await signOut({ callbackUrl: "/?logout=success" });
+    } finally {
+      setLogoutBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -1746,7 +1764,10 @@ export default function Moment2() {
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => void signOutAccount()}
+                      onClick={() => {
+                        if (accountMenuRef.current) accountMenuRef.current.open = false;
+                        setLogoutConfirmOpen(true);
+                      }}
                       className="block w-full rounded-xl px-3 py-2.5 text-left text-xs text-white/60 hover:bg-white/10 hover:text-white"
                     >
                       Esci
@@ -2599,6 +2620,62 @@ export default function Moment2() {
           <div className="text-xs tracking-[0.22em] uppercase text-white/40">Follow us on Instagram · TikTok · Telegram</div>
         </div>
       </footer>
+{logoutSuccess ? (
+  <div
+    className="fixed left-1/2 top-6 z-[10040] -translate-x-1/2 rounded-2xl border border-emerald-300/30 bg-emerald-950/90 px-5 py-3 text-sm font-semibold text-emerald-100 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+    role="status"
+    aria-live="polite"
+  >
+    Disconnesso con successo
+  </div>
+) : null}
+
+{logoutConfirmOpen ? (
+  <div
+    className="fixed inset-0 z-[10030] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="logout-confirm-title"
+    onMouseDown={(event) => {
+      if (event.currentTarget === event.target && !logoutBusy) {
+        setLogoutConfirmOpen(false);
+      }
+    }}
+  >
+    <div className="w-[min(430px,calc(100vw-24px))] overflow-hidden rounded-3xl border border-white/15 bg-black/90 shadow-[0_28px_90px_rgba(0,0,0,0.72)]">
+      <div className="border-b border-white/10 px-6 py-5">
+        <div className="text-[11px] uppercase tracking-[0.24em] text-white/50">
+          LedVelvet Access
+        </div>
+        <h2 id="logout-confirm-title" className="mt-2 text-xl font-semibold text-white">
+          Vuoi davvero uscire?
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-white/60">
+          La sessione verrà chiusa e tornerai alla home come utente non autenticato.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 p-6">
+        <button
+          type="button"
+          onClick={() => setLogoutConfirmOpen(false)}
+          disabled={logoutBusy}
+          className="h-11 rounded-2xl border border-white/15 bg-white/5 text-xs font-semibold uppercase tracking-[0.18em] text-white/75 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Resta
+        </button>
+        <button
+          type="button"
+          onClick={() => void signOutAccount()}
+          disabled={logoutBusy}
+          className="h-11 rounded-2xl bg-[var(--red-accent)] text-xs font-semibold uppercase tracking-[0.18em] text-black transition hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+        >
+          {logoutBusy ? "Uscita…" : "Esci"}
+        </button>
+      </div>
+    </div>
+  </div>
+) : null}
+
 {/* Login Modal */}
 {loginOpen && !account ? (
   <div
