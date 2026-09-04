@@ -18,9 +18,16 @@ type Result =
   | "review"
   | "cancelled";
 
-type MembershipCategory = "active_member" | "inactive_member" | "non_member";
+type MembershipCategory = "active_member" | "inactive_member" | "non_member" | "identity_review";
 type EmailGroupCategory = MembershipCategory | "mixed";
 type Filter = MembershipCategory | "anomalies" | "resolved" | "all";
+type WorkFilter =
+  | "all"
+  | "not_started"
+  | "ready_to_send"
+  | "waiting_reply"
+  | "in_progress"
+  | "resolved";
 
 type AnomalyType =
   | "inactive_membership"
@@ -87,20 +94,35 @@ type Row = {
   first_purchase: boolean;
   matched_by: "email+phone" | "email" | "phone" | "admin_override" | null;
   warnings: string[];
+  name_candidates: MemberCandidate[];
   member: {
     id: string;
     barcode: string | null;
     full_name: string | null;
+    email: string | null;
+    phone: string | null;
     membership_group: string | null;
     status: string | null;
     membership_expires_at: string | null;
   } | null;
 };
 
+type MemberCandidate = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  status: string | null;
+  membership_expires_at: string | null;
+};
+
 type Summary = Record<
   Result |
     "repeated_identity" |
     "active_members" |
+    "inactive_members" |
+    "non_member_participants" |
+    "review_participants" |
     "covered_tickets" |
     "uncovered_tickets" |
     "possible_duplicates" |
@@ -237,11 +259,22 @@ function renewalUrl(barcode: string | null | undefined) {
 }
 
 function emailDraftFor(type: AnomalyType, row: Row, event: EventItem | null): EmailDraft {
-  const recipient = row.participant.email?.trim().toLowerCase() || "";
-  const name = row.participant.full_name?.trim();
+  const recipient = row.buyer?.email?.trim().toLowerCase() || row.participant.email?.trim().toLowerCase() || "";
+  const memberEmail = row.member?.email?.trim().toLowerCase();
+  const name =
+    (memberEmail && memberEmail === recipient ? row.member?.full_name?.trim() : null) ||
+    row.buyer?.full_name?.trim() ||
+    row.participant.full_name?.trim();
   const greeting = name ? `Ciao ${name},` : "Ciao,";
   const eventName = event?.name?.trim() || "l’evento LEDVELVET";
   const signature = "Grazie,\nStaff LEDVELVET";
+  const participant = row.participant.full_name?.trim() || "il partecipante indicato";
+  const buyerName = row.buyer?.full_name?.trim() || "";
+  const sameBuyerAndParticipant = Boolean(
+    buyerName &&
+      participant !== "il partecipante indicato" &&
+      normalizePersonName(buyerName) === normalizePersonName(participant)
+  );
 
   if (type === "inactive_membership") {
     const link = renewalUrl(row.member?.barcode);
@@ -267,15 +300,39 @@ function emailDraftFor(type: AnomalyType, row: Row, event: EventItem | null): Em
   if (type === "possible_duplicate") {
     return {
       recipient,
-      subject: `Verifica partecipante · ${eventName}`,
-      text: `${greeting}\n\nti contattiamo in merito ai biglietti per ${eventName}. La stessa Tessera Clubber Led Velvet risulta associata anche a un altro biglietto dell’evento.\n\nTi chiediamo di rispondere a questa email indicando nome, cognome, email e cellulare del partecipante effettivo del secondo biglietto.\n\n${signature}`,
+      subject: `Conferma partecipante · ${eventName}`,
+      text: sameBuyerAndParticipant
+        ? `${greeting}\n\nti contattiamo in merito a un ulteriore biglietto acquistato per ${eventName}, intestato nuovamente a te e associato ai tuoi recapiti.\n\nPoiché ogni biglietto deve appartenere personalmente al partecipante che accederà all’evento, la tua Tessera Clubber Led Velvet può essere associata a un solo biglietto.\n\nTi chiediamo di rispondere a questa email indicando nome, cognome, email personale e numero di cellulare della persona che utilizzerà il biglietto aggiuntivo.\n\nUna volta ricevuti i dati verificheremo lo stato della sua Tessera Clubber Led Velvet e ti comunicheremo gli eventuali passaggi necessari.\n\n${signature}`
+        : `${greeting}\n\nti contattiamo in merito a un ulteriore biglietto acquistato per ${eventName}, intestato a ${participant}.\n\nPoiché nell’acquisto sono stati utilizzati i tuoi recapiti anche per questo biglietto, al momento il sistema lo associa alla tua Tessera Clubber Led Velvet. Ogni biglietto deve invece appartenere personalmente al partecipante che accederà all’evento.\n\nTi chiediamo di confermarci se il biglietto è stato acquistato effettivamente per ${participant} e, in caso affermativo, di indicarci la sua email personale e il suo numero di cellulare.\n\nSe il nominativo non è corretto, comunicaci nome, cognome, email e cellulare della persona che utilizzerà il biglietto.\n\nUna volta ricevuti i dati verificheremo lo stato della Tessera Clubber Led Velvet del partecipante e ti comunicheremo gli eventuali passaggi necessari.\n\n${signature}`,
     };
   }
 
   return {
     recipient,
-    subject: `Verifica dati partecipante · ${eventName}`,
-    text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}. Per identificare correttamente la Tessera Clubber Led Velvet abbiamo bisogno di verificare i dati del partecipante.\n\nTi chiediamo di rispondere a questa email confermando nome, cognome, email e cellulare.\n\n${signature}`,
+    subject: `Conferma partecipante · ${eventName}`,
+    text: `${greeting}\n\nti contattiamo in merito al biglietto per ${eventName} intestato a ${participant}.\n\nPoiché nell’acquisto sono stati utilizzati i tuoi recapiti anche per questo biglietto, al momento il sistema lo associa alla tua Tessera Clubber Led Velvet. Ogni biglietto deve invece appartenere personalmente al partecipante che accederà all’evento.\n\nTi chiediamo di confermarci se il biglietto è stato acquistato effettivamente per ${participant} e, in caso affermativo, di indicarci la sua email personale e il suo numero di cellulare.\n\nSe il nominativo non è corretto, comunicaci nome, cognome, email e cellulare della persona che utilizzerà il biglietto.\n\nUna volta ricevuti i dati verificheremo lo stato della Tessera Clubber Led Velvet del partecipante e ti comunicheremo gli eventuali passaggi necessari.\n\n${signature}`,
+  };
+}
+
+function participantMembershipDraftFor(
+  row: Row,
+  event: EventItem | null
+): EmailDraft {
+  const recipient =
+    row.buyer?.email?.trim().toLowerCase() ||
+    row.participant.email?.trim().toLowerCase() ||
+    "";
+  const buyerName = row.buyer?.full_name?.trim();
+  const memberEmail = row.member?.email?.trim().toLowerCase();
+  const recipientName =
+    (memberEmail && memberEmail === recipient ? row.member?.full_name?.trim() : null) ||
+    buyerName;
+  const participant = row.participant.full_name?.trim() || "il partecipante indicato";
+  const eventName = event?.name?.trim() || "l’evento LEDVELVET";
+  return {
+    recipient,
+    subject: `Tessera del partecipante · ${eventName}`,
+    text: `${recipientName ? `Ciao ${recipientName},` : "Ciao,"}\n\nti contattiamo in merito al biglietto per ${eventName} intestato a ${participant}.\nDai dati verificati non risulta una Tessera Clubber Led Velvet associata al partecipante.\n\nPer ottenerla e poter accedere ai prossimi eventi è necessario completare la procedura da questo link:\n${MEMBERSHIP_REQUEST_URL}\n\nSenza la tessera non sarà possibile entrare.\nUna volta completata la procedura, verificheremo l’aggiornamento prima dell’evento.\n\nL'attivazione avrà validità un anno dal momento dell'acquisto.\n\nGrazie,\nStaff LEDVELVET`,
   };
 }
 
@@ -301,6 +358,12 @@ const emailGroupStyles: Record<
     badge: "border-red-400/50 bg-red-400/20 text-red-100",
     label: "Non socio",
   },
+  identity_review: {
+    container: "border-fuchsia-300/35 bg-fuchsia-300/[0.045]",
+    header: "border-fuchsia-300/25 bg-fuchsia-300/[0.12]",
+    badge: "border-fuchsia-300/40 bg-fuchsia-300/15 text-fuchsia-100",
+    label: "Identità dei partecipanti da verificare",
+  },
   mixed: {
     container: "border-cyan-300/25 bg-cyan-300/[0.025]",
     header: "border-cyan-300/20 bg-cyan-300/[0.08]",
@@ -323,6 +386,15 @@ function normalizedEmail(value: string | null | undefined) {
   return email || null;
 }
 
+function normalizePersonName(value: string | null | undefined) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function participantEmail(row: Row) {
   return normalizedEmail(row.participant.email);
 }
@@ -336,16 +408,17 @@ function hasInactiveMembership(row: Row) {
 }
 
 function membershipCategory(row: Row): MembershipCategory {
+  if (row.result === "review") return "identity_review";
   if (!row.member) return "non_member";
   return hasInactiveMembership(row) ? "inactive_member" : "active_member";
 }
 
 function anomalyType(row: Row): AnomalyType | null {
   if (row.ticket_status === "cancelled") return null;
+  if (row.result === "review") return "identity_review";
   if (row.coverage_status === "possible_duplicate") return "possible_duplicate";
   if (hasInactiveMembership(row)) return "inactive_membership";
   if (!row.member) return "non_member";
-  if (row.result === "review") return "identity_review";
   return null;
 }
 
@@ -443,12 +516,17 @@ export default function TicketPrescreenClient() {
   const [syncMessage, setSyncMessage] = useState("");
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [workFilter, setWorkFilter] = useState<WorkFilter>("all");
   const [anomalies, setAnomalies] = useState<Record<string, AnomalyRecord>>({});
   const [managementWarning, setManagementWarning] = useState("");
   const [selectedTicketRef, setSelectedTicketRef] = useState<string | null>(null);
   const [draftStatus, setDraftStatus] = useState<AnomalyStatus>("open");
   const [draftNote, setDraftNote] = useState("");
   const [draftActionId, setDraftActionId] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberSearchResults, setMemberSearchResults] = useState<MemberCandidate[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [searchingMember, setSearchingMember] = useState(false);
   const [savingAnomaly, setSavingAnomaly] = useState(false);
   const [emailDraft, setEmailDraft] = useState<EmailDraft | null>(null);
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -475,9 +553,8 @@ export default function TicketPrescreenClient() {
     [anomalies, rows]
   );
 
-  const visibleRows = useMemo(
-    () =>
-      filter === "all"
+  const categoryRows = useMemo(
+    () => filter === "all"
         ? rows
         : filter === "anomalies"
           ? openAnomalyRows
@@ -485,6 +562,50 @@ export default function TicketPrescreenClient() {
             ? resolvedAnomalyRows
           : rows.filter((row) => membershipCategory(row) === filter),
     [filter, openAnomalyRows, resolvedAnomalyRows, rows]
+  );
+
+  const workCounts = useMemo(() => {
+    const counts: Record<Exclude<WorkFilter, "all">, number> = {
+      not_started: 0,
+      ready_to_send: 0,
+      waiting_reply: 0,
+      in_progress: 0,
+      resolved: 0,
+    };
+    for (const row of rows) {
+      const detected = anomalyType(row);
+      const anomaly = anomalies[row.ticket_ref];
+      if (!detected && !anomaly) continue;
+      if (isClosedAnomaly(anomaly)) counts.resolved += 1;
+      else if (!anomaly) counts.not_started += 1;
+      else if (anomaly.status === "in_progress") counts.in_progress += 1;
+      else if (hasSentEmail(anomaly)) counts.waiting_reply += 1;
+      else counts.ready_to_send += 1;
+    }
+    return counts;
+  }, [anomalies, rows]);
+
+  const visibleRows = useMemo(
+    () =>
+      workFilter === "all"
+        ? categoryRows
+        : categoryRows.filter((row) => {
+            const detected = anomalyType(row);
+            const anomaly = anomalies[row.ticket_ref];
+            if (workFilter === "resolved") return isClosedAnomaly(anomaly);
+            if (workFilter === "not_started") return Boolean(detected && !anomaly);
+            if (workFilter === "in_progress") return anomaly?.status === "in_progress";
+            if (workFilter === "waiting_reply") {
+              return Boolean(anomaly && !isClosedAnomaly(anomaly) && hasSentEmail(anomaly));
+            }
+            return Boolean(
+              anomaly &&
+                !isClosedAnomaly(anomaly) &&
+                anomaly.status !== "in_progress" &&
+                !hasSentEmail(anomaly)
+            );
+          }),
+    [anomalies, categoryRows, workFilter]
   );
 
   const visibleGroups = useMemo(() => {
@@ -621,8 +742,50 @@ export default function TicketPrescreenClient() {
     setDraftStatus(existing?.status || "open");
     setDraftNote(existing?.admin_note || "");
     setDraftActionId("");
+    setMemberSearch(row.participant.full_name || "");
+    setMemberSearchResults(row.name_candidates || []);
+    setSelectedMemberId(
+      existing?.status === "resolved" || existing?.status === "archived"
+        ? existing.member_id || null
+        : null
+    );
     setEmailDraft(null);
     setEmailResult("");
+  }
+
+  async function searchMember() {
+    const query = memberSearch.trim();
+    if (query.length < 2) return;
+    setSearchingMember(true);
+    setError("");
+    try {
+      const payload = await fetchJson(
+        `/api/admin/wallyfor/list?q=${encodeURIComponent(query)}&limit=20`
+      );
+      setMemberSearchResults(
+        (payload.rows || []).map((item: Record<string, unknown>) => ({
+          id: String(item.id || ""),
+          full_name: String(item.full_name || `${item.first_name || ""} ${item.last_name || ""}`).trim(),
+          email: item.email ? String(item.email) : null,
+          phone: item.phone ? String(item.phone) : null,
+          status: item.status ? String(item.status) : null,
+          membership_expires_at: item.membership_expires_at ? String(item.membership_expires_at) : null,
+        }))
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Ricerca socio non riuscita");
+    } finally {
+      setSearchingMember(false);
+    }
+  }
+
+  function selectMember(candidate: MemberCandidate) {
+    setSelectedMemberId(candidate.id);
+    setDraftActionId("match_correct_member");
+    setDraftStatus("resolved");
+    setDraftNote(
+      `Dati ricevuti dall’acquirente e verificati dall’amministratore. Biglietto associato a ${candidate.full_name} (${candidate.email || candidate.phone || "tessera Wallyfor"}).`
+    );
   }
 
   function applyAnomalyAction(type: AnomalyType, actionId: string) {
@@ -651,7 +814,10 @@ export default function TicketPrescreenClient() {
           anomaly_type: detectedType,
           status: draftStatus,
           note: draftNote,
-          member_id: row.member?.id || null,
+          member_id:
+            detectedType === "identity_review" || detectedType === "possible_duplicate"
+              ? selectedMemberId
+              : row.member?.id || null,
         }),
       });
       const payload = await response.json().catch(() => null);
@@ -662,7 +828,7 @@ export default function TicketPrescreenClient() {
       setAnomalies((current) => ({ ...current, [saved.ticket_ref]: saved }));
       setManagementWarning("");
       if (
-        detectedType === "identity_review" &&
+        (detectedType === "identity_review" || detectedType === "possible_duplicate") &&
         saved.status === "resolved" &&
         saved.member_id
       ) {
@@ -723,6 +889,7 @@ export default function TicketPrescreenClient() {
     setLoading(true);
     setError("");
     setFilter("all");
+    setWorkFilter("all");
     try {
       const payload = await fetchJson(
         `/api/admin/ticket-prescreen?event_id=${encodeURIComponent(selectedId)}&t=${Date.now()}`
@@ -782,16 +949,23 @@ export default function TicketPrescreenClient() {
     }
   }
 
-  const cards: Array<{ key: keyof Summary; label: string; color: string }> = [
-    { key: "total", label: "Biglietti", color: "text-white" },
-    { key: "active_members", label: "Tessere attive", color: "text-emerald-300" },
-    { key: "covered_tickets", label: "Biglietti coperti", color: "text-emerald-300" },
-    { key: "uncovered_tickets", label: "Biglietti non coperti", color: "text-amber-200" },
-    { key: "inactive", label: "Non attivi", color: "text-red-300" },
-    { key: "not_found", label: "Non trovati", color: "text-red-300" },
-    { key: "review", label: "Da verificare", color: "text-amber-200" },
-    { key: "repeated_identity", label: "Identità ripetute", color: "text-amber-200" },
-    { key: "possible_duplicates", label: "Possibili doppioni", color: "text-amber-200" },
+  const validTickets = Math.max(0, Number(summary?.total || 0) - Number(summary?.cancelled || 0));
+  const ticketCards = [
+    { label: "Biglietti validi", value: validTickets, color: "text-white", note: "Titoli attivi da controllare" },
+    { label: "Coperti", value: summary?.covered_tickets || 0, color: "text-emerald-300", note: "Biglietti associati a una tessera valida" },
+    { label: "Non coperti", value: summary?.uncovered_tickets || 0, color: "text-amber-200", note: "Richiedono ancora un socio valido" },
+    { label: "Annullati", value: summary?.cancelled || 0, color: "text-white/55", note: "Esclusi dal pre-controllo" },
+  ];
+  const participantCards = [
+    { label: "Tessere attive", value: summary?.active_members || 0, color: "text-emerald-300", note: "Soci distinti con tessera valida" },
+    { label: "Da rinnovare", value: summary?.inactive_members || 0, color: "text-amber-200", note: "Soci distinti con tessera non attiva" },
+    { label: "Non soci", value: summary?.non_member_participants || 0, color: "text-red-300", note: "Partecipanti senza tessera compatibile" },
+    { label: "Identità da verificare", value: summary?.review_participants || 0, color: "text-fuchsia-200", note: "Partecipanti distinti da confermare" },
+  ];
+  const anomalyCards = [
+    { label: "Tessera già utilizzata", value: summary?.possible_duplicates || 0, color: "text-amber-200", note: "Serve il partecipante effettivo" },
+    { label: "Anomalie aperte", value: openAnomalyRows.length, color: "text-fuchsia-200", note: "Lavorazioni ancora da completare" },
+    { label: "Anomalie risolte", value: resolvedAnomalyRows.length, color: "text-emerald-300", note: "Decisioni già registrate" },
   ];
 
   return (
@@ -882,21 +1056,30 @@ export default function TicketPrescreenClient() {
                   Lettura aggiornata: {formatDate(generatedAt, true)}
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-                {cards.map((card) => (
-                  <div key={card.key} className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                    <div className="text-xs uppercase tracking-[0.14em] text-white/45">{card.label}</div>
-                    <div className={`mt-2 text-3xl font-bold ${card.color}`}>
-                      {Number(summary[card.key] || 0).toLocaleString("it-IT")}
+              <div className="mt-6 space-y-5">
+                {[
+                  { title: "Situazione biglietti", cards: ticketCards, columns: "xl:grid-cols-4" },
+                  { title: "Situazione partecipanti", cards: participantCards, columns: "xl:grid-cols-4" },
+                  { title: "Anomalie operative", cards: anomalyCards, columns: "xl:grid-cols-3" },
+                ].map((group) => (
+                  <div key={group.title}>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/45">
+                      {group.title}
+                    </h3>
+                    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${group.columns}`}>
+                      {group.cards.map((card) => (
+                        <div key={card.label} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                          <div className="text-xs uppercase tracking-[0.14em] text-white/45">{card.label}</div>
+                          <div className={`mt-2 text-3xl font-bold ${card.color}`}>
+                            {Number(card.value).toLocaleString("it-IT")}
+                          </div>
+                          <div className="mt-2 text-[11px] leading-4 text-white/40">{card.note}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
               </div>
-              {summary.cancelled > 0 && (
-                <p className="mt-3 text-xs text-white/45">
-                  Biglietti annullati: {summary.cancelled.toLocaleString("it-IT")}
-                </p>
-              )}
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-4 md:p-5">
@@ -912,18 +1095,39 @@ export default function TicketPrescreenClient() {
                     “Regolare” significa pre-controllo superato sui dati dichiarati nel biglietto.
                   </p>
                 </div>
-                <select
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value as Filter)}
-                  className="rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
-                >
-                  <option value="all">Tutti gli acquisti</option>
-                  <option value="active_member">Acquisti soci attivi</option>
-                  <option value="inactive_member">Acquisti soci non attivi</option>
-                  <option value="non_member">Acquisti non soci</option>
-                  <option value="anomalies">Anomalie da gestire ({openAnomalyRows.length})</option>
-                  <option value="resolved">Anomalie risolte ({resolvedAnomalyRows.length})</option>
-                </select>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="text-[11px] uppercase tracking-[0.12em] text-white/40">
+                    Tipo partecipante
+                    <select
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value as Filter)}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm normal-case tracking-normal text-white"
+                    >
+                      <option value="all">Tutti gli acquisti</option>
+                      <option value="active_member">Acquisti soci attivi</option>
+                      <option value="inactive_member">Acquisti soci non attivi</option>
+                      <option value="non_member">Acquisti non soci</option>
+                      <option value="identity_review">Identità partecipanti da verificare</option>
+                      <option value="anomalies">Anomalie da gestire ({openAnomalyRows.length})</option>
+                      <option value="resolved">Anomalie risolte ({resolvedAnomalyRows.length})</option>
+                    </select>
+                  </label>
+                  <label className="text-[11px] uppercase tracking-[0.12em] text-white/40">
+                    Stato lavorazione
+                    <select
+                      value={workFilter}
+                      onChange={(e) => setWorkFilter(e.target.value as WorkFilter)}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm normal-case tracking-normal text-white"
+                    >
+                      <option value="all">Tutti gli stati</option>
+                      <option value="not_started">Da prendere in carico ({workCounts.not_started})</option>
+                      <option value="ready_to_send">Preparati / da contattare ({workCounts.ready_to_send})</option>
+                      <option value="waiting_reply">Email inviata / in attesa ({workCounts.waiting_reply})</option>
+                      <option value="in_progress">In lavorazione ({workCounts.in_progress})</option>
+                      <option value="resolved">Risolti ({workCounts.resolved})</option>
+                    </select>
+                  </label>
+                </div>
               </div>
 
               {managementWarning && (
@@ -1002,7 +1206,7 @@ export default function TicketPrescreenClient() {
                         <article
                           key={`${row.ticket_ref}-${index}`}
                           className={`grid gap-4 p-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr] ${
-                            hasInactiveMembership(row)
+                            row.ticket_status !== "cancelled" && hasInactiveMembership(row)
                               ? "border-l-4 border-amber-300 bg-amber-400/20 ring-1 ring-inset ring-amber-300/50"
                               : ""
                           }`}
@@ -1037,18 +1241,24 @@ export default function TicketPrescreenClient() {
                     <div>
                       <span
                         className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                          hasInactiveMembership(row)
+                          row.ticket_status === "cancelled"
+                            ? resultStyles.cancelled
+                            : hasInactiveMembership(row)
                             ? resultStyles.inactive
                             : resultStyles[row.result]
                         }`}
                       >
-                        {hasInactiveMembership(row)
+                        {row.ticket_status === "cancelled"
+                          ? "Titolo annullato"
+                          : hasInactiveMembership(row)
                           ? "Tessera non attiva"
                           : row.result_label}
                       </span>
                       <div
                         className={`mt-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
-                          hasInactiveMembership(row)
+                          row.ticket_status === "cancelled"
+                            ? "border-white/10 bg-white/[0.035] text-white/55"
+                            : hasInactiveMembership(row)
                             ? "border-amber-300/40 bg-amber-300/15 text-amber-100"
                             : row.coverage_status === "covered"
                               ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
@@ -1059,10 +1269,17 @@ export default function TicketPrescreenClient() {
                               : "border-white/10 bg-white/[0.035] text-white/55"
                         }`}
                       >
-                        {hasInactiveMembership(row)
+                        {row.ticket_status === "cancelled"
+                          ? "Nessuna gestione richiesta"
+                          : hasInactiveMembership(row)
                           ? "Socio riconosciuto · Acquisto corretto · Biglietto non coperto"
                           : row.coverage_label}
                       </div>
+                      {row.ticket_status === "cancelled" && hasInactiveMembership(row) && (
+                        <div className="mt-2 text-xs text-white/45">
+                          Socio riconosciuto · Tessera non attiva
+                        </div>
+                      )}
                       {row.identity_repeated && (
                         <div className="mt-2 inline-flex rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
                           Identità ripetuta su {row.identity_ticket_count} biglietti
@@ -1130,6 +1347,64 @@ export default function TicketPrescreenClient() {
                             Chiudi pannello
                           </button>
                         </div>
+                        {(anomalyType(row) === "identity_review" ||
+                          anomalyType(row) === "possible_duplicate") && (
+                          <div className="mt-4 rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.05] p-4">
+                            <div className="text-sm font-semibold text-cyan-100">
+                              Ricerca guidata della Tessera Clubber Led Velvet
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-white/50">
+                              I risultati sono suggerimenti interni. Nessuna persona viene associata o contattata finché non selezioni una tessera e salvi.
+                            </div>
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                              <input
+                                value={memberSearch}
+                                onChange={(e) => setMemberSearch(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    void searchMember();
+                                  }
+                                }}
+                                placeholder="Nome, email, telefono o codice tessera"
+                                className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                              />
+                              <button
+                                type="button"
+                                disabled={searchingMember || memberSearch.trim().length < 2}
+                                onClick={() => void searchMember()}
+                                className="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:opacity-35"
+                              >
+                                {searchingMember ? "Ricerca…" : "Cerca in Wallyfor"}
+                              </button>
+                            </div>
+                            {memberSearchResults.length > 0 ? (
+                              <div className="mt-3 grid gap-2">
+                                {memberSearchResults.map((candidate) => (
+                                  <button
+                                    key={candidate.id}
+                                    type="button"
+                                    onClick={() => selectMember(candidate)}
+                                    className={`rounded-xl border px-3 py-3 text-left text-xs transition ${
+                                      selectedMemberId === candidate.id
+                                        ? "border-emerald-300/60 bg-emerald-300/15 text-emerald-100"
+                                        : "border-white/10 bg-black/25 text-white/65 hover:border-cyan-300/35"
+                                    }`}
+                                  >
+                                    <span className="block font-semibold text-white">{candidate.full_name}</span>
+                                    <span className="mt-1 block">
+                                      {candidate.email || "Email assente"} · {candidate.phone || "Telefono assente"} · {candidate.status || "Stato da verificare"}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="mt-3 text-xs text-white/40">
+                                Nessuna corrispondenza suggerita. Cerca usando i dati ricevuti dall’acquirente.
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <label className="mt-4 block text-xs text-white/55">
                           Azione suggerita
                           <select
@@ -1142,7 +1417,7 @@ export default function TicketPrescreenClient() {
                             <option value="">Scegli un’azione precompilata</option>
                             {[...anomalyActionPresets[anomalyType(row)!], noActionPreset]
                               .filter(
-                                (action) => action.id !== "match_correct_member" || Boolean(row.member?.id)
+                                (action) => action.id !== "match_correct_member" || Boolean(selectedMemberId)
                               )
                               .map(
                               (action) => (
@@ -1200,7 +1475,10 @@ export default function TicketPrescreenClient() {
                           <div className="flex flex-wrap items-center gap-3">
                             <button
                               type="button"
-                              disabled={!anomalies[row.ticket_ref] || !row.participant.email}
+                              disabled={
+                                !anomalies[row.ticket_ref] ||
+                                !(row.buyer?.email || row.participant.email)
+                              }
                               onClick={() => prepareEmail(row)}
                               className="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-35"
                             >
@@ -1209,10 +1487,27 @@ export default function TicketPrescreenClient() {
                                 anomalies[row.ticket_ref]
                               )}
                             </button>
+                            {(anomalyType(row) === "identity_review" ||
+                              anomalyType(row) === "possible_duplicate") && (
+                              <button
+                                type="button"
+                                disabled={
+                                  !anomalies[row.ticket_ref] ||
+                                  !(row.buyer?.email || row.participant.email)
+                                }
+                                onClick={() => {
+                                  setEmailResult("");
+                                  setEmailDraft(participantMembershipDraftFor(row, event));
+                                }}
+                                className="rounded-xl border border-amber-300/35 bg-amber-300/10 px-4 py-2.5 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-35"
+                              >
+                                Prepara tesseramento del partecipante
+                              </button>
+                            )}
                             <span className="text-xs text-white/45">
                               {!anomalies[row.ticket_ref]
                                 ? "Salva prima la gestione dell’anomalia."
-                                : !row.participant.email
+                                : !(row.buyer?.email || row.participant.email)
                                   ? "Il biglietto non contiene un’email destinatario."
                                   : hasSentEmail(anomalies[row.ticket_ref])
                                     ? "Email già inviata: puoi controllarla e reinviarla."
@@ -1324,7 +1619,16 @@ export default function TicketPrescreenClient() {
                                   <span className="font-semibold text-white/80">{historyStatusLabel(item)}</span>
                                   {" · "}{formatDate(item.created_at, true)}
                                   {" · "}{item.admin_email}
-                                  {item.note ? ` · ${item.note}` : ""}
+                                  {item.note?.includes("\n\nTesto inviato:\n") ? (
+                                    <details className="mt-2">
+                                      <summary className="cursor-pointer font-semibold text-cyan-100">
+                                        Mostra email inviata
+                                      </summary>
+                                      <div className="mt-2 whitespace-pre-wrap rounded-lg border border-white/10 bg-black/25 p-3 leading-5 text-white/70">
+                                        {item.note}
+                                      </div>
+                                    </details>
+                                  ) : item.note ? ` · ${item.note}` : ""}
                                 </div>
                               ))}
                             </div>

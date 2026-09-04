@@ -188,7 +188,7 @@ export async function POST(request: Request) {
     await addHistory(
       anomalyId,
       anomalyStatus,
-      `Email inviata a ${recipient} · Oggetto: ${subject}`,
+      `Email inviata a ${recipient} · Oggetto: ${subject}\n\nTesto inviato:\n${text}`,
       adminEmail
     );
 

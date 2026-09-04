@@ -70,6 +70,14 @@ export type PrescreenRow = {
   first_purchase: boolean;
   matched_by: "email+phone" | "email" | "phone" | "admin_override" | null;
   warnings: string[];
+  name_candidates: Array<{
+    id: string;
+    full_name: string;
+    email: string | null;
+    phone: string | null;
+    status: string | null;
+    membership_expires_at: string | null;
+  }>;
   member: {
     id: string;
     barcode: string | null;
@@ -222,6 +230,9 @@ export function buildPrescreenRows(params: {
     const phoneMatches = uniqueMembers(
       phoneNormalized ? phoneIndex.get(phoneNormalized) || [] : []
     );
+    const nameMatches = uniqueMembers(
+      participantName ? nameIndex.get(normalizeName(participantName)) || [] : []
+    );
     const both = intersection(emailMatches, phoneMatches);
     const warnings: string[] = [];
     let matched: PrescreenMember | null = null;
@@ -255,8 +266,16 @@ export function buildPrescreenRows(params: {
       warnings.push("Contatto associato a più soci");
     }
 
-    if (!matched && participantName && nameIndex.has(normalizeName(participantName))) {
-      warnings.push("Nome presente in Wallyfor, ma contatti non coincidenti");
+    if (!matched && nameMatches.length === 1) {
+      identityAmbiguous = true;
+      warnings.push(
+        "Possibile tessera trovata tramite nome e cognome; verificare prima di inviare il tesseramento"
+      );
+    } else if (!matched && nameMatches.length > 1) {
+      identityAmbiguous = true;
+      warnings.push(
+        "Più tessere trovate tramite nome e cognome; verificare l’identità"
+      );
     }
 
     if (
@@ -266,6 +285,15 @@ export function buildPrescreenRows(params: {
     ) {
       identityCertain = false;
       warnings.push("Nominativo Xceed diverso dall’anagrafica Wallyfor");
+    }
+
+    if (
+      matched &&
+      participantName &&
+      normalizeName(participantName) === normalizeName(memberName(matched)) &&
+      (matchedBy === "email" || matchedBy === "phone")
+    ) {
+      identityCertain = true;
     }
 
     const overriddenMemberId = params.memberOverrides?.get(ticketRef);
@@ -326,6 +354,14 @@ export function buildPrescreenRows(params: {
       first_purchase: false,
       matched_by: matchedBy,
       warnings,
+      name_candidates: nameMatches.slice(0, 5).map((candidate) => ({
+        id: candidate.id,
+        full_name: memberName(candidate) || "Socio senza nome",
+        email: candidate.email,
+        phone: candidate.phone,
+        status: candidate.status,
+        membership_expires_at: candidate.membership_expires_at,
+      })),
       member: matched
         ? {
             id: matched.id,
@@ -342,12 +378,15 @@ export function buildPrescreenRows(params: {
   }
 
   const activeMemberTicketCount = new Map<string, number>();
+  const duplicateQr = new Set<string>();
+  const rowsByMember = new Map<string, Array<(typeof rows)[number]>>();
   const activeRowsByMember = new Map<
     string,
     Array<(typeof rows)[number]>
   >();
   for (const row of rows) {
     if (row.member_id && row.ticket_status !== "cancelled") {
+      rowsByMember.set(row.member_id, [...(rowsByMember.get(row.member_id) || []), row]);
       activeMemberTicketCount.set(
         row.member_id,
         (activeMemberTicketCount.get(row.member_id) || 0) + 1
@@ -358,6 +397,17 @@ export function buildPrescreenRows(params: {
           row,
         ]);
       }
+    }
+  }
+
+  for (const memberRows of rowsByMember.values()) {
+    const ordered = [...memberRows].sort((left, right) => {
+      const leftTime = left.purchased_at ? Date.parse(left.purchased_at) : Number.POSITIVE_INFINITY;
+      const rightTime = right.purchased_at ? Date.parse(right.purchased_at) : Number.POSITIVE_INFINITY;
+      return leftTime - rightTime;
+    });
+    for (const row of ordered.slice(1)) {
+      duplicateQr.add(row.qr);
     }
   }
 
@@ -457,6 +507,15 @@ export function buildPrescreenRows(params: {
             first_purchase: false,
           };
 
+    const effectiveCoverage =
+      duplicateQr.has(qr) && row.result !== "review"
+        ? {
+            coverage_status: "possible_duplicate" as const,
+            coverage_label: "Tessera già usata – richiedere il partecipante effettivo",
+            first_purchase: false,
+          }
+        : coverage;
+
     if (
       member_id &&
       row.ticket_status !== "cancelled" &&
@@ -464,7 +523,7 @@ export function buildPrescreenRows(params: {
     ) {
       return {
         ...row,
-        ...coverage,
+        ...effectiveCoverage,
         identity_repeated: true,
         identity_ticket_count: identityTicketCount,
         warnings: [
@@ -473,7 +532,7 @@ export function buildPrescreenRows(params: {
         ],
       };
     }
-    return { ...row, ...coverage };
+    return { ...row, ...effectiveCoverage };
   });
 }
 
@@ -487,11 +546,23 @@ export function summarizePrescreen(rows: PrescreenRow[]) {
     repeated_identity: 0,
     cancelled: 0,
     active_members: 0,
+    inactive_members: 0,
+    non_member_participants: 0,
+    review_participants: 0,
     covered_tickets: 0,
     uncovered_tickets: 0,
     possible_duplicates: 0,
   };
   const activeMembers = new Set<string>();
+  const inactiveMembers = new Set<string>();
+  const nonMembers = new Set<string>();
+  const reviewParticipants = new Set<string>();
+  const participantKey = (row: PrescreenRow) =>
+    [
+      normalizeName(row.participant.full_name),
+      normalizeEmail(row.participant.email),
+      normalizePhone(row.participant.phone),
+    ].filter(Boolean).join("|") || row.ticket_ref;
   for (const row of rows) {
     summary[row.result] += 1;
     if (row.identity_repeated) summary.repeated_identity += 1;
@@ -499,8 +570,16 @@ export function summarizePrescreen(rows: PrescreenRow[]) {
       summary.possible_duplicates += 1;
     }
     if (row.result === "active" && row.member?.id) activeMembers.add(row.member.id);
+    if (row.result === "inactive") {
+      inactiveMembers.add(row.member?.id || participantKey(row));
+    }
+    if (row.result === "not_found") nonMembers.add(participantKey(row));
+    if (row.result === "review") reviewParticipants.add(participantKey(row));
   }
   summary.active_members = activeMembers.size;
+  summary.inactive_members = inactiveMembers.size;
+  summary.non_member_participants = nonMembers.size;
+  summary.review_participants = reviewParticipants.size;
   summary.covered_tickets = activeMembers.size;
   summary.uncovered_tickets = Math.max(
     0,
