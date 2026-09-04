@@ -268,6 +268,13 @@ function emailDraftFor(type: AnomalyType, row: Row, event: EventItem | null): Em
   const greeting = name ? `Ciao ${name},` : "Ciao,";
   const eventName = event?.name?.trim() || "l’evento LEDVELVET";
   const signature = "Grazie,\nStaff LEDVELVET";
+  const participant = row.participant.full_name?.trim() || "il partecipante indicato";
+  const buyerName = row.buyer?.full_name?.trim() || "";
+  const sameBuyerAndParticipant = Boolean(
+    buyerName &&
+      participant !== "il partecipante indicato" &&
+      normalizePersonName(buyerName) === normalizePersonName(participant)
+  );
 
   if (type === "inactive_membership") {
     const link = renewalUrl(row.member?.barcode);
@@ -291,19 +298,19 @@ function emailDraftFor(type: AnomalyType, row: Row, event: EventItem | null): Em
   }
 
   if (type === "possible_duplicate") {
-    const participant = row.participant.full_name?.trim() || "un partecipante da identificare";
     return {
       recipient,
-      subject: `Verifica partecipante · ${eventName}`,
-      text: `${greeting}\n\nti contattiamo in merito ai biglietti per ${eventName}. Il biglietto intestato a ${participant} non può essere coperto dalla stessa Tessera Clubber Led Velvet già utilizzata per un altro biglietto dell’evento.\n\nTi chiediamo di rispondere a questa email indicando nome, cognome, email e cellulare del partecipante effettivo.\n\n${signature}`,
+      subject: `Conferma partecipante · ${eventName}`,
+      text: sameBuyerAndParticipant
+        ? `${greeting}\n\nti contattiamo in merito a un ulteriore biglietto acquistato per ${eventName}, intestato nuovamente a te e associato ai tuoi recapiti.\n\nPoiché ogni biglietto deve appartenere personalmente al partecipante che accederà all’evento, la tua Tessera Clubber Led Velvet può essere associata a un solo biglietto.\n\nTi chiediamo di rispondere a questa email indicando nome, cognome, email personale e numero di cellulare della persona che utilizzerà il biglietto aggiuntivo.\n\nUna volta ricevuti i dati verificheremo lo stato della sua Tessera Clubber Led Velvet e ti comunicheremo gli eventuali passaggi necessari.\n\n${signature}`
+        : `${greeting}\n\nti contattiamo in merito a un ulteriore biglietto acquistato per ${eventName}, intestato a ${participant}.\n\nPoiché nell’acquisto sono stati utilizzati i tuoi recapiti anche per questo biglietto, al momento il sistema lo associa alla tua Tessera Clubber Led Velvet. Ogni biglietto deve invece appartenere personalmente al partecipante che accederà all’evento.\n\nTi chiediamo di confermarci se il biglietto è stato acquistato effettivamente per ${participant} e, in caso affermativo, di indicarci la sua email personale e il suo numero di cellulare.\n\nSe il nominativo non è corretto, comunicaci nome, cognome, email e cellulare della persona che utilizzerà il biglietto.\n\nUna volta ricevuti i dati verificheremo lo stato della Tessera Clubber Led Velvet del partecipante e ti comunicheremo gli eventuali passaggi necessari.\n\n${signature}`,
     };
   }
 
-  const participant = row.participant.full_name?.trim() || "il partecipante indicato";
   return {
     recipient,
-    subject: `Verifica dati partecipante · ${eventName}`,
-    text: `${greeting}\n\nti contattiamo in merito al biglietto per ${eventName} intestato a ${participant}. Per identificare correttamente la Tessera Clubber Led Velvet abbiamo bisogno di verificare i dati del partecipante.\n\nTi chiediamo di rispondere a questa email confermando nome, cognome, email e cellulare.\n\n${signature}`,
+    subject: `Conferma partecipante · ${eventName}`,
+    text: `${greeting}\n\nti contattiamo in merito al biglietto per ${eventName} intestato a ${participant}.\n\nPoiché nell’acquisto sono stati utilizzati i tuoi recapiti anche per questo biglietto, al momento il sistema lo associa alla tua Tessera Clubber Led Velvet. Ogni biglietto deve invece appartenere personalmente al partecipante che accederà all’evento.\n\nTi chiediamo di confermarci se il biglietto è stato acquistato effettivamente per ${participant} e, in caso affermativo, di indicarci la sua email personale e il suo numero di cellulare.\n\nSe il nominativo non è corretto, comunicaci nome, cognome, email e cellulare della persona che utilizzerà il biglietto.\n\nUna volta ricevuti i dati verificheremo lo stato della Tessera Clubber Led Velvet del partecipante e ti comunicheremo gli eventuali passaggi necessari.\n\n${signature}`,
   };
 }
 
@@ -377,6 +384,15 @@ function formatDate(value: string | null, withTime = false) {
 function normalizedEmail(value: string | null | undefined) {
   const email = value?.trim().toLowerCase();
   return email || null;
+}
+
+function normalizePersonName(value: string | null | undefined) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function participantEmail(row: Row) {
@@ -1603,7 +1619,16 @@ export default function TicketPrescreenClient() {
                                   <span className="font-semibold text-white/80">{historyStatusLabel(item)}</span>
                                   {" · "}{formatDate(item.created_at, true)}
                                   {" · "}{item.admin_email}
-                                  {item.note ? ` · ${item.note}` : ""}
+                                  {item.note?.includes("\n\nTesto inviato:\n") ? (
+                                    <details className="mt-2">
+                                      <summary className="cursor-pointer font-semibold text-cyan-100">
+                                        Mostra email inviata
+                                      </summary>
+                                      <div className="mt-2 whitespace-pre-wrap rounded-lg border border-white/10 bg-black/25 p-3 leading-5 text-white/70">
+                                        {item.note}
+                                      </div>
+                                    </details>
+                                  ) : item.note ? ` · ${item.note}` : ""}
                                 </div>
                               ))}
                             </div>
