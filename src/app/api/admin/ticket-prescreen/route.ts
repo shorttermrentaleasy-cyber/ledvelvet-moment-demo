@@ -94,7 +94,7 @@ async function loadMemberOverrides(
     .from("ticket_anomalies")
     .select("ticket_ref,member_id")
     .eq("event_id", eventId)
-    .eq("anomaly_type", "identity_review")
+    .in("anomaly_type", ["identity_review", "possible_duplicate"])
     .eq("status", "resolved")
     .not("member_id", "is", null);
   if (error) throw error;
