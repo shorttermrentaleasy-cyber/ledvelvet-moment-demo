@@ -20,7 +20,7 @@ type Result =
 
 type MembershipCategory = "active_member" | "inactive_member" | "non_member";
 type EmailGroupCategory = MembershipCategory | "mixed";
-type Filter = MembershipCategory | "anomalies" | "all";
+type Filter = MembershipCategory | "anomalies" | "resolved" | "all";
 
 type AnomalyType =
   | "inactive_membership"
@@ -85,7 +85,7 @@ type Row = {
   coverage_status: "covered" | "uncovered" | "unidentified" | "possible_duplicate";
   coverage_label: string;
   first_purchase: boolean;
-  matched_by: "email+phone" | "email" | "phone" | null;
+  matched_by: "email+phone" | "email" | "phone" | "admin_override" | null;
   warnings: string[];
   member: {
     id: string;
@@ -210,10 +210,10 @@ const anomalyActionPresets: Record<AnomalyType, AnomalyActionPreset[]> = {
     },
     {
       id: "match_correct_member",
-      label: "Associa al socio corretto dopo verifica",
-      status: "in_progress",
+      label: "Conferma identità e associa alla tessera",
+      status: "resolved",
       note:
-        "Verificare manualmente l’identità del partecipante e associare il biglietto al socio corretto, mantenendo traccia della decisione.",
+        "Identità verificata dall’amministratore. Biglietto associato alla Tessera Clubber Led Velvet indicata nel pre-controllo.",
     },
   ],
 };
@@ -247,20 +247,20 @@ function emailDraftFor(type: AnomalyType, row: Row, event: EventItem | null): Em
     const link = renewalUrl(row.member?.barcode);
     return {
       recipient,
-      subject: `Rinnovo tessera LV People · ${eventName}`,
-      text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}. La tua tessera LV People risulta non attiva.\n\n${
+      subject: `Rinnovo Tessera Clubber Led Velvet · ${eventName}`,
+      text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}.\nLa tua Tessera Clubber Led Velvet risulta non attiva.\n\n${
         link
-          ? `Puoi completare il rinnovo personale con un clic da questo link:\n${link}`
+          ? `Completa il rinnovo con un clic da questo link per poter accedere ai prossimi eventi:\n${link}`
           : "Contattaci per ricevere il link personale di rinnovo."
-      }\n\nDopo il rinnovo verificheremo automaticamente l’aggiornamento della tessera prima dell’evento.\n\n${signature}`,
+      }\n\nDopo il rinnovo verificheremo automaticamente l’aggiornamento della tessera.\n\nL'attivazione avrà validità un anno dal momento dell'acquisto.\n\n${signature}`,
     };
   }
 
   if (type === "non_member") {
     return {
       recipient,
-      subject: `Domanda di ammissione LV People · ${eventName}`,
-      text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}. Dai dati inseriti non risulta una tessera LV People associata.\n\nPuoi presentare la domanda di ammissione attraverso il percorso ufficiale:\n${MEMBERSHIP_REQUEST_URL}\n\nUna volta completata la procedura, verificheremo l’aggiornamento prima dell’evento.\n\n${signature}`,
+      subject: `Attivazione Tessera Clubber Led Velvet · ${eventName}`,
+      text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}.\nDai dati inseriti non risulta una Tessera Clubber Led Velvet associata.\n\nClicca il link qui sotto per ottenerla e poter accedere ai prossimi eventi:\n${MEMBERSHIP_REQUEST_URL}\n\nSenza la tessera non sarà possibile entrare.\nUna volta completata la procedura, verificheremo l’aggiornamento prima dell’evento.\n\nL'attivazione avrà validità un anno dal momento dell'acquisto.\n\n${signature}`,
     };
   }
 
@@ -268,14 +268,14 @@ function emailDraftFor(type: AnomalyType, row: Row, event: EventItem | null): Em
     return {
       recipient,
       subject: `Verifica partecipante · ${eventName}`,
-      text: `${greeting}\n\nti contattiamo in merito ai biglietti per ${eventName}. La stessa tessera LV People risulta associata anche a un altro biglietto dell’evento.\n\nTi chiediamo di rispondere a questa email indicando nome, cognome, email e cellulare del partecipante effettivo del secondo biglietto.\n\n${signature}`,
+      text: `${greeting}\n\nti contattiamo in merito ai biglietti per ${eventName}. La stessa Tessera Clubber Led Velvet risulta associata anche a un altro biglietto dell’evento.\n\nTi chiediamo di rispondere a questa email indicando nome, cognome, email e cellulare del partecipante effettivo del secondo biglietto.\n\n${signature}`,
     };
   }
 
   return {
     recipient,
     subject: `Verifica dati partecipante · ${eventName}`,
-    text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}. Per identificare correttamente la tessera LV People abbiamo bisogno di verificare i dati del partecipante.\n\nTi chiediamo di rispondere a questa email confermando nome, cognome, email e cellulare.\n\n${signature}`,
+    text: `${greeting}\n\nti contattiamo in merito al tuo biglietto per ${eventName}. Per identificare correttamente la Tessera Clubber Led Velvet abbiamo bisogno di verificare i dati del partecipante.\n\nTi chiediamo di rispondere a questa email confermando nome, cognome, email e cellulare.\n\n${signature}`,
   };
 }
 
@@ -416,11 +416,12 @@ function groupPurchasedAt(group: RowGroup) {
   return timestamps.length ? Math.min(...timestamps) : Number.POSITIVE_INFINITY;
 }
 
-async function fetchJson(url: string) {
+async function fetchJson(url: string, init: RequestInit = {}) {
   const response = await fetch(url, {
     cache: "no-store",
     credentials: "include",
-    headers: { Accept: "application/json" },
+    ...init,
+    headers: { Accept: "application/json", ...(init.headers || {}) },
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.ok) {
@@ -438,6 +439,8 @@ export default function TicketPrescreenClient() {
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [syncingMembers, setSyncingMembers] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [anomalies, setAnomalies] = useState<Record<string, AnomalyRecord>>({});
@@ -467,14 +470,21 @@ export default function TicketPrescreenClient() {
     [anomalies, rows]
   );
 
+  const resolvedAnomalyRows = useMemo(
+    () => rows.filter((row) => isClosedAnomaly(anomalies[row.ticket_ref])),
+    [anomalies, rows]
+  );
+
   const visibleRows = useMemo(
     () =>
       filter === "all"
         ? rows
         : filter === "anomalies"
           ? openAnomalyRows
+          : filter === "resolved"
+            ? resolvedAnomalyRows
           : rows.filter((row) => membershipCategory(row) === filter),
-    [filter, openAnomalyRows, rows]
+    [filter, openAnomalyRows, resolvedAnomalyRows, rows]
   );
 
   const visibleGroups = useMemo(() => {
@@ -651,6 +661,13 @@ export default function TicketPrescreenClient() {
       const saved = payload.anomaly as AnomalyRecord;
       setAnomalies((current) => ({ ...current, [saved.ticket_ref]: saved }));
       setManagementWarning("");
+      if (
+        detectedType === "identity_review" &&
+        saved.status === "resolved" &&
+        saved.member_id
+      ) {
+        await loadPrescreen(eventId);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Errore nel salvataggio");
     } finally {
@@ -728,6 +745,43 @@ export default function TicketPrescreenClient() {
     }
   }
 
+  async function syncMembersAndRecheck() {
+    if (!eventId) return;
+    setSyncingMembers(true);
+    setSyncMessage("");
+    setError("");
+    try {
+      const sync = await fetchJson("/api/admin/wallyfor/refresh", { method: "POST" });
+      const refreshed = await fetchJson("/api/admin/ticket-prescreen", {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ event_id: eventId }),
+      });
+      setEvent(refreshed.event || null);
+      setSummary(refreshed.summary || null);
+      setRows(refreshed.rows || []);
+      setGeneratedAt(refreshed.generated_at || null);
+      setSelectedTicketRef(null);
+      await loadAnomalies(eventId);
+      const resolved = Number(refreshed.resolved_count || 0);
+      const details = [
+        Number(refreshed.new_memberships || 0) > 0
+          ? `${Number(refreshed.new_memberships)} nuove tessere rilevate`
+          : "",
+        Number(refreshed.renewals || 0) > 0
+          ? `${Number(refreshed.renewals)} rinnovi rilevati`
+          : "",
+      ].filter(Boolean).join(" · ");
+      setSyncMessage(
+        `Sincronizzazione completata: ${Number(sync.fetched || 0).toLocaleString("it-IT")} soci ricevuti. Pre-controllo ricalcolato${resolved ? `: ${resolved} anomalie risolte automaticamente${details ? ` (${details})` : ""}` : "."}`
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Sincronizzazione non riuscita");
+    } finally {
+      setSyncingMembers(false);
+    }
+  }
+
   const cards: Array<{ key: keyof Summary; label: string; color: string }> = [
     { key: "total", label: "Biglietti", color: "text-white" },
     { key: "active_members", label: "Tessere attive", color: "text-emerald-300" },
@@ -750,7 +804,7 @@ export default function TicketPrescreenClient() {
           >
             ← Dashboard
           </Link>
-          <div className="grid gap-5 lg:grid-cols-[1fr_420px] lg:items-end">
+          <div className="grid gap-5 lg:grid-cols-[1fr_620px] lg:items-end">
             <div>
               <div className="text-xs uppercase tracking-[0.35em] text-cyan-300">
                 LED VELVET • ADMIN
@@ -765,7 +819,7 @@ export default function TicketPrescreenClient() {
               <label className="mb-2 block text-xs uppercase tracking-[0.2em] text-white/50">
                 Evento Xceed
               </label>
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:flex-nowrap">
                 <select
                   value={eventId}
                   disabled={loadingEvents || loading}
@@ -781,16 +835,30 @@ export default function TicketPrescreenClient() {
                 </select>
                 <button
                   type="button"
-                  disabled={!eventId || loading}
+                  disabled={!eventId || loading || syncingMembers}
                   onClick={() => void loadPrescreen()}
                   className="rounded-2xl bg-cyan-300 px-5 py-3 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {loading ? "Controllo…" : rows.length ? "Aggiorna" : "Controlla"}
+                  {loading ? "Controllo…" : rows.length ? "Aggiorna controllo" : "Controlla"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!eventId || loading || syncingMembers}
+                  onClick={() => void syncMembersAndRecheck()}
+                  className="rounded-2xl border border-fuchsia-300/40 bg-fuchsia-300/10 px-5 py-3 text-sm font-bold text-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {syncingMembers ? "Sincronizzazione…" : "Sincronizza soci e ricontrolla"}
                 </button>
               </div>
             </div>
           </div>
         </header>
+
+        {syncMessage && (
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+            {syncMessage}
+          </div>
+        )}
 
         {error && (
           <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-100">
@@ -854,6 +922,7 @@ export default function TicketPrescreenClient() {
                   <option value="inactive_member">Acquisti soci non attivi</option>
                   <option value="non_member">Acquisti non soci</option>
                   <option value="anomalies">Anomalie da gestire ({openAnomalyRows.length})</option>
+                  <option value="resolved">Anomalie risolte ({resolvedAnomalyRows.length})</option>
                 </select>
               </div>
 
@@ -1001,7 +1070,11 @@ export default function TicketPrescreenClient() {
                       )}
                       {row.matched_by && (
                         <div className="mt-2 text-xs text-white/40">
-                          Collegato tramite {row.matched_by === "email+phone" ? "email + telefono" : row.matched_by}
+                          Collegato tramite {row.matched_by === "email+phone"
+                            ? "email + telefono"
+                            : row.matched_by === "admin_override"
+                              ? "conferma amministratore"
+                              : row.matched_by}
                         </div>
                       )}
                       {row.warnings.map((warning) => (
@@ -1023,6 +1096,20 @@ export default function TicketPrescreenClient() {
                             {anomalies[row.ticket_ref]
                               ? `${anomalyTypeLabels[anomalyType(row)!]} · ${communicationStatusLabel(anomalyType(row)!, anomalies[row.ticket_ref], anomalies[row.ticket_ref].status)}`
                               : `${anomalyTypeLabels[anomalyType(row)!]} · Non ancora presa in carico`}
+                          </div>
+                        </div>
+                      )}
+                      {!anomalyType(row) && isClosedAnomaly(anomalies[row.ticket_ref]) && (
+                        <div className="mt-3 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => openAnomalyManager(row)}
+                            className="rounded-xl border border-emerald-300/35 bg-emerald-300/10 px-3 py-2 text-xs font-semibold text-emerald-100"
+                          >
+                            Apri storico risoluzione
+                          </button>
+                          <div className="text-xs text-emerald-200/70">
+                            {anomalies[row.ticket_ref].admin_note || "Anomalia risolta"}
                           </div>
                         </div>
                       )}
@@ -1053,7 +1140,11 @@ export default function TicketPrescreenClient() {
                             className="mt-1 w-full rounded-xl border border-fuchsia-300/25 bg-black/60 px-3 py-2 text-sm text-white"
                           >
                             <option value="">Scegli un’azione precompilata</option>
-                            {[...anomalyActionPresets[anomalyType(row)!], noActionPreset].map(
+                            {[...anomalyActionPresets[anomalyType(row)!], noActionPreset]
+                              .filter(
+                                (action) => action.id !== "match_correct_member" || Boolean(row.member?.id)
+                              )
+                              .map(
                               (action) => (
                                 <option key={action.id} value={action.id}>
                                   {action.label}
@@ -1241,6 +1332,36 @@ export default function TicketPrescreenClient() {
                         )}
                       </div>
                     )}
+
+                    {selectedTicketRef === row.ticket_ref &&
+                      !anomalyType(row) &&
+                      isClosedAnomaly(anomalies[row.ticket_ref]) && (
+                        <div className="rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.07] p-4 lg:col-span-4">
+                          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                            <div>
+                              <div className="text-sm font-semibold text-emerald-100">
+                                {anomalyTypeLabels[anomalies[row.ticket_ref].anomaly_type]} · {anomalyStatusLabels[anomalies[row.ticket_ref].status]}
+                              </div>
+                              <div className="mt-1 text-xs text-white/55">
+                                {anomalies[row.ticket_ref].admin_note || "Anomalia risolta."}
+                              </div>
+                            </div>
+                            <button type="button" onClick={() => setSelectedTicketRef(null)} className="text-left text-xs text-white/50 md:text-right">
+                              Chiudi storico
+                            </button>
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            {(anomalies[row.ticket_ref].history || []).map((item) => (
+                              <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
+                                <span className="font-semibold text-white/80">{historyStatusLabel(item)}</span>
+                                {" · "}{formatDate(item.created_at, true)}
+                                {" · "}{item.admin_email}
+                                {item.note ? ` · ${item.note}` : ""}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                         </article>
                       ))}
