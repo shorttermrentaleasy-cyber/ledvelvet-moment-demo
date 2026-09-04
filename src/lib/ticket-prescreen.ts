@@ -68,7 +68,7 @@ export type PrescreenRow = {
   coverage_status: "covered" | "uncovered" | "unidentified" | "possible_duplicate";
   coverage_label: string;
   first_purchase: boolean;
-  matched_by: "email+phone" | "email" | "phone" | null;
+  matched_by: "email+phone" | "email" | "phone" | "admin_override" | null;
   warnings: string[];
   member: {
     id: string;
@@ -167,12 +167,14 @@ export function buildPrescreenRows(params: {
   tickets: PrescreenTicket[];
   bookings: PrescreenBooking[];
   members: PrescreenMember[];
+  memberOverrides?: Map<string, string>;
   today?: string;
 }) {
   const today = params.today || new Date().toISOString().slice(0, 10);
   const emailIndex = new Map<string, PrescreenMember[]>();
   const phoneIndex = new Map<string, PrescreenMember[]>();
   const nameIndex = new Map<string, PrescreenMember[]>();
+  const memberById = new Map(params.members.map((member) => [member.id, member]));
 
   const add = (
     index: Map<string, PrescreenMember[]>,
@@ -205,6 +207,7 @@ export function buildPrescreenRows(params: {
   for (const ticket of params.tickets) {
     const qr = String(ticket.qrCode || "").trim();
     if (!qr) continue;
+    const ticketRef = shortTicketRef(qr);
 
     const bookingMatch = bookingByQr.get(qr);
     const pass = bookingMatch?.pass;
@@ -265,6 +268,18 @@ export function buildPrescreenRows(params: {
       warnings.push("Nominativo Xceed diverso dall’anagrafica Wallyfor");
     }
 
+    const overriddenMemberId = params.memberOverrides?.get(ticketRef);
+    const overriddenMember = overriddenMemberId
+      ? memberById.get(overriddenMemberId) || null
+      : null;
+    if (overriddenMember) {
+      matched = overriddenMember;
+      matchedBy = "admin_override";
+      identityCertain = true;
+      identityAmbiguous = false;
+      warnings.push("Identità confermata dall’amministratore");
+    }
+
     const cancelled = ticket.isActive === false || pass?.isActive === false;
     let result: PrescreenResult;
     if (cancelled) result = "cancelled";
@@ -280,7 +295,7 @@ export function buildPrescreenRows(params: {
     rows.push({
       qr,
       member_id: matched?.id || null,
-      ticket_ref: shortTicketRef(qr),
+      ticket_ref: ticketRef,
       order_ref:
         booking?.legacyId != null
           ? String(booking.legacyId)
