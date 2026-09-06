@@ -281,7 +281,11 @@ export async function POST(req: NextRequest) {
       const qrCode = normalize(ticket.qrCode);
       const checkedInTime = Number(ticket.checkedInTime || 0);
       const checkedInBy = normalize(ticket.checkedInBy).toLowerCase();
-      const gate = await resolveDoorGateByXceedEmail(supabase, checkedInBy);
+      const gate = await resolveDoorGateByXceedEmail(
+        supabase,
+        checkedInBy,
+        eventId
+      );
 
       if (!gate.gate_id || !gate.door_role) {
         skippedUnmapped += 1;
