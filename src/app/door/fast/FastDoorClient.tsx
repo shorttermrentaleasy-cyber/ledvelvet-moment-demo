@@ -117,7 +117,6 @@ export default function FastDoorClient() {
   const [advanceMode, setAdvanceMode] = useState<AdvanceMode>("automatic");
   const [doorToken, setDoorToken] = useState("");
   const [pollDiagnostics, setPollDiagnostics] = useState<PollDiagnostics | null>(null);
-  const [latestGateEvent, setLatestGateEvent] = useState<LiveEvent | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -251,7 +250,6 @@ export default function FastDoorClient() {
       | { ok?: boolean; item?: LiveEvent | null }
       | null;
     const item = data?.item;
-    setLatestGateEvent(item || null);
     const liveKey = String(item?.live_key || "");
 
     if (!liveKey || liveKey === lastLiveKeyRef.current) return;
@@ -484,23 +482,23 @@ export default function FastDoorClient() {
 
   return (
     <div
-      className="min-h-screen w-full bg-black text-white"
+      className="min-h-[100dvh] w-full bg-black text-white"
       onClick={() => inputRef.current?.focus()}
     >
-      <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-3 px-3 py-3 sm:px-5">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-4xl flex-col justify-start gap-2 px-3 py-2 sm:px-5">
         <header className="w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
-          <div className="w-full px-3 py-3 text-center sm:px-4">
+          <div className="w-full px-3 py-2 text-center sm:px-4">
             <div className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
               Fast Check
             </div>
-            <h1 className="mt-0.5 text-lg font-black sm:text-xl">
+            <h1 className="text-lg font-black sm:text-xl">
               {context?.event?.name || "Evento in caricamento"}
             </h1>
             <div className="mt-0.5 text-xs text-white/55 sm:text-sm">
               {[eventDate, eventPlace].filter(Boolean).join(" · ") || eventId}
             </div>
           </div>
-          <div className="flex w-full flex-wrap items-center justify-center gap-2 border-t border-white/10 px-3 py-3 sm:px-4">
+          <div className="flex w-full flex-wrap items-center justify-center gap-1.5 border-t border-white/10 px-3 py-2 sm:px-4">
             <div
               className="flex rounded-full border border-white/15 bg-white/5 p-0.5"
               onClick={(event) => event.stopPropagation()}
@@ -557,9 +555,9 @@ export default function FastDoorClient() {
             </span>
           </div>
           {pollDiagnostics && (
-            <div className="border-t border-white/10 px-3 py-2 text-center text-[10px] leading-5 text-white/45 sm:text-xs">
-              <div>
-                Xceed: {pollDiagnostics.fetched} letti · {pollDiagnostics.checked_in} check-in validi
+            <div className="flex flex-wrap items-center justify-center gap-x-2 border-t border-white/10 px-3 py-1.5 text-center text-[10px] leading-4 text-white/50 sm:text-xs">
+              <span>
+                Xceed: {pollDiagnostics.fetched} letti · {pollDiagnostics.checked_in} validi
                 {pollDiagnostics.checked_in_without_time > 0 &&
                   ` · ${pollDiagnostics.checked_in_without_time} senza orario`}
                 {pollDiagnostics.checked_in_without_qr > 0 &&
@@ -568,30 +566,24 @@ export default function FastDoorClient() {
                 {pollDiagnostics.processed > 0 && ` · ${pollDiagnostics.processed} elaborati`}
                 {pollDiagnostics.skipped_unmapped > 0 &&
                   ` · ${pollDiagnostics.skipped_unmapped} scanner non associati: ${pollDiagnostics.unmapped_scanners.join(", ")}`}
-              </div>
-              <div>
-                Ultimo risultato del gate: {latestGateEvent?.payload_json?.decision || latestGateEvent?.result || "nessuno"}
-                {latestGateEvent?.created_at &&
-                  ` · ${new Date(latestGateEvent.created_at).toLocaleString("it-IT")}`}
-              </div>
+              </span>
               {pollDiagnostics.latest_xceed_scan && (
-                <div>
-                  Ultimo scan Xceed: {pollDiagnostics.latest_xceed_scan.checked_in_by || "email assente"}
+                <span>
+                  · Ultimo scan: {pollDiagnostics.latest_xceed_scan.checked_in_by || "email assente"}
                   {pollDiagnostics.latest_xceed_scan.checked_in_time > 0 &&
-                    ` · ${new Date(pollDiagnostics.latest_xceed_scan.checked_in_time * 1000).toLocaleString("it-IT")}`}
-                  {` · QR …${pollDiagnostics.latest_xceed_scan.qr_suffix || "assente"}`}
+                    ` · ${new Date(pollDiagnostics.latest_xceed_scan.checked_in_time * 1000).toLocaleTimeString("it-IT")}`}
                   {pollDiagnostics.latest_xceed_scan.already_stored
-                    ? ` · salvato ${pollDiagnostics.latest_xceed_scan.stored_event?.door_role || "senza gate"} / ${pollDiagnostics.latest_xceed_scan.stored_event?.result || "senza esito"}`
+                    ? ` · ${pollDiagnostics.latest_xceed_scan.stored_event?.result || "salvato"}`
                     : " · non salvato"}
-                </div>
+                </span>
               )}
             </div>
           )}
         </header>
 
-        <main className="flex flex-col items-center justify-center gap-3 py-1 text-center">
+        <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 py-1 text-center">
         <div
-          className={`h-36 w-36 rounded-full transition-all duration-150 sm:h-44 sm:w-44 ${
+          className={`h-28 w-28 rounded-full transition-all duration-150 sm:h-32 sm:w-32 ${
             status === "ok"
               ? "bg-green-500 shadow-[0_0_80px_rgba(34,197,94,0.9)]"
               : status === "warning"
@@ -602,13 +594,13 @@ export default function FastDoorClient() {
           }`}
         />
 
-        <div className="text-2xl font-black tracking-wide sm:text-4xl">
+        <div className="text-2xl font-black tracking-wide sm:text-3xl">
           {mainLabel()}
         </div>
 
         {message && (
           <div
-            className={`max-w-2xl rounded-2xl border px-4 py-2.5 text-base font-bold sm:text-lg ${
+            className={`max-w-2xl rounded-2xl border px-4 py-2 text-sm font-bold sm:text-base ${
               status === "ok"
                 ? "border-green-400/30 bg-green-500/10 text-green-200"
                 : status === "warning"
@@ -621,7 +613,7 @@ export default function FastDoorClient() {
         )}
 
         {(displayName || membershipGroup || membershipStatus) && (
-          <div className="flex max-w-xl flex-wrap items-center justify-center gap-2 text-base">
+          <div className="flex max-w-xl flex-wrap items-center justify-center gap-1.5 text-sm">
             {displayName && (
               <span className="font-bold text-white">{displayName}</span>
             )}
@@ -639,7 +631,7 @@ export default function FastDoorClient() {
         )}
 
         {(memberEmail || memberPhone) && (
-          <div className="flex max-w-xl flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-white/70">
+          <div className="flex max-w-xl flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-xs text-white/70">
             {memberEmail && <span>Email: {memberEmail}</span>}
             {memberPhone && <span>Cellulare: {memberPhone}</span>}
           </div>
@@ -647,7 +639,7 @@ export default function FastDoorClient() {
 
         {decision && (
           <>
-            <div className="text-xs uppercase tracking-[0.2em] text-white/35">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-white/35">
               {decision}
               {lastScanAt && ` · ${lastScanAt.toLocaleTimeString("it-IT")}`}
             </div>
@@ -660,7 +652,7 @@ export default function FastDoorClient() {
                       event.stopPropagation();
                       setWallyQrOpen(true);
                     }}
-                    className="rounded-xl bg-cyan-300 px-5 py-3 text-sm font-black uppercase tracking-wide text-black hover:bg-cyan-200"
+                    className="rounded-xl bg-cyan-300 px-5 py-2.5 text-sm font-black uppercase tracking-wide text-black hover:bg-cyan-200"
                   >
                     {wallyAction.label}
                   </button>
@@ -671,7 +663,7 @@ export default function FastDoorClient() {
                     event.stopPropagation();
                     resetScanner();
                   }}
-                  className="rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-black uppercase tracking-wide hover:bg-white/15"
+                  className="rounded-xl border border-white/20 bg-white/10 px-5 py-2.5 text-sm font-black uppercase tracking-wide hover:bg-white/15"
                 >
                   {decision === "OK_ACCESS" ? "Continua" : "Operazione conclusa"}
                 </button>
@@ -691,7 +683,7 @@ export default function FastDoorClient() {
 
         </main>
 
-        <footer className="grid gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 text-[11px] sm:grid-cols-3 sm:text-xs">
+        <footer className="grid gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-2 text-[10px] sm:grid-cols-3 sm:text-[11px]">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 shrink-0 rounded-full bg-green-500" />
             <span><b>Verde</b> · Tessera attiva, gate corretto</span>
