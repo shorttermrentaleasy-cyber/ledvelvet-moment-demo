@@ -284,7 +284,8 @@ export async function POST(req: NextRequest) {
       const gate = await resolveDoorGateByXceedEmail(
         supabase,
         checkedInBy,
-        eventId
+        eventId,
+        access.gate_id
       );
 
       if (!gate.gate_id || !gate.door_role) {

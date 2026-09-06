@@ -11,10 +11,12 @@ export type ResolvedDoorGate = {
 export async function resolveDoorGateByXceedEmail(
   supabase: SupabaseClient,
   checkedInBy?: string | null,
-  eventId?: string | null
+  eventId?: string | null,
+  preferredGateId?: string | null
 ): Promise<ResolvedDoorGate> {
   const email = String(checkedInBy || "").trim().toLowerCase();
   const normalizedEventId = String(eventId || "").trim();
+  const normalizedPreferredGateId = String(preferredGateId || "").trim();
 
   if (!email) {
     return {
@@ -27,6 +29,31 @@ export async function resolveDoorGateByXceedEmail(
   }
 
   if (normalizedEventId) {
+    if (normalizedPreferredGateId) {
+      const { data: preferredEventGate, error: preferredEventGateError } =
+        await supabase
+          .from("event_gate_overrides")
+          .select("gate_id,door_role,scanner_email")
+          .eq("event_id", normalizedEventId)
+          .eq("gate_id", normalizedPreferredGateId)
+          .limit(1)
+          .maybeSingle();
+
+      if (
+        !preferredEventGateError &&
+        preferredEventGate &&
+        String(preferredEventGate.scanner_email || "").trim().toLowerCase() === email
+      ) {
+        return {
+          gate_id: preferredEventGate.gate_id,
+          door_role: preferredEventGate.door_role,
+          gate_name: null,
+          xceed_email: preferredEventGate.scanner_email,
+          source: "event_gate_overrides",
+        };
+      }
+    }
+
     const { data: eventGate, error: eventGateError } = await supabase
       .from("event_gate_overrides")
       .select("gate_id,door_role,scanner_email")
