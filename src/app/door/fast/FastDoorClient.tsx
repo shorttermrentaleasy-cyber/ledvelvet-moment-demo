@@ -242,7 +242,11 @@ export default function FastDoorClient() {
 
     lastLiveKeyRef.current = liveKey;
 
-    if (applyResult && item?.payload_json?.decision) {
+    const createdAt = item?.created_at ? new Date(item.created_at).getTime() : 0;
+    const isRecentResult =
+      createdAt > 0 && Date.now() - createdAt >= 0 && Date.now() - createdAt <= 15_000;
+
+    if ((applyResult || isRecentResult) && item?.payload_json?.decision) {
       applyDecision(item.payload_json);
       scheduleReset(item.payload_json.decision);
     }
