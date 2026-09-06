@@ -969,9 +969,9 @@ export default function TicketPrescreenClient() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#070812] px-4 py-6 text-white md:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#18172b] to-[#09090d] p-5 shadow-2xl md:p-7">
+    <main className="min-h-screen min-w-0 overflow-x-hidden bg-[#070812] px-3 py-6 text-white sm:px-4 md:px-8">
+      <div className="mx-auto min-w-0 max-w-7xl space-y-6">
+        <header className="min-w-0 rounded-3xl border border-white/10 bg-gradient-to-br from-[#18172b] to-[#09090d] p-4 shadow-2xl sm:p-5 md:p-7">
           <Link
             href="/admin"
             className="mb-5 inline-flex rounded-full border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-xs uppercase tracking-[0.18em] text-cyan-100"
@@ -979,7 +979,7 @@ export default function TicketPrescreenClient() {
             ← Dashboard
           </Link>
           <div className="grid gap-5 lg:grid-cols-[1fr_620px] lg:items-end">
-            <div>
+            <div className="min-w-0">
               <div className="text-xs uppercase tracking-[0.35em] text-cyan-300">
                 LED VELVET • ADMIN
               </div>
@@ -989,7 +989,7 @@ export default function TicketPrescreenClient() {
                 Xceed e Wallyfor non vengono modificati; sono salvate solo le decisioni dell’amministratore.
               </p>
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="mb-2 block text-xs uppercase tracking-[0.2em] text-white/50">
                 Evento Xceed
               </label>
@@ -1042,7 +1042,7 @@ export default function TicketPrescreenClient() {
 
         {event && summary && (
           <>
-            <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5">
+            <section className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-4 sm:p-5">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h2 className="text-xl font-semibold">{event.name}</h2>
@@ -1082,7 +1082,7 @@ export default function TicketPrescreenClient() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-4 md:p-5">
+            <section className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-3 sm:p-4 md:p-5">
               <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1095,13 +1095,13 @@ export default function TicketPrescreenClient() {
                     “Regolare” significa pre-controllo superato sui dati dichiarati nel biglietto.
                   </p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <label className="text-[11px] uppercase tracking-[0.12em] text-white/40">
+                <div className="grid min-w-0 w-full gap-2 sm:grid-cols-2 md:w-auto">
+                  <label className="min-w-0 text-[11px] uppercase tracking-[0.12em] text-white/40">
                     Tipo partecipante
                     <select
                       value={filter}
                       onChange={(e) => setFilter(e.target.value as Filter)}
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm normal-case tracking-normal text-white"
+                      className="mt-1 min-w-0 w-full max-w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm normal-case tracking-normal text-white"
                     >
                       <option value="all">Tutti gli acquisti</option>
                       <option value="active_member">Acquisti soci attivi</option>
@@ -1112,12 +1112,12 @@ export default function TicketPrescreenClient() {
                       <option value="resolved">Anomalie risolte ({resolvedAnomalyRows.length})</option>
                     </select>
                   </label>
-                  <label className="text-[11px] uppercase tracking-[0.12em] text-white/40">
+                  <label className="min-w-0 text-[11px] uppercase tracking-[0.12em] text-white/40">
                     Stato lavorazione
                     <select
                       value={workFilter}
                       onChange={(e) => setWorkFilter(e.target.value as WorkFilter)}
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm normal-case tracking-normal text-white"
+                      className="mt-1 min-w-0 w-full max-w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm normal-case tracking-normal text-white"
                     >
                       <option value="all">Tutti gli stati</option>
                       <option value="not_started">Da prendere in carico ({workCounts.not_started})</option>
@@ -1140,10 +1140,10 @@ export default function TicketPrescreenClient() {
                 {visibleEmailGroups.map((emailGroup) => (
                   <div
                     key={emailGroup.key}
-                    className={`overflow-hidden rounded-3xl border ${emailGroupStyles[emailGroupCategory(emailGroup)].container}`}
+                    className={`min-w-0 max-w-full overflow-hidden rounded-3xl border ${emailGroupStyles[emailGroupCategory(emailGroup)].container}`}
                   >
                     <div className={`flex flex-col gap-2 border-b px-4 py-4 md:flex-row md:items-center md:justify-between ${emailGroupStyles[emailGroupCategory(emailGroup)].header}`}>
-                      <div>
+                      <div className="min-w-0">
                         <div className="text-xs uppercase tracking-[0.18em] text-white/55">
                           Email partecipante
                         </div>
@@ -1211,7 +1211,7 @@ export default function TicketPrescreenClient() {
                               : ""
                           }`}
                         >
-                    <div>
+                    <div className="min-w-0">
                       <div className="font-semibold">{row.participant.full_name || "Senza nominativo"}</div>
                       <div className="mt-1 text-sm text-white/55">{row.participant.email || "Email assente"}</div>
                       <div className="text-sm text-white/55">{row.participant.phone || "Telefono assente"}</div>
@@ -1220,14 +1220,14 @@ export default function TicketPrescreenClient() {
                       </div>
                     </div>
 
-                    <div className="text-sm">
+                    <div className="min-w-0 text-sm">
                       <div className="text-xs uppercase tracking-[0.14em] text-white/35">Acquirente</div>
                       <div className="mt-2 text-white/80">{row.buyer?.full_name || "—"}</div>
                       <div className="mt-1 break-all text-xs text-white/45">{row.buyer?.email || "—"}</div>
                       <div className="mt-1 text-xs text-white/45">{formatDate(row.purchased_at, true)}</div>
                     </div>
 
-                    <div className="text-sm">
+                    <div className="min-w-0 text-sm">
                       <div className="text-xs uppercase tracking-[0.14em] text-white/35">Tessera</div>
                       <div className="mt-2 text-white/80">{row.member?.full_name || "—"}</div>
                       <div className="mt-1 text-xs text-white/50">
@@ -1238,7 +1238,7 @@ export default function TicketPrescreenClient() {
                       </div>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <span
                         className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${
                           row.ticket_status === "cancelled"
@@ -1333,7 +1333,7 @@ export default function TicketPrescreenClient() {
                     </div>
 
                     {selectedTicketRef === row.ticket_ref && anomalyType(row) && (
-                      <div className="rounded-2xl border border-fuchsia-300/25 bg-fuchsia-300/[0.07] p-4 lg:col-span-4">
+                      <div className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-fuchsia-300/25 bg-fuchsia-300/[0.07] p-3 sm:p-4 lg:col-span-4">
                         <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
                           <div>
                             <div className="text-sm font-semibold text-fuchsia-100">
@@ -1385,14 +1385,14 @@ export default function TicketPrescreenClient() {
                                     key={candidate.id}
                                     type="button"
                                     onClick={() => selectMember(candidate)}
-                                    className={`rounded-xl border px-3 py-3 text-left text-xs transition ${
+                                  className={`min-w-0 max-w-full rounded-xl border px-3 py-3 text-left text-xs transition ${
                                       selectedMemberId === candidate.id
                                         ? "border-emerald-300/60 bg-emerald-300/15 text-emerald-100"
                                         : "border-white/10 bg-black/25 text-white/65 hover:border-cyan-300/35"
                                     }`}
                                   >
                                     <span className="block font-semibold text-white">{candidate.full_name}</span>
-                                    <span className="mt-1 block">
+                                    <span className="mt-1 block break-words [overflow-wrap:anywhere]">
                                       {candidate.email || "Email assente"} · {candidate.phone || "Telefono assente"} · {candidate.status || "Stato da verificare"}
                                     </span>
                                   </button>
@@ -1412,7 +1412,7 @@ export default function TicketPrescreenClient() {
                             onChange={(e) =>
                               applyAnomalyAction(anomalyType(row)!, e.target.value)
                             }
-                            className="mt-1 w-full rounded-xl border border-fuchsia-300/25 bg-black/60 px-3 py-2 text-sm text-white"
+                            className="mt-1 min-w-0 w-full max-w-full rounded-xl border border-fuchsia-300/25 bg-black/60 px-3 py-2 text-sm text-white"
                           >
                             <option value="">Scegli un’azione precompilata</option>
                             {[...anomalyActionPresets[anomalyType(row)!], noActionPreset]
@@ -1432,12 +1432,12 @@ export default function TicketPrescreenClient() {
                           </span>
                         </label>
                         <div className="mt-3 grid gap-3 md:grid-cols-[260px_1fr_auto] md:items-end">
-                          <label className="text-xs text-white/55">
+                          <label className="min-w-0 text-xs text-white/55">
                             Stato
                             <select
                               value={draftStatus}
                               onChange={(e) => setDraftStatus(e.target.value as AnomalyStatus)}
-                              className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                              className="mt-1 min-w-0 w-full max-w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
                             >
                               {Object.entries(anomalyStatusLabels).map(([value, label]) => (
                                 <option key={value} value={value}>
@@ -1452,14 +1452,14 @@ export default function TicketPrescreenClient() {
                               ))}
                             </select>
                           </label>
-                          <label className="text-xs text-white/55">
+                          <label className="min-w-0 text-xs text-white/55">
                             Nota amministratore
                             <textarea
                               value={draftNote}
                               maxLength={2000}
                               onChange={(e) => setDraftNote(e.target.value)}
                               placeholder="Verifica effettuata, contatto o motivazione…"
-                              className="mt-1 min-h-20 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                              className="mt-1 min-h-20 min-w-0 w-full max-w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
                             />
                           </label>
                           <button
@@ -1516,7 +1516,7 @@ export default function TicketPrescreenClient() {
                           </div>
 
                           {emailDraft && (
-                            <div className="mt-4 rounded-2xl border border-cyan-300/20 bg-black/25 p-4">
+                            <div className="mt-4 min-w-0 max-w-full overflow-hidden rounded-2xl border border-cyan-300/20 bg-black/25 p-3 sm:p-4">
                               <div className="text-xs uppercase tracking-[0.14em] text-cyan-100/70">
                                 Anteprima comunicazione
                               </div>
@@ -1531,7 +1531,7 @@ export default function TicketPrescreenClient() {
                                         current ? { ...current, recipient: e.target.value } : current
                                       )
                                     }
-                                    className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                                    className="mt-1 min-w-0 w-full max-w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
                                   />
                                 </label>
                                 <label className="text-xs text-white/55">
@@ -1544,7 +1544,7 @@ export default function TicketPrescreenClient() {
                                         current ? { ...current, subject: e.target.value } : current
                                       )
                                     }
-                                    className="mt-1 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
+                                    className="mt-1 min-w-0 w-full max-w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm text-white"
                                   />
                                 </label>
                                 <label className="text-xs text-white/55">
@@ -1557,7 +1557,7 @@ export default function TicketPrescreenClient() {
                                         current ? { ...current, text: e.target.value } : current
                                       )
                                     }
-                                    className="mt-1 min-h-64 w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm leading-6 text-white"
+                                    className="mt-1 min-h-64 min-w-0 w-full max-w-full rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-sm leading-6 text-white"
                                   />
                                 </label>
                               </div>
@@ -1615,7 +1615,7 @@ export default function TicketPrescreenClient() {
                             <div className="text-xs uppercase tracking-[0.14em] text-white/40">Storico decisioni</div>
                             <div className="mt-2 space-y-2">
                               {anomalies[row.ticket_ref].history.map((item) => (
-                                <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60">
+                                <div key={item.id} className="min-w-0 break-words rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/60 [overflow-wrap:anywhere]">
                                   <span className="font-semibold text-white/80">{historyStatusLabel(item)}</span>
                                   {" · "}{formatDate(item.created_at, true)}
                                   {" · "}{item.admin_email}
@@ -1624,7 +1624,7 @@ export default function TicketPrescreenClient() {
                                       <summary className="cursor-pointer font-semibold text-cyan-100">
                                         Mostra email inviata
                                       </summary>
-                                      <div className="mt-2 whitespace-pre-wrap rounded-lg border border-white/10 bg-black/25 p-3 leading-5 text-white/70">
+                                      <div className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-black/25 p-3 leading-5 text-white/70 [overflow-wrap:anywhere]">
                                         {item.note}
                                       </div>
                                     </details>
