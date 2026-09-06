@@ -92,6 +92,10 @@ type PollDiagnostics = {
       created_at: string | null;
     } | null;
   } | null;
+  latest_processed?: {
+    live_key: string;
+    payload_json: FastResponse;
+  } | null;
 };
 
 function keepsResultOpen(decision?: FastDecision | null) {
@@ -327,9 +331,16 @@ export default function FastDoorClient() {
             ? pollData.unmapped_scanners.map(String)
             : [],
           latest_xceed_scan: pollData?.latest_xceed_scan || null,
+          latest_processed: pollData?.latest_processed || null,
         });
 
         setConnectionState("online");
+
+        if (pollData?.latest_processed?.payload_json?.decision) {
+          lastLiveKeyRef.current = pollData.latest_processed.live_key;
+          applyDecision(pollData.latest_processed.payload_json);
+          scheduleReset(pollData.latest_processed.payload_json.decision);
+        }
 
         if (!cancelled) {
           await loadLatestGateResult(true);

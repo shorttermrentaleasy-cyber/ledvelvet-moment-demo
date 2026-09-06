@@ -276,6 +276,10 @@ export async function POST(req: NextRequest) {
     let processed = 0;
     let skippedUnmapped = 0;
     const unmappedScanners = new Set<string>();
+    let latestProcessedForAccess: {
+      live_key: string;
+      payload_json: FastResponse;
+    } | null = null;
 
     for (const ticket of newScans) {
       const qrCode = normalize(ticket.qrCode);
@@ -371,6 +375,13 @@ export async function POST(req: NextRequest) {
 
       if (liveError) throw liveError;
 
+      if (gate.gate_id === access.gate_id) {
+        latestProcessedForAccess = {
+          live_key: liveKey,
+          payload_json: fastPayload,
+        };
+      }
+
       processed += 1;
     }
 
@@ -392,6 +403,7 @@ export async function POST(req: NextRequest) {
       processed,
       skipped_unmapped: skippedUnmapped,
       unmapped_scanners: Array.from(unmappedScanners),
+      latest_processed: latestProcessedForAccess,
       latest_xceed_scan: latestXceedTicket
         ? {
             checked_in_time: Number(latestXceedTicket.checkedInTime || 0),
