@@ -50,6 +50,8 @@ type FastResponse = {
 
 type LiveEvent = {
   live_key?: string | null;
+  result?: string | null;
+  created_at?: string | null;
   payload_json?: FastResponse | null;
 };
 
@@ -99,6 +101,7 @@ export default function FastDoorClient() {
   const [advanceMode, setAdvanceMode] = useState<AdvanceMode>("automatic");
   const [doorToken, setDoorToken] = useState("");
   const [pollDiagnostics, setPollDiagnostics] = useState<PollDiagnostics | null>(null);
+  const [latestGateEvent, setLatestGateEvent] = useState<LiveEvent | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -232,6 +235,7 @@ export default function FastDoorClient() {
       | { ok?: boolean; item?: LiveEvent | null }
       | null;
     const item = data?.item;
+    setLatestGateEvent(item || null);
     const liveKey = String(item?.live_key || "");
 
     if (!liveKey || liveKey === lastLiveKeyRef.current) return;
@@ -525,16 +529,23 @@ export default function FastDoorClient() {
             </span>
           </div>
           {pollDiagnostics && (
-            <div className="border-t border-white/10 px-3 py-2 text-center text-[10px] text-white/45 sm:text-xs">
-              Xceed: {pollDiagnostics.fetched} letti · {pollDiagnostics.checked_in} check-in validi
-              {pollDiagnostics.checked_in_without_time > 0 &&
-                ` · ${pollDiagnostics.checked_in_without_time} senza orario`}
-              {pollDiagnostics.checked_in_without_qr > 0 &&
-                ` · ${pollDiagnostics.checked_in_without_qr} senza QR`}
-              {pollDiagnostics.candidates > 0 && ` · ${pollDiagnostics.candidates} nuovi`}
-              {pollDiagnostics.processed > 0 && ` · ${pollDiagnostics.processed} elaborati`}
-              {pollDiagnostics.skipped_unmapped > 0 &&
-                ` · ${pollDiagnostics.skipped_unmapped} scanner non associati: ${pollDiagnostics.unmapped_scanners.join(", ")}`}
+            <div className="border-t border-white/10 px-3 py-2 text-center text-[10px] leading-5 text-white/45 sm:text-xs">
+              <div>
+                Xceed: {pollDiagnostics.fetched} letti · {pollDiagnostics.checked_in} check-in validi
+                {pollDiagnostics.checked_in_without_time > 0 &&
+                  ` · ${pollDiagnostics.checked_in_without_time} senza orario`}
+                {pollDiagnostics.checked_in_without_qr > 0 &&
+                  ` · ${pollDiagnostics.checked_in_without_qr} senza QR`}
+                {pollDiagnostics.candidates > 0 && ` · ${pollDiagnostics.candidates} nuovi`}
+                {pollDiagnostics.processed > 0 && ` · ${pollDiagnostics.processed} elaborati`}
+                {pollDiagnostics.skipped_unmapped > 0 &&
+                  ` · ${pollDiagnostics.skipped_unmapped} scanner non associati: ${pollDiagnostics.unmapped_scanners.join(", ")}`}
+              </div>
+              <div>
+                Ultimo risultato del gate: {latestGateEvent?.payload_json?.decision || latestGateEvent?.result || "nessuno"}
+                {latestGateEvent?.created_at &&
+                  ` · ${new Date(latestGateEvent.created_at).toLocaleString("it-IT")}`}
+              </div>
             </div>
           )}
         </header>
