@@ -80,6 +80,18 @@ type PollDiagnostics = {
   processed: number;
   skipped_unmapped: number;
   unmapped_scanners: string[];
+  latest_xceed_scan?: {
+    checked_in_time: number;
+    checked_in_by: string | null;
+    qr_suffix: string | null;
+    already_stored: boolean;
+    stored_event: {
+      result: string | null;
+      gate_id: string | null;
+      door_role: string | null;
+      created_at: string | null;
+    } | null;
+  } | null;
 };
 
 function keepsResultOpen(decision?: FastDecision | null) {
@@ -314,6 +326,7 @@ export default function FastDoorClient() {
           unmapped_scanners: Array.isArray(pollData?.unmapped_scanners)
             ? pollData.unmapped_scanners.map(String)
             : [],
+          latest_xceed_scan: pollData?.latest_xceed_scan || null,
         });
 
         setConnectionState("online");
@@ -550,6 +563,17 @@ export default function FastDoorClient() {
                 {latestGateEvent?.created_at &&
                   ` · ${new Date(latestGateEvent.created_at).toLocaleString("it-IT")}`}
               </div>
+              {pollDiagnostics.latest_xceed_scan && (
+                <div>
+                  Ultimo scan Xceed: {pollDiagnostics.latest_xceed_scan.checked_in_by || "email assente"}
+                  {pollDiagnostics.latest_xceed_scan.checked_in_time > 0 &&
+                    ` · ${new Date(pollDiagnostics.latest_xceed_scan.checked_in_time * 1000).toLocaleString("it-IT")}`}
+                  {` · QR …${pollDiagnostics.latest_xceed_scan.qr_suffix || "assente"}`}
+                  {pollDiagnostics.latest_xceed_scan.already_stored
+                    ? ` · salvato ${pollDiagnostics.latest_xceed_scan.stored_event?.door_role || "senza gate"} / ${pollDiagnostics.latest_xceed_scan.stored_event?.result || "senza esito"}`
+                    : " · non salvato"}
+                </div>
+              )}
             </div>
           )}
         </header>

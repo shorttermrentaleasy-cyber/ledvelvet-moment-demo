@@ -239,11 +239,15 @@ export async function POST(req: NextRequest) {
       buildLiveKey(eventId, ticket)
     );
     const existingLiveKeys = new Set<string>();
+    const existingLiveEvents = new Map<
+      string,
+      { result: string | null; gate_id: string | null; door_role: string | null; created_at: string | null }
+    >();
 
     for (const keyChunk of chunks(liveKeys, 100)) {
       const { data: existing, error: existingError } = await supabase
         .from("door_live_events")
-        .select("live_key,result")
+        .select("live_key,result,gate_id,door_role,created_at")
         .eq("event_id", eventId)
         .in("live_key", keyChunk);
 
@@ -254,7 +258,14 @@ export async function POST(req: NextRequest) {
           String(row.result || "")
         );
         if (row.live_key && !retryable) {
-          existingLiveKeys.add(String(row.live_key));
+          const liveKey = String(row.live_key);
+          existingLiveKeys.add(liveKey);
+          existingLiveEvents.set(liveKey, {
+            result: row.result ? String(row.result) : null,
+            gate_id: row.gate_id ? String(row.gate_id) : null,
+            door_role: row.door_role ? String(row.door_role) : null,
+            created_at: row.created_at ? String(row.created_at) : null,
+          });
         }
       }
     }
@@ -358,6 +369,14 @@ export async function POST(req: NextRequest) {
       processed += 1;
     }
 
+    const latestXceedTicket = checkedInTickets.at(-1) || null;
+    const latestXceedLiveKey = latestXceedTicket
+      ? buildLiveKey(eventId, latestXceedTicket)
+      : null;
+    const latestStoredEvent = latestXceedLiveKey
+      ? existingLiveEvents.get(latestXceedLiveKey) || null
+      : null;
+
     return json({
       ok: true,
       fetched: tickets.length,
@@ -368,6 +387,15 @@ export async function POST(req: NextRequest) {
       processed,
       skipped_unmapped: skippedUnmapped,
       unmapped_scanners: Array.from(unmappedScanners),
+      latest_xceed_scan: latestXceedTicket
+        ? {
+            checked_in_time: Number(latestXceedTicket.checkedInTime || 0),
+            checked_in_by: normalize(latestXceedTicket.checkedInBy).toLowerCase() || null,
+            qr_suffix: normalize(latestXceedTicket.qrCode).slice(-8) || null,
+            already_stored: Boolean(latestStoredEvent),
+            stored_event: latestStoredEvent,
+          }
+        : null,
     });
   } catch (error) {
     const message =
