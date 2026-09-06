@@ -375,6 +375,13 @@ export async function POST(req: NextRequest) {
 
       if (liveError) throw liveError;
 
+      existingLiveEvents.set(liveKey, {
+        result: fastPayload.decision || null,
+        gate_id: gate.gate_id,
+        door_role: gate.door_role,
+        created_at: new Date(checkedInTime * 1000).toISOString(),
+      });
+
       if (gate.gate_id === access.gate_id) {
         latestProcessedForAccess = {
           live_key: liveKey,
@@ -392,11 +399,23 @@ export async function POST(req: NextRequest) {
     const latestStoredEvent = latestXceedLiveKey
       ? existingLiveEvents.get(latestXceedLiveKey) || null
       : null;
+    const gateCheckedInTickets = checkedInTickets.filter((ticket) => {
+      const stored = existingLiveEvents.get(buildLiveKey(eventId, ticket));
+      return stored?.gate_id === access.gate_id;
+    });
+    const latestGateTicket = gateCheckedInTickets.at(-1) || null;
+    const latestGateLiveKey = latestGateTicket
+      ? buildLiveKey(eventId, latestGateTicket)
+      : null;
+    const latestGateStoredEvent = latestGateLiveKey
+      ? existingLiveEvents.get(latestGateLiveKey) || null
+      : null;
 
     return json({
       ok: true,
       fetched: tickets.length,
       checked_in: checkedInTickets.length,
+      gate_checked_in: gateCheckedInTickets.length,
       checked_in_without_time: checkedInWithoutTime,
       checked_in_without_qr: checkedInWithoutQr,
       candidates: newScans.length,
@@ -411,6 +430,15 @@ export async function POST(req: NextRequest) {
             qr_suffix: normalize(latestXceedTicket.qrCode).slice(-8) || null,
             already_stored: Boolean(latestStoredEvent),
             stored_event: latestStoredEvent,
+          }
+        : null,
+      latest_gate_scan: latestGateTicket
+        ? {
+            checked_in_time: Number(latestGateTicket.checkedInTime || 0),
+            checked_in_by: normalize(latestGateTicket.checkedInBy).toLowerCase() || null,
+            qr_suffix: normalize(latestGateTicket.qrCode).slice(-8) || null,
+            already_stored: Boolean(latestGateStoredEvent),
+            stored_event: latestGateStoredEvent,
           }
         : null,
     });
