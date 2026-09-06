@@ -20,6 +20,8 @@ type XceedTicket = {
   [key: string]: unknown;
 };
 
+type XceedRecord = Record<string, any>;
+
 type FastResponse = {
   ok: boolean;
   decision?: string;
@@ -42,6 +44,55 @@ function requiredEnv(name: string): string {
 
 function normalize(value: unknown): string {
   return String(value || "").trim();
+}
+
+function normalizeCheckedInTime(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric > 10_000_000_000 ? Math.floor(numeric / 1000) : numeric;
+  }
+
+  const parsed = new Date(String(value)).getTime();
+  return Number.isNaN(parsed) ? null : Math.floor(parsed / 1000);
+}
+
+function normalizeXceedTicket(ticket: XceedTicket): XceedTicket {
+  const raw = ticket as XceedRecord;
+  const pass = raw?.pass || raw?.ticket?.pass || raw?.booking?.passes?.[0] || {};
+  const nestedTicket = raw?.ticket || {};
+
+  return {
+    ...ticket,
+    qrCode:
+      raw?.qrCode ||
+      raw?.qr_code ||
+      raw?.["QR Code"] ||
+      pass?.qrCode ||
+      pass?.qr_code ||
+      nestedTicket?.qrCode ||
+      nestedTicket?.qr_code ||
+      null,
+    hasCheckedIn:
+      raw?.hasCheckedIn ??
+      pass?.hasCheckedIn ??
+      nestedTicket?.hasCheckedIn ??
+      false,
+    checkedInTime: normalizeCheckedInTime(
+      raw?.checkedInTime ??
+        raw?.checkedInAt ??
+        pass?.checkedInTime ??
+        pass?.checkedInAt ??
+        nestedTicket?.checkedInTime ??
+        nestedTicket?.checkedInAt
+    ),
+    checkedInBy:
+      raw?.checkedInBy ??
+      pass?.checkedInBy ??
+      nestedTicket?.checkedInBy ??
+      null,
+  };
 }
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -96,7 +147,7 @@ async function fetchXceedTickets(params: {
       throw new Error(`Xceed tickets request failed (${response.status})`);
     }
 
-    tickets.push(...payload.data);
+    tickets.push(...payload.data.map((ticket: XceedTicket) => normalizeXceedTicket(ticket)));
 
     if (payload.data.length < PAGE_SIZE) {
       return tickets;
