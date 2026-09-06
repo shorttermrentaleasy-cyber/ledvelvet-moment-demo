@@ -69,6 +69,17 @@ type FastContext = {
   } | null;
 };
 
+type PollDiagnostics = {
+  fetched: number;
+  checked_in: number;
+  checked_in_without_time: number;
+  checked_in_without_qr: number;
+  candidates: number;
+  processed: number;
+  skipped_unmapped: number;
+  unmapped_scanners: string[];
+};
+
 function keepsResultOpen(decision?: FastDecision | null) {
   return decision !== "OK_ACCESS";
 }
@@ -87,6 +98,7 @@ export default function FastDoorClient() {
   const [wallyQrOpen, setWallyQrOpen] = useState(false);
   const [advanceMode, setAdvanceMode] = useState<AdvanceMode>("automatic");
   const [doorToken, setDoorToken] = useState("");
+  const [pollDiagnostics, setPollDiagnostics] = useState<PollDiagnostics | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -279,6 +291,22 @@ export default function FastDoorClient() {
         if (!response.ok) {
           throw new Error("Fast Check polling denied");
         }
+
+        const pollData = (await response.json().catch(() => null)) as
+          | Partial<PollDiagnostics>
+          | null;
+        setPollDiagnostics({
+          fetched: Number(pollData?.fetched || 0),
+          checked_in: Number(pollData?.checked_in || 0),
+          checked_in_without_time: Number(pollData?.checked_in_without_time || 0),
+          checked_in_without_qr: Number(pollData?.checked_in_without_qr || 0),
+          candidates: Number(pollData?.candidates || 0),
+          processed: Number(pollData?.processed || 0),
+          skipped_unmapped: Number(pollData?.skipped_unmapped || 0),
+          unmapped_scanners: Array.isArray(pollData?.unmapped_scanners)
+            ? pollData.unmapped_scanners.map(String)
+            : [],
+        });
 
         setConnectionState("online");
 
@@ -496,6 +524,19 @@ export default function FastDoorClient() {
                   : "CONNESSIONE…"}
             </span>
           </div>
+          {pollDiagnostics && (
+            <div className="border-t border-white/10 px-3 py-2 text-center text-[10px] text-white/45 sm:text-xs">
+              Xceed: {pollDiagnostics.fetched} letti · {pollDiagnostics.checked_in} check-in validi
+              {pollDiagnostics.checked_in_without_time > 0 &&
+                ` · ${pollDiagnostics.checked_in_without_time} senza orario`}
+              {pollDiagnostics.checked_in_without_qr > 0 &&
+                ` · ${pollDiagnostics.checked_in_without_qr} senza QR`}
+              {pollDiagnostics.candidates > 0 && ` · ${pollDiagnostics.candidates} nuovi`}
+              {pollDiagnostics.processed > 0 && ` · ${pollDiagnostics.processed} elaborati`}
+              {pollDiagnostics.skipped_unmapped > 0 &&
+                ` · ${pollDiagnostics.skipped_unmapped} scanner non associati: ${pollDiagnostics.unmapped_scanners.join(", ")}`}
+            </div>
+          )}
         </header>
 
         <main className="flex flex-col items-center justify-center gap-3 py-1 text-center">

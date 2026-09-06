@@ -225,6 +225,15 @@ export async function POST(req: NextRequest) {
         (left, right) =>
           Number(left.checkedInTime || 0) - Number(right.checkedInTime || 0)
       );
+    const checkedInWithoutTime = tickets.filter(
+      (ticket) => ticket.hasCheckedIn === true && Number(ticket.checkedInTime || 0) <= 0
+    ).length;
+    const checkedInWithoutQr = tickets.filter(
+      (ticket) =>
+        ticket.hasCheckedIn === true &&
+        Number(ticket.checkedInTime || 0) > 0 &&
+        !normalize(ticket.qrCode)
+    ).length;
 
     const liveKeys = checkedInTickets.map((ticket) =>
       buildLiveKey(eventId, ticket)
@@ -255,6 +264,7 @@ export async function POST(req: NextRequest) {
     );
     let processed = 0;
     let skippedUnmapped = 0;
+    const unmappedScanners = new Set<string>();
 
     for (const ticket of newScans) {
       const qrCode = normalize(ticket.qrCode);
@@ -264,6 +274,7 @@ export async function POST(req: NextRequest) {
 
       if (!gate.gate_id || !gate.door_role) {
         skippedUnmapped += 1;
+        unmappedScanners.add(checkedInBy || "email scanner assente");
         continue;
       }
 
@@ -351,9 +362,12 @@ export async function POST(req: NextRequest) {
       ok: true,
       fetched: tickets.length,
       checked_in: checkedInTickets.length,
+      checked_in_without_time: checkedInWithoutTime,
+      checked_in_without_qr: checkedInWithoutQr,
       candidates: newScans.length,
       processed,
       skipped_unmapped: skippedUnmapped,
+      unmapped_scanners: Array.from(unmappedScanners),
     });
   } catch (error) {
     const message =
