@@ -71,27 +71,31 @@ type FastContext = {
   } | null;
 };
 
+type ScanDiagnostics = {
+  checked_in_time: number;
+  checked_in_by: string | null;
+  qr_suffix: string | null;
+  already_stored: boolean;
+  stored_event: {
+    result: string | null;
+    gate_id: string | null;
+    door_role: string | null;
+    created_at: string | null;
+  } | null;
+};
+
 type PollDiagnostics = {
   fetched: number;
   checked_in: number;
+  gate_checked_in: number;
   checked_in_without_time: number;
   checked_in_without_qr: number;
   candidates: number;
   processed: number;
   skipped_unmapped: number;
   unmapped_scanners: string[];
-  latest_xceed_scan?: {
-    checked_in_time: number;
-    checked_in_by: string | null;
-    qr_suffix: string | null;
-    already_stored: boolean;
-    stored_event: {
-      result: string | null;
-      gate_id: string | null;
-      door_role: string | null;
-      created_at: string | null;
-    } | null;
-  } | null;
+  latest_xceed_scan?: ScanDiagnostics | null;
+  latest_gate_scan?: ScanDiagnostics | null;
   latest_processed?: {
     live_key: string;
     payload_json: FastResponse;
@@ -320,6 +324,7 @@ export default function FastDoorClient() {
         setPollDiagnostics({
           fetched: Number(pollData?.fetched || 0),
           checked_in: Number(pollData?.checked_in || 0),
+          gate_checked_in: Number(pollData?.gate_checked_in || 0),
           checked_in_without_time: Number(pollData?.checked_in_without_time || 0),
           checked_in_without_qr: Number(pollData?.checked_in_without_qr || 0),
           candidates: Number(pollData?.candidates || 0),
@@ -329,6 +334,7 @@ export default function FastDoorClient() {
             ? pollData.unmapped_scanners.map(String)
             : [],
           latest_xceed_scan: pollData?.latest_xceed_scan || null,
+          latest_gate_scan: pollData?.latest_gate_scan || null,
           latest_processed: pollData?.latest_processed || null,
         });
 
@@ -567,13 +573,14 @@ export default function FastDoorClient() {
                 {pollDiagnostics.skipped_unmapped > 0 &&
                   ` · ${pollDiagnostics.skipped_unmapped} scanner non associati: ${pollDiagnostics.unmapped_scanners.join(", ")}`}
               </span>
-              {pollDiagnostics.latest_xceed_scan && (
+              <span>· Questo gate: {pollDiagnostics.gate_checked_in}</span>
+              {pollDiagnostics.latest_gate_scan && (
                 <span>
-                  · Ultimo scan: {pollDiagnostics.latest_xceed_scan.checked_in_by || "email assente"}
-                  {pollDiagnostics.latest_xceed_scan.checked_in_time > 0 &&
-                    ` · ${new Date(pollDiagnostics.latest_xceed_scan.checked_in_time * 1000).toLocaleTimeString("it-IT")}`}
-                  {pollDiagnostics.latest_xceed_scan.already_stored
-                    ? ` · ${pollDiagnostics.latest_xceed_scan.stored_event?.result || "salvato"}`
+                  · Ultimo del gate: {pollDiagnostics.latest_gate_scan.checked_in_by || "email assente"}
+                  {pollDiagnostics.latest_gate_scan.checked_in_time > 0 &&
+                    ` · ${new Date(pollDiagnostics.latest_gate_scan.checked_in_time * 1000).toLocaleTimeString("it-IT")}`}
+                  {pollDiagnostics.latest_gate_scan.already_stored
+                    ? ` · ${pollDiagnostics.latest_gate_scan.stored_event?.result || "salvato"}`
                     : " · non salvato"}
                 </span>
               )}
