@@ -227,6 +227,91 @@ async function findLocalMembersByEmail(
   return (data || []) as MemberRow[];
 }
 
+function extractXceedCheckinAt(raw: any): string {
+  const value =
+    raw?.checkedInTime ??
+    raw?.checkedInAt ??
+    raw?.pass?.checkedInTime ??
+    raw?.pass?.checkedInAt ??
+    raw?.ticket?.checkedInTime ??
+    raw?.ticket?.checkedInAt ??
+    raw?.booking?.passes?.[0]?.checkedInTime ??
+    raw?.booking?.passes?.[0]?.checkedInAt;
+  const numeric = Number(value);
+  const date = Number.isFinite(numeric) && numeric > 0
+    ? new Date(numeric > 10_000_000_000 ? numeric : numeric * 1000)
+    : value
+      ? new Date(String(value))
+      : new Date();
+
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+async function saveFastCheckHistory(params: {
+  supabase: any;
+  ticketId: string;
+  linkedCheckinId?: string | null;
+  eventId: string;
+  memberId: string;
+  code: string;
+  decision: "OK_ACCESS" | "WRONG_GATE";
+  raw: any;
+}): Promise<string | null> {
+  try {
+    if (params.linkedCheckinId) return params.linkedCheckinId;
+
+    const { data: existing, error: existingError } = await params.supabase
+      .from("checkins")
+      .select("id")
+      .eq("event_id", params.eventId)
+      .eq("member_id", params.memberId)
+      .eq("scanned_code", params.code)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
+    let checkinId = existing?.id ? String(existing.id) : null;
+
+    if (!checkinId) {
+      const { data: inserted, error: insertError } = await params.supabase
+        .from("checkins")
+        .insert({
+          event_id: params.eventId,
+          member_id: params.memberId,
+          result: "allowed",
+          reason:
+            params.decision === "WRONG_GATE"
+              ? "fast_check_xceed_wrong_gate"
+              : "fast_check_xceed_ok",
+          method: "fast_check_xceed",
+          kind: "ETS",
+          scanned_code: params.code,
+          checkin_at: extractXceedCheckinAt(params.raw),
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (insertError) throw insertError;
+      checkinId = inserted?.id ? String(inserted.id) : null;
+    }
+
+    if (checkinId) {
+      const { error: linkError } = await params.supabase
+        .from("xceed_tickets")
+        .update({ checkin_id: checkinId })
+        .eq("id", params.ticketId);
+
+      if (linkError) throw linkError;
+    }
+
+    return checkinId;
+  } catch (error) {
+    console.error("FAST_CHECK_HISTORY_ERROR", error);
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
 
@@ -561,6 +646,17 @@ export async function POST(req: NextRequest) {
     };
 
     if (!canUseGate(memberRole, gateRole)) {
+      const checkinId = await saveFastCheckHistory({
+        supabase,
+        ticketId: String(ticket.id),
+        linkedCheckinId: ticket.checkin_id,
+        eventId,
+        memberId: member.id,
+        code,
+        decision: "WRONG_GATE",
+        raw,
+      });
+
       return jsonFast(
         true,
         "WRONG_GATE",
@@ -575,9 +671,22 @@ export async function POST(req: NextRequest) {
           member_phone: member.phone,
           member: memberPayload,
           membership_source: memberSource,
+          checkin_id: checkinId,
+          history_saved: Boolean(checkinId),
         }
       );
     }
+
+    const checkinId = await saveFastCheckHistory({
+      supabase,
+      ticketId: String(ticket.id),
+      linkedCheckinId: ticket.checkin_id,
+      eventId,
+      memberId: member.id,
+      code,
+      decision: "OK_ACCESS",
+      raw,
+    });
 
     return jsonFast(
       true,
@@ -594,6 +703,8 @@ export async function POST(req: NextRequest) {
         member_phone: member.phone,
         member: memberPayload,
         membership_source: memberSource,
+        checkin_id: checkinId,
+        history_saved: Boolean(checkinId),
       }
     );
   } catch (error) {
