@@ -384,14 +384,6 @@ export default async function LVPeopleAccessiPage({
   const accessCount = accessi.length;
   const lastAccess = accessi.length > 0 ? pickWhen(accessi[0]) : null;
 
-  const distinctEventKeys = new Set<string>();
-  for (const a of accessi) {
-    const ev = pickEvent(a);
-    const key = `${ev?.name || ""}__${ev?.starts_at || ""}__${ev?.venue || ""}`;
-    if (ev?.name) distinctEventKeys.add(key);
-  }
-  const listaCount = distinctEventKeys.size;
-
   const displayName = `${member.first_name} ${member.last_name}`.trim() || "Socio";
 
   return (
@@ -472,14 +464,10 @@ export default async function LVPeopleAccessiPage({
                       </div>
                     </div>
 
-                    <div className="mt-5 grid grid-cols-2 gap-4 max-w-sm">
+                    <div className="mt-5 max-w-sm">
                       <div className="rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-4 text-center">
-                        <div className="text-xs tracking-[0.22em] uppercase text-white/55">Accessi</div>
+                        <div className="text-xs tracking-[0.22em] uppercase text-white/55">Eventi partecipati</div>
                         <div className="mt-2 text-3xl font-extrabold">{accessCount}</div>
-                      </div>
-                      <div className="rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-[#20000f]/90 to-black/80 p-4 text-center">
-                        <div className="text-xs tracking-[0.22em] uppercase text-white/55">Lista</div>
-                        <div className="mt-2 text-3xl font-extrabold">{listaCount}</div>
                       </div>
                     </div>
                   </div>
