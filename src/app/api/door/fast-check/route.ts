@@ -260,11 +260,28 @@ async function saveFastCheckHistory(params: {
   try {
     if (params.linkedCheckinId) return params.linkedCheckinId;
 
+    let localMemberId = params.memberId;
+    if (localMemberId.startsWith("wallyfor:")) {
+      const barcode = localMemberId.slice("wallyfor:".length).trim();
+      const { data: localMember, error: localMemberError } = await params.supabase
+        .from("members")
+        .select("id")
+        .eq("legacy_barcode", barcode)
+        .maybeSingle();
+
+      if (localMemberError) throw localMemberError;
+      if (!localMember?.id) {
+        throw new Error(`Local member not found for Wallyfor barcode ${barcode}`);
+      }
+
+      localMemberId = String(localMember.id);
+    }
+
     const { data: existing, error: existingError } = await params.supabase
       .from("checkins")
       .select("id")
       .eq("event_id", params.eventId)
-      .eq("member_id", params.memberId)
+      .eq("member_id", localMemberId)
       .eq("scanned_code", params.code)
       .limit(1)
       .maybeSingle();
@@ -278,7 +295,7 @@ async function saveFastCheckHistory(params: {
         .from("checkins")
         .insert({
           event_id: params.eventId,
-          member_id: params.memberId,
+          member_id: localMemberId,
           result: "allowed",
           reason:
             params.decision === "WRONG_GATE"
