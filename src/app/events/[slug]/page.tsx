@@ -64,7 +64,7 @@ async function airtableFetch<T>(path: string) {
   const apiKey = envOrThrow("AIRTABLE_TOKEN");
   const res = await fetch(`https://api.airtable.com/v0/${path}`, {
     headers: { Authorization: `Bearer ${apiKey}` },
-    cache: "no-store",
+    next: { revalidate: 3600, tags: ["public-airtable-content"] },
   });
 
   const json = await res.json();

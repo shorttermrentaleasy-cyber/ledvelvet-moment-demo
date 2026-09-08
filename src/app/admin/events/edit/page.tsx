@@ -1,6 +1,7 @@
 import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import { revalidateTag } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import AdminTopbarClient from "../../AdminTopbarClient";
@@ -472,6 +473,8 @@ const updatePayload = {
       redirect(`/admin/events/edit?id=${id}`);
     }
 
+    revalidateTag("public-events");
+    revalidateTag("public-airtable-content");
     redirect("/admin/events?refresh=1");
   }
 

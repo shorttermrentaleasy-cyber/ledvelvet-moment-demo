@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getServerSession } from "next-auth";
 import { createClient } from "@supabase/supabase-js";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
@@ -399,6 +400,9 @@ if (supabaseError) {
 
 
 
+
+    revalidateTag("public-events");
+    revalidateTag("public-airtable-content");
 
     return NextResponse.json({
       ok: true,

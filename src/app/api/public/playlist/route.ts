@@ -43,7 +43,7 @@ export async function GET() {
 
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-      cache: "no-store",
+      next: { revalidate: 3600, tags: ["public-airtable-content"] },
     });
 
     const text = await res.text();

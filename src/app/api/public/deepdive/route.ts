@@ -57,7 +57,7 @@ async function airtableFetch<T>(path: string) {
   const token = envOrThrow("AIRTABLE_TOKEN");
   const res = await fetch(`https://api.airtable.com/v0/${path}`, {
     headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
+    next: { revalidate: 3600, tags: ["public-airtable-content"] },
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json?.error?.message || `Airtable error (${res.status})`);
@@ -154,4 +154,3 @@ export async function GET(req: NextRequest) {
     return jsonNoStore({ ok: false, error: e?.message || "Unexpected error" }, 500);
   }
 }
-

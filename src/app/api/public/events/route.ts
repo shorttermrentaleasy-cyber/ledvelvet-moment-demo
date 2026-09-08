@@ -4,6 +4,16 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const AIRTABLE_REVALIDATE_SECONDS = 60 * 60;
+const PUBLIC_EVENTS_CACHE_TAG = "public-events";
+
+const airtableFetchCache = {
+  next: {
+    revalidate: AIRTABLE_REVALIDATE_SECONDS,
+    tags: [PUBLIC_EVENTS_CACHE_TAG],
+  },
+};
+
 type AirtableRecord = { id: string; fields: Record<string, any> };
 
 function jsonError(message: string, status = 500, extra?: any) {
@@ -103,7 +113,7 @@ async function fetchSponsorsDetails(opts: {
 
     const r = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
+      ...airtableFetchCache,
     });
 
     if (!r.ok) {
@@ -170,7 +180,7 @@ async function fetchDeepdivePublishedBySlug(opts: {
 
     const r = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
+      ...airtableFetchCache,
     });
 
     if (!r.ok) {
@@ -219,7 +229,7 @@ export async function GET(req: Request) {
 
     const r = await fetch(eventsUrl, {
       headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-      cache: "no-store",
+      ...airtableFetchCache,
     });
 
     if (!r.ok) {
@@ -332,7 +342,7 @@ export async function GET(req: Request) {
       {
         status: 200,
         headers: {
-          "Cache-Control": "no-store, max-age=0",
+          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
         },
       }
     );

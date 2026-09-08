@@ -74,7 +74,7 @@ export async function GET() {
 
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
-      cache: "no-store",
+      next: { revalidate: 3600, tags: ["public-airtable-content"] },
     });
 
     if (!res.ok) {
