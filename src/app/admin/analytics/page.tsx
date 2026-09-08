@@ -123,6 +123,22 @@ const typeLabels: Record<string, string> = {
 
     setLoading(true);
 
+    const syncRes = await fetch("/api/admin/analytics-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_id: useId }),
+      cache: "no-store",
+    });
+    const syncJson = await syncRes.json().catch(() => null);
+    if (!syncRes.ok || !syncJson?.ok) {
+      setData({
+        ok: false,
+        error: syncJson?.error || "Impossibile aggiornare i dati Xceed",
+      });
+      setLoading(false);
+      return;
+    }
+
     const params = new URLSearchParams({
       eventId: useId,
       t: String(Date.now()),
@@ -131,6 +147,12 @@ const typeLabels: Record<string, string> = {
       cache: "no-store",
     });
     const json = await res.json();
+
+    const overviewRes = await fetch("/api/analytics/events-overview", {
+      cache: "no-store",
+    });
+    const overviewJson = await overviewRes.json();
+    if (overviewJson.ok) setEventOverview(overviewJson.events || []);
 
     setData(json);
     setLoading(false);
@@ -360,7 +382,13 @@ const typeLabels: Record<string, string> = {
 
         {loading && (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-            Caricamento analytics...
+            Aggiornamento dati Xceed e caricamento statistiche...
+          </div>
+        )}
+
+        {data && !data.ok && (
+          <div className="rounded-2xl border border-red-400/30 bg-red-950/25 p-5 text-sm text-red-200">
+            Impossibile aggiornare le statistiche: {data.error || "errore sconosciuto"}
           </div>
         )}
 
@@ -590,94 +618,3 @@ function OverviewValue({
   accent?: boolean;
 }) {
   return (
-    <div className="lg:text-right">
-      <div className="text-[10px] uppercase tracking-[0.12em] text-white/40 lg:hidden">
-        {label}
-      </div>
-      <div
-        className={`mt-1 font-semibold lg:mt-0 ${
-          positive ? "text-green-300" : accent ? "text-cyan-200" : "text-white/85"
-        }`}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function Card({
-  title,
-  value,
-  danger,
-  highlight,
-}: {
-  title: string;
-  value: any;
-  danger?: boolean;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-3xl border p-5 shadow-xl ${
-        danger
-          ? "border-red-500/40 bg-red-950/30"
-          : highlight
-          ? "border-cyan-400/40 bg-cyan-400/10"
-          : "border-white/10 bg-white/[0.06]"
-      }`}
-    >
-      <div className="text-[11px] uppercase tracking-[0.2em] text-white/45">
-        {title}
-      </div>
-      <div className="mt-2 text-2xl font-bold md:text-3xl">{value}</div>
-    </div>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl">
-      <h2 className="mb-4 text-sm uppercase tracking-[0.25em] text-cyan-200/80">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-cyan-100">
-      {children}
-    </span>
-  );
-}
-
-function BarRow({
-  label,
-  value,
-  max,
-  money,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  money?: boolean;
-}) {
-  const pct = Math.max(2, Math.min(100, (Number(value) / max) * 100));
-
-  return (
-    <div>
-      <div className="mb-1 flex justify-between gap-3 text-xs text-white/60">
-        <span className="min-w-0 truncate">{label}</span>
-        <span>{money ? euro(Number(value)) : intNum(value)}</span>
-      </div>
-      <div className="h-3 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full bg-cyan-300"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
