@@ -525,7 +525,6 @@ export default function Moment2() {
   const sp = useSearchParams();
   const [societyOpen, setSocietyOpen] = useState(false);
   const experienceSlug = sp.get("experience");
-  const ticketUrlQ = sp.get("ticketUrl") || "";
   const cityQ = sp.get("city") || "";
   const dateLabelQ = sp.get("dateLabel") || "";
 
@@ -540,7 +539,6 @@ export default function Moment2() {
 
   const [deepDiveOpen, setDeepDiveOpen] = useState<{
     slug?: string;
-    ticketUrl?: string;
     city?: string;
     dateLabel?: string;
   } | null>(null);
@@ -2000,7 +1998,6 @@ export default function Moment2() {
                             onClick={() => {
                               const params = new URLSearchParams(sp.toString());
                               params.set("experience", e.deepdiveSlug!);
-                              params.set("ticketUrl", e.ticketUrl || "");
                               params.set("city", e.city || "");
                               params.set("dateLabel", fmtDateIT(e.date));
                               router.replace(`/moment2?${params.toString()}`, { scroll: false });
@@ -2264,7 +2261,6 @@ export default function Moment2() {
                                       onClick={() => {
                                         const params = new URLSearchParams(sp.toString());
                                         params.set("experience", e.deepdiveSlug!);
-                                        params.set("ticketUrl", e.ticketUrl || "");
                                         params.set("city", e.city || "");
                                         params.set("dateLabel", fmtDateIT(e.date));
                                         router.replace(`/moment2?${params.toString()}`, { scroll: false });
@@ -2825,14 +2821,12 @@ export default function Moment2() {
         onClose={() => {
           const params = new URLSearchParams(sp.toString());
           params.delete("experience");
-          params.delete("ticketUrl");
           params.delete("city");
           params.delete("dateLabel");
           const q = params.toString();
           router.replace(q ? `/moment2?${q}` : "/moment2", { scroll: false });
           setDeepDiveOpen(null);
         }}
-        ticketUrl={ticketUrlQ || deepDiveOpen?.ticketUrl || ""}
         city={cityQ || deepDiveOpen?.city || ""}
         dateLabel={dateLabelQ || deepDiveOpen?.dateLabel || ""}
       />

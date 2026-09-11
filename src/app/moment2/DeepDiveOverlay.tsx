@@ -259,13 +259,11 @@ function SectionCard({ label, title, children }: { label: string; title?: string
 export default function DeepDiveOverlay({
   slug,
   onClose,
-  ticketUrl,
   city,
   dateLabel,
 }: {
   slug: string | null;
   onClose: () => void;
-  ticketUrl?: string;
   city?: string;
   dateLabel?: string;
 }) {
@@ -615,7 +613,7 @@ export default function DeepDiveOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-[999] overflow-hidden bg-black"
+      className="fixed inset-0 z-[10010] overflow-hidden bg-black"
       style={{
         ["--red-acc" as any]: "#930b0c",
         ["--red-light" as any]: "#ff4b4e",
@@ -638,16 +636,6 @@ export default function DeepDiveOverlay({
               </div>
 
               <div className="flex flex-none items-center gap-2">
-                {ticketUrl ? (
-                  <a
-                    href={ticketUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hidden rounded-full bg-[var(--red-acc)] px-4 py-2.5 text-[10px] font-semibold tracking-[0.2em] uppercase text-white transition hover:bg-red-700 sm:inline-flex"
-                  >
-                    Acquista
-                  </a>
-                ) : null}
                 <button
                   type="button"
                   onClick={handleClose}
@@ -752,16 +740,6 @@ export default function DeepDiveOverlay({
                         </button>
                       ) : null}
 
-                      {ticketUrl ? (
-                        <a
-                          href={ticketUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="pointer-events-auto inline-flex rounded-full bg-[var(--red-acc)] px-5 py-3 text-[10px] font-semibold tracking-[0.22em] uppercase text-white transition hover:bg-red-700 sm:hidden"
-                        >
-                          Acquista
-                        </a>
-                      ) : null}
                     </div>
 
                     {moodTrackUrl ? (
