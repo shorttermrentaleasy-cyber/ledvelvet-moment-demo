@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import {
+  PUBLIC_AIRTABLE_CONTENT_CACHE_TAG,
+  PUBLIC_AIRTABLE_REVALIDATE_SECONDS,
+} from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +68,10 @@ async function airtableFetch<T>(path: string) {
   const apiKey = envOrThrow("AIRTABLE_TOKEN");
   const res = await fetch(`https://api.airtable.com/v0/${path}`, {
     headers: { Authorization: `Bearer ${apiKey}` },
-    next: { revalidate: 3600, tags: ["public-airtable-content"] },
+    next: {
+      revalidate: PUBLIC_AIRTABLE_REVALIDATE_SECONDS,
+      tags: [PUBLIC_AIRTABLE_CONTENT_CACHE_TAG],
+    },
   });
 
   const json = await res.json();

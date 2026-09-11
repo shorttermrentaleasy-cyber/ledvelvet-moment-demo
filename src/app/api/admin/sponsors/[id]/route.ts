@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,6 +130,7 @@ export async function PATCH(req: Request, ctx: { params: { id: string } }) {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) return json(false, { error: airtableErrorMessage(data), details: data }, r.status);
 
+    invalidatePublicAirtableCache();
     return json(true, { sponsor: normalizeSponsor(data) });
   } catch (e: any) {
     return json(false, { error: e?.message || "Server error" }, 500);
@@ -152,6 +154,7 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) return json(false, { error: airtableErrorMessage(data), details: data }, r.status);
 
+    invalidatePublicAirtableCache();
     return json(true, {});
   } catch (e: any) {
     return json(false, { error: e?.message || "Server error" }, 500);

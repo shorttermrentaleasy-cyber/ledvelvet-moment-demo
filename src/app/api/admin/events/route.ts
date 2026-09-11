@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]/authOptions";
+import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -135,6 +136,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ ok: false, error: "Airtable update failed", details: text }, { status: r.status });
     }
 
+    invalidatePublicAirtableCache();
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });

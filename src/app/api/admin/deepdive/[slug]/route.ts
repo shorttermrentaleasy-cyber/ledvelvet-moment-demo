@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -329,6 +330,7 @@ export async function PATCH(req: NextRequest, ctx: { params: { slug: string } })
           { method: "PATCH", body: JSON.stringify({ fields }) }
         );
 
+        invalidatePublicAirtableCache();
         return jsonNoStore({ ok: true, deepdive: updated.fields, ignored_fields: ignored }, 200);
       } catch (e: any) {
         const msg = String(e?.message || "");
@@ -367,6 +369,8 @@ export async function DELETE(_req: NextRequest, ctx: { params: { slug: string } 
       `${found.baseId}/${encodeURIComponent(found.deepTable)}/${encodeURIComponent(found.rec.id)}`,
       { method: "DELETE" }
     );
+
+    invalidatePublicAirtableCache();
 
     return jsonNoStore(
       {

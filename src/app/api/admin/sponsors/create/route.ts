@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 
@@ -97,6 +98,8 @@ export async function POST(req: Request) {
 
     const data = text ? JSON.parse(text) : {};
     const recordId = data?.records?.[0]?.id || null;
+
+    invalidatePublicAirtableCache();
 
     return json(200, { ok: true, recordId });
   } catch (e) {

@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  PUBLIC_AIRTABLE_CONTENT_CACHE_TAG,
+  PUBLIC_AIRTABLE_REVALIDATE_SECONDS,
+} from "@/lib/public-airtable-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +47,10 @@ export async function GET() {
 
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-      next: { revalidate: 3600, tags: ["public-airtable-content"] },
+      next: {
+        revalidate: PUBLIC_AIRTABLE_REVALIDATE_SECONDS,
+        tags: [PUBLIC_AIRTABLE_CONTENT_CACHE_TAG],
+      },
     });
 
     const text = await res.text();

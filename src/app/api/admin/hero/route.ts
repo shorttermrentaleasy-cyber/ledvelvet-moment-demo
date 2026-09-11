@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,6 +130,8 @@ export async function PATCH(req: NextRequest) {
         body: JSON.stringify({ fields }),
       }
     );
+
+    invalidatePublicAirtableCache();
 
     return jsonNoStore(
       {

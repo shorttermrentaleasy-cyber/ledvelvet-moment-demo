@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  PUBLIC_AIRTABLE_REVALIDATE_SECONDS,
+  PUBLIC_EVENTS_CACHE_TAG,
+} from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const AIRTABLE_REVALIDATE_SECONDS = 60 * 60;
-const PUBLIC_EVENTS_CACHE_TAG = "public-events";
-
 const airtableFetchCache = {
   next: {
-    revalidate: AIRTABLE_REVALIDATE_SECONDS,
+    revalidate: PUBLIC_AIRTABLE_REVALIDATE_SECONDS,
     tags: [PUBLIC_EVENTS_CACHE_TAG],
   },
 };
@@ -342,7 +343,7 @@ export async function GET(req: Request) {
       {
         status: 200,
         headers: {
-          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=86400",
+          "Cache-Control": "no-store, max-age=0",
         },
       }
     );

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 
@@ -234,6 +235,7 @@ export async function POST(req: Request) {
     }
 
     const created = JSON.parse(createText);
+    invalidatePublicAirtableCache();
     return json(true, { id: created?.id, record: created });
   } catch (e: any) {
     console.error("Duplicate error:", e);

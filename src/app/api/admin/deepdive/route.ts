@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -197,6 +198,7 @@ export async function POST(req: NextRequest) {
     if (!r.ok) return jsonNoStore({ ok: false, error: "Create failed", detail: txt }, 500);
 
     const created = JSON.parse(txt);
+    invalidatePublicAirtableCache();
     return jsonNoStore(
       {
         ok: true,

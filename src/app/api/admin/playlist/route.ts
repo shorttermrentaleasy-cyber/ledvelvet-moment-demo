@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -150,6 +151,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       body: JSON.stringify({ fields: writableFields(input, activeField), typecast: true }),
     });
+    invalidatePublicAirtableCache();
     return NextResponse.json({ ok: true, track: mapRecord(created, activeField) });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || "Creazione fallita" }, { status: 500 });
@@ -174,6 +176,7 @@ export async function PATCH(req: NextRequest) {
       method: "PATCH",
       body: JSON.stringify({ fields: writableFields(input, activeField), typecast: true }),
     });
+    invalidatePublicAirtableCache();
     return NextResponse.json({ ok: true, track: mapRecord(updated, activeField) });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || "Salvataggio fallito" }, { status: 500 });
@@ -190,6 +193,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Traccia non valida" }, { status: 400 });
     }
     await airtable(`${encodeURIComponent(TABLE)}/${id}`, { method: "DELETE" });
+    invalidatePublicAirtableCache();
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || "Eliminazione fallita" }, { status: 500 });
