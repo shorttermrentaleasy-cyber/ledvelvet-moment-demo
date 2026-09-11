@@ -627,7 +627,7 @@ export default function DeepDiveOverlay({
 
       <div className="absolute inset-0 flex items-center justify-center md:p-5">
         <div className="relative h-full w-full max-w-7xl overflow-hidden bg-[#070708] shadow-[0_30px_120px_rgba(0,0,0,0.9)] md:h-[calc(100vh-40px)] md:rounded-[28px] md:border md:border-white/10">
-          <header className="absolute inset-x-0 top-0 z-40">
+          <header className="absolute inset-x-0 top-10 z-40">
             <div className="flex items-center justify-between gap-4 px-4 py-4 md:px-7">
               <div className="min-w-0 rounded-full border border-white/10 bg-black/35 px-4 py-2 backdrop-blur-xl">
                 <div className="truncate text-[9px] font-medium tracking-[0.3em] uppercase text-white/55">
