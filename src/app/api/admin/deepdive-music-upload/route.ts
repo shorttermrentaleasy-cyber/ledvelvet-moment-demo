@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
+import { airtableFormulaString } from "@/lib/airtable-formula";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,10 +31,6 @@ function safePart(value: string) {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-function airtableFormulaString(value: string) {
-  return `'${String(value).replace(/'/g, "''")}'`;
 }
 
 async function deepDiveExists(slug: string) {

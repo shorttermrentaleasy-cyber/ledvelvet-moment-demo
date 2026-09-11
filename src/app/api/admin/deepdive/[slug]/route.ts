@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/authOptions";
 import { invalidatePublicAirtableCache } from "@/lib/public-airtable-cache";
+import { airtableFormulaString } from "@/lib/airtable-formula";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,10 +90,6 @@ async function airtableFetch<T>(path: string, init?: RequestInit) {
 
 const s = (v: any) => (v == null ? "" : String(v)).trim();
 const b = (v: any) => Boolean(v);
-
-function airtableFormulaString(v: string) {
-  return `'${String(v).replace(/'/g, "''")}'`;
-}
 
 function jsonNoStore(body: any, status = 200) {
   return NextResponse.json(body, {

@@ -3,6 +3,7 @@ import {
   PUBLIC_AIRTABLE_CONTENT_CACHE_TAG,
   PUBLIC_AIRTABLE_REVALIDATE_SECONDS,
 } from "@/lib/public-airtable-cache";
+import { airtableFormulaString } from "@/lib/airtable-formula";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,11 +76,6 @@ const s = (v: any) => (v == null ? "" : String(v)).trim();
 const arr = (v: any) => (Array.isArray(v) ? v : []);
 const firstUrl = (atts?: Attachment[]) => (atts?.[0]?.url ? String(atts[0].url) : "");
 const urls = (atts?: Attachment[]) => (Array.isArray(atts) ? atts.map((x) => x?.url).filter(Boolean) : []);
-
-// ✅ Airtable formula string escaping (use single quotes and escape ')
-function airtableFormulaString(v: string) {
-  return `'${String(v).replace(/'/g, "''")}'`;
-}
 
 function jsonNoStore(body: any, status = 200) {
   return NextResponse.json(body, {
