@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type MediaAttachment = {
   id?: string;
@@ -323,16 +324,32 @@ export default function AdminDeepDiveEditPage() {
         throw new Error("File troppo grande (massimo 20 MB).");
       }
 
-      const uploadBody = new FormData();
-      uploadBody.append("slug", String(slug));
-      uploadBody.append("file", file);
       const uploadRes = await fetch("/api/admin/deepdive-music-upload", {
         method: "POST",
-        body: uploadBody,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: String(slug),
+          filename: file.name,
+          contentType: file.type || "audio/mpeg",
+          size: file.size,
+        }),
       });
       const upload = await uploadRes.json().catch(() => null);
       if (!uploadRes.ok || !upload?.ok) {
         throw new Error(upload?.error || "Caricamento musica non disponibile");
+      }
+      if (!upload?.bucket || !upload?.path || !upload?.token || !upload?.url) {
+        throw new Error("Autorizzazione caricamento incompleta");
+      }
+
+      const { error: storageError } = await supabaseBrowser.storage
+        .from(upload.bucket)
+        .uploadToSignedUrl(upload.path, upload.token, file, {
+          contentType: "audio/mpeg",
+          upsert: false,
+        });
+      if (storageError) {
+        throw new Error(`Caricamento MP3 fallito: ${storageError.message}`);
       }
 
       await saveMusic(

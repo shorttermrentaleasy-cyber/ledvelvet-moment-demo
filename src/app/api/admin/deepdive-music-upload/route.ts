@@ -57,23 +57,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Non autorizzato" }, { status: 401 });
     }
 
-    const formData = await req.formData();
-    const slug = safePart(String(formData.get("slug") || ""));
-    const file = formData.get("file");
+    const body = await req.json().catch(() => null);
+    const slug = String(body?.slug || "").trim();
+    const filename = String(body?.filename || "").trim();
+    const contentType = String(body?.contentType || "").trim().toLowerCase();
+    const size = Number(body?.size || 0);
 
     if (!slug) {
       return NextResponse.json({ ok: false, error: "Slug mancante" }, { status: 400 });
     }
-    if (!(file instanceof File)) {
-      return NextResponse.json({ ok: false, error: "File mancante" }, { status: 400 });
+    if (!filename) {
+      return NextResponse.json({ ok: false, error: "Nome file mancante" }, { status: 400 });
     }
-    if (file.type !== "audio/mpeg" && !file.name.toLowerCase().endsWith(".mp3")) {
+    if (contentType !== "audio/mpeg" && !filename.toLowerCase().endsWith(".mp3")) {
       return NextResponse.json(
         { ok: false, error: "Formato non valido. Usa un file MP3." },
         { status: 400 }
       );
     }
-    if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
+    if (!Number.isFinite(size) || size <= 0 || size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { ok: false, error: "Il file MP3 deve essere inferiore a 20 MB." },
         { status: 400 }
@@ -89,19 +91,25 @@ export async function POST(req: NextRequest) {
       { auth: { persistSession: false, autoRefreshToken: false } }
     );
     const bucket = "lineup_video";
-    const filename = safePart(file.name) || "musica.mp3";
-    const path = `deepdive/${slug}/music/${Date.now()}-${crypto.randomUUID()}-${filename}`;
-    const bytes = Buffer.from(await file.arrayBuffer());
-    const { error } = await supabase.storage.from(bucket).upload(path, bytes, {
-      contentType: "audio/mpeg",
+    const storageSlug = safePart(slug) || "experience";
+    const storageFilename = safePart(filename) || "musica.mp3";
+    const path = `deepdive/${storageSlug}/music/${Date.now()}-${crypto.randomUUID()}-${storageFilename}`;
+    const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(path, {
       upsert: false,
     });
-    if (error) throw new Error(`Upload fallito: ${error.message}`);
+    if (error) throw new Error(`Autorizzazione upload fallita: ${error.message}`);
 
     const publicUrl = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
     if (!publicUrl) throw new Error("Indirizzo della musica non disponibile");
 
-    return NextResponse.json({ ok: true, url: publicUrl, filename: file.name });
+    return NextResponse.json({
+      ok: true,
+      bucket,
+      path,
+      token: data.token,
+      url: publicUrl,
+      filename,
+    });
   } catch (error: any) {
     return NextResponse.json(
       { ok: false, error: error?.message || "Caricamento fallito" },
