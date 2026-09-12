@@ -261,6 +261,7 @@ export async function POST(req: NextRequest) {
     ).length;
 
     const existingLiveKeys = new Set<string>();
+    const historyRetryKeys = new Set<string>();
     const existingLiveEvents = new Map<
       string,
       { result: string | null; gate_id: string | null; door_role: string | null; created_at: string | null }
@@ -279,7 +280,11 @@ export async function POST(req: NextRequest) {
       );
       const acceptedWithoutHistory =
         ["OK_ACCESS", "WRONG_GATE"].includes(String(row.result || "")) &&
-        row.payload_json?.history_saved === false;
+        row.payload_json?.history_saved === false &&
+        row.payload_json?.history_retry_attempted !== true;
+      if (acceptedWithoutHistory && row.live_key) {
+        historyRetryKeys.add(String(row.live_key));
+      }
       if (row.live_key && !retryable && !acceptedWithoutHistory) {
         const liveKey = String(row.live_key);
         existingLiveKeys.add(liveKey);
@@ -385,6 +390,8 @@ export async function POST(req: NextRequest) {
             result: fastPayload.decision,
             payload_json: {
               ...fastPayload,
+              history_retry_attempted:
+                historyRetryKeys.has(liveKey) || undefined,
               checked_in_time: checkedInTime,
               checked_in_by: checkedInBy,
               gate_id: gate.gate_id,

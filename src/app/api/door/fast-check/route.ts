@@ -302,7 +302,7 @@ async function saveFastCheckHistory(params: {
 
         const { error: syncError } = await params.supabase.rpc(
           "sync_wallyfor_to_members",
-          { p_limit: 100 }
+          { p_limit: 20_000 }
         );
         if (syncError) throw syncError;
 
