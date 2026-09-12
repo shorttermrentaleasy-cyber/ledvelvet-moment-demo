@@ -108,17 +108,41 @@ function buildLiveKey(eventId: string, ticket: XceedTicket) {
   )}`;
 }
 
-function chunks<T>(items: T[], size: number): T[][] {
-  const result: T[][] = [];
-
-  for (let index = 0; index < items.length; index += size) {
-    result.push(items.slice(index, index + size));
-  }
-
-  return result;
-}
+const xceedTicketCache = new Map<
+  string,
+  { expiresAt: number; pending: boolean; promise: Promise<XceedTicket[]> }
+>();
 
 async function fetchXceedTickets(params: {
+  baseUrl: string;
+  apiKey: string;
+  xceedEventId: string;
+}) {
+  const cacheKey = params.xceedEventId;
+  const cached = xceedTicketCache.get(cacheKey);
+  if (cached && (cached.pending || cached.expiresAt > Date.now())) {
+    return cached.promise;
+  }
+
+  const promise = fetchXceedTicketsUncached(params);
+  const entry = { expiresAt: 0, pending: true, promise };
+  xceedTicketCache.set(cacheKey, entry);
+  promise.then(
+    () => {
+      entry.pending = false;
+      entry.expiresAt = Date.now() + 2_500;
+    },
+    () => undefined
+  );
+  promise.catch(() => {
+    if (xceedTicketCache.get(cacheKey)?.promise === promise) {
+      xceedTicketCache.delete(cacheKey);
+    }
+  });
+  return promise;
+}
+
+async function fetchXceedTicketsUncached(params: {
   baseUrl: string;
   apiKey: string;
   xceedEventId: string;
@@ -140,6 +164,7 @@ async function fetchXceedTickets(params: {
         Accept: "application/json",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
     });
     const payload = await response.json().catch(() => null);
 
@@ -235,38 +260,35 @@ export async function POST(req: NextRequest) {
         !normalize(ticket.qrCode)
     ).length;
 
-    const liveKeys = checkedInTickets.map((ticket) =>
-      buildLiveKey(eventId, ticket)
-    );
     const existingLiveKeys = new Set<string>();
     const existingLiveEvents = new Map<
       string,
       { result: string | null; gate_id: string | null; door_role: string | null; created_at: string | null }
     >();
 
-    for (const keyChunk of chunks(liveKeys, 100)) {
-      const { data: existing, error: existingError } = await supabase
-        .from("door_live_events")
-        .select("live_key,result,gate_id,door_role,created_at")
-        .eq("event_id", eventId)
-        .in("live_key", keyChunk);
+    const { data: existing, error: existingError } = await supabase
+      .from("door_live_events")
+      .select("live_key,result,gate_id,door_role,created_at,payload_json")
+      .eq("event_id", eventId);
 
-      if (existingError) throw existingError;
+    if (existingError) throw existingError;
 
-      for (const row of existing || []) {
-        const retryable = ["NO_TICKET", "DB_ERROR", "FATAL_ERROR"].includes(
-          String(row.result || "")
-        );
-        if (row.live_key && !retryable) {
-          const liveKey = String(row.live_key);
-          existingLiveKeys.add(liveKey);
-          existingLiveEvents.set(liveKey, {
-            result: row.result ? String(row.result) : null,
-            gate_id: row.gate_id ? String(row.gate_id) : null,
-            door_role: row.door_role ? String(row.door_role) : null,
-            created_at: row.created_at ? String(row.created_at) : null,
-          });
-        }
+    for (const row of existing || []) {
+      const retryable = ["NO_TICKET", "DB_ERROR", "FATAL_ERROR"].includes(
+        String(row.result || "")
+      );
+      const acceptedWithoutHistory =
+        ["OK_ACCESS", "WRONG_GATE"].includes(String(row.result || "")) &&
+        row.payload_json?.history_saved === false;
+      if (row.live_key && !retryable && !acceptedWithoutHistory) {
+        const liveKey = String(row.live_key);
+        existingLiveKeys.add(liveKey);
+        existingLiveEvents.set(liveKey, {
+          result: row.result ? String(row.result) : null,
+          gate_id: row.gate_id ? String(row.gate_id) : null,
+          door_role: row.door_role ? String(row.door_role) : null,
+          created_at: row.created_at ? String(row.created_at) : null,
+        });
       }
     }
 
@@ -338,6 +360,7 @@ export async function POST(req: NextRequest) {
             gate_role: gate.door_role,
           }),
           cache: "no-store",
+          signal: AbortSignal.timeout(15_000),
         }
       );
       const fastPayload = (await fastResponse.json().catch(() => null)) as

@@ -33,6 +33,7 @@ type MemberRow = {
   status: string | null;
   membership_group: string | null;
   membership_expires_at: string | null;
+  raw?: unknown;
 };
 
 type MemberSource = "wallyfor_api" | "supabase_fallback";
@@ -252,7 +253,7 @@ async function saveFastCheckHistory(params: {
   ticketId: string;
   linkedCheckinId?: string | null;
   eventId: string;
-  memberId: string;
+  member: MemberRow;
   code: string;
   decision: "OK_ACCESS" | "WRONG_GATE";
   raw: any;
@@ -260,10 +261,10 @@ async function saveFastCheckHistory(params: {
   try {
     if (params.linkedCheckinId) return params.linkedCheckinId;
 
-    let localMemberId = params.memberId;
+    let localMemberId = params.member.id;
     if (localMemberId.startsWith("wallyfor:")) {
       const barcode = localMemberId.slice("wallyfor:".length).trim();
-      const { data: localMember, error: localMemberError } = await params.supabase
+      let { data: localMember, error: localMemberError } = await params.supabase
         .from("members")
         .select("id")
         .eq("legacy_barcode", barcode)
@@ -271,7 +272,50 @@ async function saveFastCheckHistory(params: {
 
       if (localMemberError) throw localMemberError;
       if (!localMember?.id) {
-        throw new Error(`Local member not found for Wallyfor barcode ${barcode}`);
+        const now = new Date().toISOString();
+        const { error: snapshotError } = await params.supabase
+          .from("wallyfor_members")
+          .upsert(
+            {
+              barcode,
+              first_name: params.member.first_name,
+              last_name: params.member.last_name,
+              full_name:
+                [params.member.first_name, params.member.last_name]
+                  .filter(Boolean)
+                  .join(" ") || null,
+              email: params.member.email,
+              phone: params.member.phone,
+              membership_group: params.member.membership_group,
+              status: params.member.status || "DA VERIFICARE",
+              membership_expires_at: params.member.membership_expires_at,
+              raw: params.member.raw || null,
+              source: "wallyfor_api",
+              is_present: true,
+              last_seen_at: now,
+              missing_since: null,
+              updated_at: now,
+            },
+            { onConflict: "barcode" }
+          );
+        if (snapshotError) throw snapshotError;
+
+        const { error: syncError } = await params.supabase.rpc(
+          "sync_wallyfor_to_members",
+          { p_limit: 100 }
+        );
+        if (syncError) throw syncError;
+
+        const localLookup = await params.supabase
+          .from("members")
+          .select("id")
+          .eq("legacy_barcode", barcode)
+          .maybeSingle();
+        if (localLookup.error) throw localLookup.error;
+        localMember = localLookup.data;
+        if (!localMember?.id) {
+          throw new Error(`Unable to materialize Wallyfor member ${barcode}`);
+        }
       }
 
       localMemberId = String(localMember.id);
@@ -282,7 +326,6 @@ async function saveFastCheckHistory(params: {
       .select("id")
       .eq("event_id", params.eventId)
       .eq("member_id", localMemberId)
-      .eq("scanned_code", params.code)
       .limit(1)
       .maybeSingle();
 
@@ -293,7 +336,7 @@ async function saveFastCheckHistory(params: {
     if (!checkinId) {
       const { data: inserted, error: insertError } = await params.supabase
         .from("checkins")
-        .insert({
+        .upsert({
           event_id: params.eventId,
           member_id: localMemberId,
           result: "allowed",
@@ -305,12 +348,27 @@ async function saveFastCheckHistory(params: {
           kind: "ETS",
           scanned_code: params.code,
           checkin_at: extractXceedCheckinAt(params.raw),
+        }, {
+          onConflict: "event_id,member_id",
+          ignoreDuplicates: true,
         })
         .select("id")
         .maybeSingle();
 
       if (insertError) throw insertError;
       checkinId = inserted?.id ? String(inserted.id) : null;
+
+      if (!checkinId) {
+        const { data: racedExisting, error: racedExistingError } =
+          await params.supabase
+            .from("checkins")
+            .select("id")
+            .eq("event_id", params.eventId)
+            .eq("member_id", localMemberId)
+            .maybeSingle();
+        if (racedExistingError) throw racedExistingError;
+        checkinId = racedExisting?.id ? String(racedExisting.id) : null;
+      }
     }
 
     if (checkinId) {
@@ -668,7 +726,7 @@ export async function POST(req: NextRequest) {
         ticketId: String(ticket.id),
         linkedCheckinId: ticket.checkin_id,
         eventId,
-        memberId: member.id,
+        member,
         code,
         decision: "WRONG_GATE",
         raw,
@@ -699,7 +757,7 @@ export async function POST(req: NextRequest) {
       ticketId: String(ticket.id),
       linkedCheckinId: ticket.checkin_id,
       eventId,
-      memberId: member.id,
+      member,
       code,
       decision: "OK_ACCESS",
       raw,

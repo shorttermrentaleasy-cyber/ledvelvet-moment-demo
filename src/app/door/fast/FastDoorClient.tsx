@@ -563,7 +563,7 @@ export default function FastDoorClient() {
           {pollDiagnostics && (
             <div className="flex flex-wrap items-center justify-center gap-x-2 border-t border-white/10 px-3 py-1.5 text-center text-[10px] leading-4 text-white/50 sm:text-xs">
               <span>
-                Xceed: {pollDiagnostics.fetched} letti · {pollDiagnostics.checked_in} validi
+                Xceed: {pollDiagnostics.fetched} biglietti · {pollDiagnostics.checked_in} check-in rilevati
                 {pollDiagnostics.checked_in_without_time > 0 &&
                   ` · ${pollDiagnostics.checked_in_without_time} senza orario`}
                 {pollDiagnostics.checked_in_without_qr > 0 &&
